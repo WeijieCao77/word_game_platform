@@ -3,28 +3,23 @@ import { z } from "zod";
 // 结构校验层（对应 types.ts）。AI 生成与用户保存都必须先过这一层，
 // 再过 validate.ts 的语义校验。
 
-const ID_RE = /^[A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*$/;
+const ID_RE = /^(?!__)[A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*$/;
 
 const IdSchema = z
   .string()
   .min(1)
   .max(64)
-  .regex(ID_RE, "id 只能由字母、数字、下划线或汉字组成，且不能以数字开头");
+  .regex(ID_RE, "id 只能由字母、数字、下划线或汉字组成，不能以数字或双下划线开头");
 
 const NameSchema = z.string().min(1).max(80);
 const ExprSchema = z.string().min(1).max(1000);
-const TextSchema = z.string().max(2000);
+const TextSchema = z.string().min(1).max(4000);
 
-export const EffectSchema = z
-  .object({
-    ref: z.string().min(1).max(128),
-    op: z.enum(["add", "set", "add_tag", "remove_tag"]),
-    value: ExprSchema.optional(),
-    tag: IdSchema.optional(),
-  })
-  .refine((e) => (e.op === "add" || e.op === "set" ? e.value !== undefined : e.tag !== undefined), {
-    message: "数值效果需要 value，标签效果需要 tag",
-  });
+export const EffectSchema = z.object({
+  ref: IdSchema,
+  op: z.enum(["add", "set"]),
+  value: ExprSchema,
+});
 
 export const GameMetaSchema = z.object({
   title: z.string().min(1).max(60),
@@ -33,12 +28,29 @@ export const GameMetaSchema = z.object({
   intro: z.string().max(4000).optional(),
 });
 
-export const TimeModelSchema = z.object({
-  turnLabel: z.string().min(1).max(10),
-  cycleLabel: z.string().min(1).max(10).optional(),
-  turnsPerCycle: z.number().int().min(1).max(365).optional(),
-  maxCycles: z.number().int().min(1).max(200).optional(),
+export const GameThemeSchema = z.object({
+  preset: z.enum(["paper", "dark", "terminal"]).optional(),
+  accent: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "accent 应为 #rrggbb 格式")
+    .optional(),
 });
+
+export const TimeModelSchema = z.object({
+  label: z.string().min(1).max(10),
+  start: z.number(),
+  step: z.number().positive(),
+  max: z.number(),
+});
+
+export const DriverSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("story"), startCard: IdSchema }),
+  z.object({
+    kind: z.literal("life"),
+    time: TimeModelSchema,
+    drawsPerTurn: z.number().int().min(1).max(3).optional(),
+  }),
+]);
 
 export const VariableDefSchema = z.object({
   id: IdSchema,
@@ -46,133 +58,61 @@ export const VariableDefSchema = z.object({
   initial: z.number(),
   min: z.number().optional(),
   max: z.number().optional(),
-  resetEachCycle: z.boolean().optional(),
   visible: z.boolean().optional(),
 });
 
-export const AttributeDefSchema = z.object({
+export const ChoiceDefSchema = z.object({
   id: IdSchema,
-  name: NameSchema,
-  min: z.number().optional(),
-  max: z.number().optional(),
-  visible: z.boolean().optional(),
-});
-
-export const EntityTypeDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  attributes: z.array(AttributeDefSchema).min(1).max(30),
-});
-
-export const EntityInstanceSchema = z.object({
-  id: IdSchema,
-  type: IdSchema,
-  name: NameSchema,
-  attrs: z.record(IdSchema, z.number()),
-  tags: z.array(IdSchema).max(20).optional(),
-});
-
-export const DerivedDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  expr: ExprSchema,
-  visible: z.boolean().optional(),
-});
-
-export const ActionDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  description: z.string().max(300).optional(),
-  target: z
-    .object({ entityType: IdSchema, condition: ExprSchema.optional() })
-    .optional(),
+  label: z.string().min(1).max(120),
   condition: ExprSchema.optional(),
-  usesPerTurn: z.number().int().min(0).max(99).optional(),
-  effects: z.array(EffectSchema).max(20),
-  text: TextSchema.optional(),
-});
-
-export const SettlementDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  every: z.number().int().min(1).max(365).optional(),
-  condition: ExprSchema.optional(),
-  data: z.array(z.record(IdSchema, z.union([z.number(), z.string().max(120)]))).max(400).optional(),
-  compute: z.array(z.object({ id: IdSchema, expr: ExprSchema })).max(30).optional(),
-  outcomes: z
-    .array(
-      z.object({
-        id: IdSchema,
-        condition: ExprSchema,
-        effects: z.array(EffectSchema).max(20),
-        text: TextSchema.optional(),
-      })
-    )
-    .min(1)
-    .max(20),
-});
-
-export const EventDefSchema = z.object({
-  id: IdSchema,
-  weight: z.number().positive(),
-  condition: ExprSchema.optional(),
-  scope: z.object({ entityType: IdSchema, condition: ExprSchema.optional() }).optional(),
   effects: z.array(EffectSchema).max(20).optional(),
+  text: z.string().max(4000).optional(),
+  goto: IdSchema.optional(),
+  ending: IdSchema.optional(),
+});
+
+export const CardDefSchema = z.object({
+  id: IdSchema,
+  title: z.string().max(60).optional(),
+  condition: ExprSchema.optional(),
+  weight: z.number().positive().optional(),
+  priority: z.number().optional(),
+  once: z.boolean().optional(),
   text: TextSchema,
-});
-
-export const EventPoolDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  drawsPerTurn: z.number().int().min(0).max(10),
-  condition: ExprSchema.optional(),
-  events: z.array(EventDefSchema).min(1).max(200),
-});
-
-export const CurveDefSchema = z.object({
-  id: IdSchema,
-  name: NameSchema,
-  entityType: IdSchema,
-  phase: z.enum(["turn", "cycle"]),
-  condition: ExprSchema.optional(),
-  effects: z.array(EffectSchema).max(20),
-  text: TextSchema.optional(),
+  effects: z.array(EffectSchema).max(20).optional(),
+  choices: z.array(ChoiceDefSchema).max(8).optional(),
+  goto: IdSchema.optional(),
+  ending: IdSchema.optional(),
 });
 
 export const EndingDefSchema = z.object({
   id: IdSchema,
   title: NameSchema,
   kind: z.enum(["victory", "defeat", "neutral"]),
-  condition: ExprSchema,
-  text: TextSchema.optional(),
+  condition: ExprSchema.optional(),
+  text: z.string().max(4000).optional(),
   priority: z.number().int().min(-100).max(100).optional(),
 });
 
 export const GameTextSchema = z.object({
-  turnHeader: TextSchema.optional(),
-  cycleEnd: TextSchema.optional(),
-  timeoutEnding: z.object({ title: NameSchema, text: TextSchema.optional() }).optional(),
+  turnHeader: z.string().max(200).optional(),
+  timeoutEnding: z.object({ title: NameSchema, text: z.string().max(4000).optional() }).optional(),
 });
 
 export const GameConfigSchema = z.object({
   schemaVersion: z.literal(1),
   meta: GameMetaSchema,
-  time: TimeModelSchema,
-  variables: z.array(VariableDefSchema).max(50),
-  entityTypes: z.array(EntityTypeDefSchema).max(10),
-  entities: z.array(EntityInstanceSchema).max(200),
-  derived: z.array(DerivedDefSchema).max(50).optional(),
-  actions: z.array(ActionDefSchema).min(1).max(30),
-  settlements: z.array(SettlementDefSchema).max(20).optional(),
-  eventPools: z.array(EventPoolDefSchema).max(10).optional(),
-  curves: z.array(CurveDefSchema).max(30).optional(),
-  endings: z.array(EndingDefSchema).min(1).max(30),
+  theme: GameThemeSchema.optional(),
+  driver: DriverSchema,
+  vars: z.array(VariableDefSchema).max(30),
+  cards: z.array(CardDefSchema).min(1).max(500),
+  endings: EndingDefSchema.array().min(1).max(50),
   text: GameTextSchema.optional(),
 });
 
 export type GameConfigInput = z.input<typeof GameConfigSchema>;
 
-/** 导出 JSON Schema，喂给 AI 的 system prompt 与外部工具 */
+/** 导出 JSON Schema（供外部工具/调试；AI system prompt 用手写精简版说明） */
 export function gameConfigJsonSchema(): Record<string, unknown> {
   return z.toJSONSchema(GameConfigSchema) as Record<string, unknown>;
 }

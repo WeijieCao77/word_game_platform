@@ -7,6 +7,10 @@ export interface Rng {
   state(): number;
 }
 
+/**
+ * mulberry32 的完整内部状态就是一个 32 位整数：
+ * createRng(seed) 开新流，createRng(state()) 从保存点精确续流。
+ */
 export function createRng(seed: number): Rng {
   let s = seed >>> 0;
   const next = (): number => {

@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { GameConfig, CardDef } from "@/lib/schema";
+import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
 import { ChatTurn, GameRecord, GameStore, GameSummary } from "./types";
 
@@ -106,12 +106,15 @@ export class SqliteGameStore implements GameStore {
     for (const d of demos) {
       try {
         const config = readFileSync(path.join(templatesDir, d.file), "utf8");
+        // 保险丝：校验不过的模板绝不覆盖线上示例（防止半成品/坏文件随部署上线）
+        const check = validateGameConfig(JSON.parse(config));
+        if (check.issues.some((i) => i.severity === "error")) continue;
         const author = (JSON.parse(config) as GameConfig).meta.author ?? "官方示例";
         const exists = this.db.prepare("SELECT id FROM games WHERE id = ?").get(d.id);
         if (exists) update.run(config, author, now, d.id);
         else insert.run(d.id, config, "", author, newEditKey(), now, now);
       } catch {
-        // 模板缺失不阻塞启动（sim-demo 在 sim 调度器上线前不存在，属预期）
+        // 模板缺失不阻塞启动（romance-demo 在内容上线前不存在，属预期）
       }
     }
   }

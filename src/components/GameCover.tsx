@@ -572,6 +572,7 @@ export const OFFICIAL_PRESET_BY_GAME: Record<string, string> = {
   xiuxian: "xianxia",
   "yeye-bus": "night-bus",
   "esports-lite": "esports",
+  romance: "romance",
   "val-manager": "valorant",
 };
 

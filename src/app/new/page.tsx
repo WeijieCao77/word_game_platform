@@ -10,7 +10,7 @@ const TEMPLATES = [
   { id: "blank-story", name: "空白 · 分支叙事", desc: "橙光/Twine 式：选项跳转的分支故事" },
   { id: "demo-sim", name: "从示例出发 · 电竞经理 Lite", desc: "复制官方经营示例（阵容/训练/转会/联赛）改成你的版本" },
   { id: "demo-life", name: "从示例出发 · 修仙人生重开", desc: "复制官方修仙示例改成你的版本" },
-  { id: "demo-story", name: "从示例出发 · 雨夜末班车", desc: "复制官方怪谈短篇改成你的版本" },
+  { id: "demo-story", name: "从示例出发 · 雨夜末班车", desc: "复制官方怪谈示例改成你的版本" },
 ];
 
 export default function NewGamePage(): React.ReactElement {

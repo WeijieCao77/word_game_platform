@@ -95,6 +95,7 @@ export class SqliteGameStore implements GameStore {
       { id: "xiuxian", file: "life-demo.json" },
       { id: "yeye-bus", file: "story-demo.json" },
       { id: "esports-lite", file: "sim-demo.json" },
+      { id: "romance", file: "romance-demo.json" },
     ];
     const now = new Date().toISOString();
     const insert = this.db.prepare(

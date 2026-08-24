@@ -51,9 +51,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (template === "blank-life") config = blankLife(title);
   else if (template === "blank-story") config = blankStory(title);
   else if (template === "blank-sim") config = blankSim(title);
-  else if (template === "demo-life" || template === "demo-story" || template === "demo-sim") {
-    const file =
-      template === "demo-life" ? "life-demo.json" : template === "demo-story" ? "story-demo.json" : "sim-demo.json";
+  else if (["demo-life", "demo-story", "demo-sim", "demo-romance"].includes(template)) {
+    const file = {
+      "demo-life": "life-demo.json",
+      "demo-story": "story-demo.json",
+      "demo-sim": "sim-demo.json",
+      "demo-romance": "romance-demo.json",
+    }[template]!;
     try {
       const parsed = JSON.parse(readFileSync(path.join(process.cwd(), "templates", file), "utf8"));
       parsed.meta.title = title === "未命名游戏" ? parsed.meta.title : title;

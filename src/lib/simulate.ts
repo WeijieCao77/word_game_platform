@@ -25,6 +25,9 @@ export interface SimulationReport {
   avgTurns: number;
   minTurns: number;
   maxTurns: number;
+  /** 早终局：在前 earlyThreshold 个全局回合内就出结局的局占比（开局即死检测） */
+  earlyEndRate: number;
+  earlyThreshold: number;
   /** 各变量结束时的均值 */
   finalVarMeans: Record<string, number>;
   /** 模拟中发生的运行时错误（表达式求值等），去重后最多 10 条 */
@@ -42,6 +45,18 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
   let maxTurns = 0;
   const varSums: Record<string, number> = {};
   const seedGen = createRng(baseSeed);
+
+  // 期望局长：life = 时间轴长度；sim = 周期数×每周期回合数；story 无固定长度不检测
+  let expectedLength = 0;
+  if (config.driver.kind === "life") {
+    const t = config.driver.time;
+    expectedLength = Math.max(1, Math.ceil((t.max - t.start) / (t.step || 1)));
+  } else if (config.driver.kind === "sim") {
+    const t = config.driver.time;
+    expectedLength = Math.max(1, t.maxCycles * (t.turnsPerCycle ?? 1));
+  }
+  const earlyThreshold = expectedLength > 0 ? Math.max(2, Math.ceil(expectedLength * 0.1)) : 0;
+  let earlyEnds = 0;
 
   for (let i = 0; i < runs; i++) {
     const seed = Math.floor(seedGen.next() * 0xffffffff);
@@ -101,6 +116,7 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     totalTurns += runTurns;
     minTurns = Math.min(minTurns, runTurns);
     maxTurns = Math.max(maxTurns, runTurns);
+    if (earlyThreshold > 0 && state.ended && runTurns <= earlyThreshold) earlyEnds += 1;
     for (const [k, v] of Object.entries(state.vars)) varSums[k] = (varSums[k] ?? 0) + v;
   }
 
@@ -117,6 +133,8 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     avgTurns: completed ? Math.round((totalTurns / completed) * 10) / 10 : 0,
     minTurns: Number.isFinite(minTurns) ? minTurns : 0,
     maxTurns,
+    earlyEndRate: completed ? Math.round((earlyEnds / completed) * 1000) / 1000 : 0,
+    earlyThreshold,
     finalVarMeans: Object.fromEntries(
       Object.entries(varSums).map(([k, v]) => [k, completed ? Math.round((v / completed) * 10) / 10 : 0])
     ),
@@ -131,6 +149,11 @@ export function summarizeReport(r: SimulationReport): string {
   const sorted = Object.entries(r.endings).sort((a, b) => b[1].count - a[1].count);
   for (const [id, e] of sorted) {
     lines.push(`结局「${e.title}」(${id})：${Math.round(e.ratio * 100)}%`);
+  }
+  if (r.earlyThreshold > 0 && r.earlyEndRate > 0.03) {
+    lines.push(
+      `⚠ 开局即死：${Math.round(r.earlyEndRate * 100)}% 的局在前 ${r.earlyThreshold} 回合内就出结局——玩家还没进入状态就被判负，必须修：负面结局改成「连续多次不达标」判定（计数变量），或提高门槛/推迟生效回合，并在触发前给预警事件。`
+    );
   }
   if (r.unreachedEndings.length) lines.push(`⚠ 从未触发的结局：${r.unreachedEndings.join("、")}`);
   if (r.unfiredCards.length) lines.push(`⚠ 从未出现的卡片：${r.unfiredCards.slice(0, 20).join("、")}${r.unfiredCards.length > 20 ? ` 等 ${r.unfiredCards.length} 张` : ""}`);

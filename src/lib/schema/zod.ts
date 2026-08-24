@@ -78,6 +78,7 @@ export const CardDefSchema = z.object({
   weight: z.number().positive().optional(),
   priority: z.number().optional(),
   once: z.boolean().optional(),
+  cooldown: z.number().min(0).max(200).optional(),
   text: TextSchema,
   effects: z.array(EffectSchema).max(20).optional(),
   choices: z.array(ChoiceDefSchema).max(8).optional(),

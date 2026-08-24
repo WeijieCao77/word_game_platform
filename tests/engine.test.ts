@@ -114,6 +114,43 @@ describe("life 调度器", () => {
   });
 });
 
+describe("life 冷却防重复", () => {
+  const repeatGame: GameConfig = {
+    schemaVersion: 1,
+    meta: { title: "重复测试" },
+    driver: { kind: "life", time: { label: "年", start: 0, step: 1, max: 12 } },
+    vars: [],
+    cards: [
+      { id: "甲", weight: 1, text: "甲事件" },
+      { id: "乙", weight: 1, text: "乙事件" },
+      { id: "丙", weight: 1, text: "丙事件" },
+    ],
+    endings: [{ id: "e", title: "完", kind: "neutral", condition: "turn >= 999" }],
+    text: { timeoutEnding: { title: "完" } },
+  };
+
+  it("默认冷却下同一张卡不会连续两回合出现", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      let s = initState(repeatGame, seed);
+      while (!s.ended) s = step(repeatGame, s);
+      const cards = s.log.filter((l) => l.kind === "card").map((l) => l.text);
+      for (let i = 1; i < cards.length; i++) {
+        expect(cards[i]).not.toBe(cards[i - 1]);
+      }
+    }
+  });
+
+  it("cooldown: 0 允许连续出现（小卡池不停摆）", () => {
+    const single: GameConfig = {
+      ...repeatGame,
+      cards: [{ id: "唯一", weight: 1, cooldown: 0, text: "唯一事件" }],
+    };
+    let s = initState(single, 3);
+    while (!s.ended) s = step(single, s);
+    expect(s.log.filter((l) => l.kind === "card").length).toBe(12);
+  });
+});
+
 describe("story 调度器", () => {
   it("开局即触发起始卡并等待选择", () => {
     const s = initState(storyGame, 1);

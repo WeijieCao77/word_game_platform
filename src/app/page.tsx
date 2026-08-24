@@ -36,6 +36,28 @@ export default function HomePage(): React.ReactElement {
         </p>
       </section>
 
+      {process.env.FLAGSHIP_URL && (
+        <>
+          <h2 className="section-title">旗舰作品</h2>
+          <div className="game-grid">
+            <div className="game-card">
+              <h3>
+                <a href={process.env.FLAGSHIP_URL} target="_blank" rel="noreferrer">
+                  {process.env.FLAGSHIP_TITLE ?? "VAL MANAGER · 无畏契约电竞经理"} ↗
+                </a>
+              </h3>
+              <div className="desc">
+                {process.env.FLAGSHIP_DESC ??
+                  "真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支战队，征战四大赛区。"}
+              </div>
+              <div className="meta">
+                <span className="tag">独立作品</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <h2 className="section-title">游戏库</h2>
       {games.length === 0 ? (
         <p style={{ color: "var(--muted)" }}>还没有已发布的游戏，来做第一个吧。</p>

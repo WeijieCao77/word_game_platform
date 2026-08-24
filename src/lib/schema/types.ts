@@ -103,6 +103,11 @@ export interface CardDef {
   priority?: number;
   /** 整局最多触发一次 */
   once?: boolean;
+  /**
+   * 冷却：再次进入随机池前需要经过的最小时间跨度（life，按时间单位算）。
+   * 默认 2（同一张卡不会连着两个回合出现）；0 表示允许连续出现。
+   */
+  cooldown?: number;
   /** 正文，支持 {表达式} 插值 */
   text: string;
   effects?: Effect[];
@@ -159,6 +164,8 @@ export interface GameState {
   vars: Record<string, number>;
   /** 各卡触发次数（fired() 函数与 once 判定用） */
   fired: Record<string, number>;
+  /** 各卡上次触发时的时间值（life 冷却判定用；旧存档可能缺失） */
+  lastFired?: Record<string, number>;
   /** 等待玩家选择的卡 id（该卡有可用选项时） */
   pendingCard?: string;
   log: LogEntry[];

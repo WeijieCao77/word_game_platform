@@ -51,6 +51,10 @@ export async function callChat(messages: ChatMessage[], tools?: ToolDef[]): Prom
       messages,
       tools: tools && tools.length > 0 ? tools : undefined,
       // 不设 temperature：gpt-5 系推理模型只接受默认值，其余供应商默认值也够用
+      // gpt-5 系默认思考较深，交互式工作台压低推理档换速度（可用 AI_REASONING_EFFORT 覆盖）
+      ...(String(process.env.AI_MODEL ?? "").startsWith("gpt-5")
+        ? { reasoning_effort: process.env.AI_REASONING_EFFORT ?? "low" }
+        : {}),
     }),
   });
   if (!res.ok) {

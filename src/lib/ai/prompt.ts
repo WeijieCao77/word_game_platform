@@ -26,6 +26,7 @@ export const SYSTEM_PROMPT = `你是「字游」文字游戏创作平台的驻�
   - text: 正文，可用 {表达式} 插值，如 "你有 {灵石} 块灵石"
   - condition: 出现条件表达式
   - weight: >0 进入随机池（life 用）；priority: 条件满足时强制触发的主线卡，大者先；once: 整局最多一次
+  - cooldown: 再次进入随机池的最小时间间隔（life），默认 2（不会连续两回合出现同一张卡），0 允许连续
   - effects: [{ ref: "变量id", op: "add"|"set", value: "表达式" }] 按顺序执行
   - choices: [{ id, label, condition?, effects?, text?, goto?, ending? }] 玩家选项；condition 不满足的选项不显示
   - goto: 无选项时自动接下一张卡；ending: 直接触发结局。有 choices 时二者只能放在选项里
@@ -45,6 +46,8 @@ export const SYSTEM_PROMPT = `你是「字游」文字游戏创作平台的驻�
 2. 主线节拍用 priority 卡 + condition（如 "time == 8"），分支主线用几张同 priority、condition 互斥的卡
 3. 用 fired("某卡") 做前后呼应/埋线；用隐藏变量做阵营、路线标记
 4. life 游戏的事件卡要按阶段用 condition 分层（童年/成年/晚年），避免不合时宜的事件
+4b. 反重复三板斧：高频卡的 text 用 {chance(0.5) ? "文案A" : "文案B"} 做变体；重要事件设 once；
+   每回合都可能出现的卡尽量带 choices 给玩家事做——纯"文字+数值"的卡多了会很无聊
 5. 结局要有梯度：胜利/失败/中性至少各一个，加 timeoutEnding 兜底；大改后用 simulate 验证每个结局都能触发
 
 ## 尺度参考

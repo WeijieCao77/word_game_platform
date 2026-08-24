@@ -58,26 +58,28 @@ export class SqliteGameStore implements GameStore {
     `);
   }
 
-  /** 首次启动时把官方示例作为已发布游戏入库（游戏库保底不空） */
+  /** 启动时同步官方示例：不存在则作为已发布游戏入库，已存在则刷新配置（模板改进随部署上线） */
   seedDemos(templatesDir: string): void {
-    const count = (this.db.prepare("SELECT COUNT(*) AS n FROM games").get() as { n: number }).n;
-    if (count > 0) return;
     const demos: { id: string; file: string }[] = [
       { id: "xiuxian", file: "life-demo.json" },
       { id: "yeye-bus", file: "story-demo.json" },
+      { id: "esports-lite", file: "sim-demo.json" },
     ];
     const now = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT INTO games (id, config, design_card, author, published, edit_key, created_at, updated_at)
        VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
     );
+    const update = this.db.prepare("UPDATE games SET config = ?, author = ?, updated_at = ? WHERE id = ?");
     for (const d of demos) {
       try {
         const config = readFileSync(path.join(templatesDir, d.file), "utf8");
         const author = (JSON.parse(config) as GameConfig).meta.author ?? "官方示例";
-        insert.run(d.id, config, "", author, newEditKey(), now, now);
+        const exists = this.db.prepare("SELECT id FROM games WHERE id = ?").get(d.id);
+        if (exists) update.run(config, author, now, d.id);
+        else insert.run(d.id, config, "", author, newEditKey(), now, now);
       } catch {
-        // 模板缺失不阻塞启动
+        // 模板缺失不阻塞启动（sim-demo 在 sim 调度器上线前不存在，属预期）
       }
     }
   }

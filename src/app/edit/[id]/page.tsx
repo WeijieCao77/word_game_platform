@@ -33,7 +33,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatSeconds, setChatSeconds] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!chatBusy) return;
+    setChatSeconds(0);
+    const t = setInterval(() => setChatSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [chatBusy]);
 
   useEffect(() => {
     setEditKey(localStorage.getItem(`wgp_key_${id}`));
@@ -139,11 +147,14 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setChatBusy(true);
     try {
       if (dirty) await save();
+      const controller = new AbortController();
+      const kill = setTimeout(() => controller.abort(), 300000);
       const res = await fetch(`/api/games/${id}/assistant`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-edit-key": editKey },
         body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system") }),
-      });
+        signal: controller.signal,
+      }).finally(() => clearTimeout(kill));
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "AI 请求失败");
       setChat((c) => [...c, { role: "assistant", content: body.reply ?? "（无回复）" }]);
@@ -252,7 +263,11 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 {m.content}
               </div>
             ))}
-            {chatBusy && <div className="chat-msg system">AI 策划思考中…</div>}
+            {chatBusy && (
+              <div className="chat-msg system">
+                AI 策划工作中… {chatSeconds}s{chatSeconds > 15 ? "（生成/修改配置通常要 30~120 秒，它可能正在跑校验和模拟）" : ""}
+              </div>
+            )}
             <div ref={chatEndRef} />
           </div>
           <div className="chat-input">

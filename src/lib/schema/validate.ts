@@ -85,8 +85,8 @@ class Validator {
       if ((card.goto || card.ending) && card.choices?.length) {
         this.error(base, `卡片 "${card.id}" 有选项时不能再设置卡级 goto/ending（放到选项里）`);
       }
-      if (!isLife && (card.weight !== undefined || card.priority !== undefined)) {
-        this.warn(base, `story 调度器不使用 weight/priority（卡片 "${card.id}"）`);
+      if (!isLife && (card.weight !== undefined || card.priority !== undefined || card.cooldown !== undefined)) {
+        this.warn(base, `story 调度器不使用 weight/priority/cooldown（卡片 "${card.id}"）`);
       }
       const cseen = new Set<string>();
       for (const [j, ch] of (card.choices ?? []).entries()) {

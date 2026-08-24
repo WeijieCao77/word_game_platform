@@ -125,6 +125,8 @@ function resolveCard(config: GameConfig, state: GameState, scope: GameScope, sta
     const card = config.cards.find((c) => c.id === id);
     if (!card) throw new Error(`卡片 "${id}" 不存在`);
     state.fired[card.id] = (state.fired[card.id] ?? 0) + 1;
+    if (!state.lastFired) state.lastFired = {};
+    state.lastFired[card.id] = state.time ?? state.turn;
     state.turn += 1;
     applyEffects(config, state, scope, card.effects);
     state.log.push({ kind: "card", text: renderText(card.text, scope), turn: state.turn });
@@ -168,6 +170,7 @@ export function initState(config: GameConfig, seed: number): GameState {
     time: config.driver.kind === "life" ? config.driver.time.start : undefined,
     vars: Object.fromEntries(config.vars.map((v) => [v.id, clampVar(config, v.id, v.initial)])),
     fired: {},
+    lastFired: {},
     log: [],
     seed,
     rngState: rng.state(),
@@ -210,13 +213,23 @@ export function step(config: GameConfig, input: GameState): GameState {
     resolveCard(config, state, scope, eligiblePriority[0].id);
   } else {
     // 2) 随机池：按权重抽 drawsPerTurn 张
+    const DEFAULT_COOLDOWN = 2;
+    const lastFired = state.lastFired ?? {};
+    const offCooldown = (c: (typeof config.cards)[number]): boolean => {
+      const last = Object.prototype.hasOwnProperty.call(lastFired, c.id) ? lastFired[c.id] : undefined;
+      if (last === undefined) return true;
+      return (state.time ?? 0) - last >= (c.cooldown ?? DEFAULT_COOLDOWN);
+    };
     const draws = config.driver.drawsPerTurn ?? 1;
     for (let d = 0; d < draws; d++) {
       if (state.ended || state.pendingCard) break;
-      const pool = config.cards
+      const eligible = config.cards
         .filter((c) => (c.weight ?? 0) > 0)
         .filter((c) => !(c.once && (state.fired[c.id] ?? 0) > 0))
         .filter((c) => !c.condition || truthy(evaluate(c.condition, scope)));
+      // 冷却过滤防止同一张卡连年出现；若过滤后池子空了则放宽（小卡池不至于停摆）
+      const cooled = eligible.filter(offCooldown);
+      const pool = cooled.length > 0 ? cooled : eligible;
       if (pool.length === 0) break;
       const total = pool.reduce((s, c) => s + (c.weight ?? 0), 0);
       let r = rng.next() * total;

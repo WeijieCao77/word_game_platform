@@ -17,7 +17,7 @@ export interface GameSummary {
   title: string;
   description: string;
   author: string;
-  kind: "story" | "life" | "unknown";
+  kind: "story" | "life" | "sim" | "unknown";
   updatedAt: string;
 }
 

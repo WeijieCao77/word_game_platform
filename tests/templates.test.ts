@@ -38,6 +38,27 @@ describe("官方示例：修仙人生重开（life）", () => {
   });
 });
 
+describe("官方示例：电竞经理 Lite（sim）", () => {
+  const raw = load("sim-demo.json");
+
+  it("通过结构 + 语义校验，无错误无警告", () => {
+    const r = validateGameConfig(raw);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.filter((i) => i.severity === "warning")).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("模拟 300 局：无错误、正常结束、王朝与生涯落幕可达、事件卡全部出现过", { timeout: 60000 }, () => {
+    const r = validateGameConfig(raw);
+    const report = simulate(r.config!, 300, 999);
+    expect(report.errors).toEqual([]);
+    expect(report.endings["__unfinished__"]).toBeUndefined();
+    expect(report.endings["王朝"]?.count ?? 0).toBeGreaterThan(0);
+    expect(report.endings["__implicit__"]?.count ?? 0).toBeGreaterThan(0);
+    expect(report.unfiredCards).toEqual([]);
+  });
+});
+
 describe("官方示例：雨夜末班车（story）", () => {
   const raw = load("story-demo.json");
 

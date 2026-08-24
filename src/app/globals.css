@@ -337,6 +337,98 @@ button {
   color: var(--defeat);
 }
 
+.log-action {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.log-settlement {
+  white-space: pre-wrap;
+  font-weight: 600;
+}
+
+.roster {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roster-group summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.roster-scroll {
+  overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.roster table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 420px;
+}
+
+.roster th,
+.roster td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.roster tr:last-child td {
+  border-bottom: none;
+}
+
+.roster th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-btn {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 14px;
+}
+.action-btn:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.action-btn .uses {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.target-pick {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
 .player-footer {
   text-align: center;
   font-size: 13px;

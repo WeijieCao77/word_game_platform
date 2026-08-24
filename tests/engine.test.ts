@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { GameConfig } from "@/lib/schema";
-import { initState, step, choose, pendingChoices } from "@/lib/engine";
+import {
+  initState,
+  step,
+  choose,
+  pendingChoices,
+  performAction,
+  endTurn,
+  availableActions,
+  eligibleTargets,
+} from "@/lib/engine";
 import { simulate } from "@/lib/simulate";
 
 const lifeGame: GameConfig = {
@@ -181,6 +190,126 @@ describe("story 调度器", () => {
       ],
     };
     expect(() => initState(loop, 1)).toThrow(/链过长/);
+  });
+});
+
+describe("sim 调度器", () => {
+  const simGame: GameConfig = {
+    schemaVersion: 1,
+    meta: { title: "小队经营" },
+    driver: {
+      kind: "sim",
+      time: { turnLabel: "周", cycleLabel: "季", turnsPerCycle: 3, maxCycles: 2 },
+      drawsPerTurn: 0,
+    },
+    vars: [
+      { id: "钱", name: "钱", initial: 10, min: 0 },
+      { id: "分", name: "分", initial: 0, min: 0, resetEachCycle: true },
+    ],
+    entityTypes: [
+      { id: "队员", name: "队员", attributes: [{ id: "力量", name: "力量", min: 1, max: 99 }] },
+    ],
+    entities: [
+      { id: "甲", type: "队员", name: "小甲", attrs: { 力量: 50 }, tags: ["主力"] },
+      { id: "乙", type: "队员", name: "小乙", attrs: { 力量: 40 }, tags: ["候补"] },
+    ],
+    derived: [{ id: "实力", name: "实力", expr: 'avg("队员", "力量", "主力")' }],
+    actions: [
+      {
+        id: "训练",
+        name: "训练",
+        target: { entityType: "队员", condition: 'tag("主力")' },
+        condition: "钱 >= 2",
+        effects: [
+          { ref: "钱", op: "add", value: "-2" },
+          { ref: "target.力量", op: "add", value: "5" },
+        ],
+        text: "训练了 {target.name}",
+      },
+      {
+        id: "提拔",
+        name: "提拔",
+        target: { entityType: "队员", condition: 'tag("候补")' },
+        effects: [
+          { ref: "target", op: "remove_tag", tag: "候补" },
+          { ref: "target", op: "add_tag", tag: "主力" },
+        ],
+      },
+    ],
+    settlements: [
+      {
+        id: "比赛",
+        name: "比赛",
+        data: [{ 对手: 45 }, { 对手: 55 }],
+        compute: [{ id: "差", expr: "实力 - row.对手" }],
+        outcomes: [
+          { id: "胜", condition: "差 >= 0", effects: [{ ref: "分", op: "add", value: "3" }], text: "胜（差 {差}）" },
+          { id: "负", condition: "1", effects: [], text: "负" },
+        ],
+      },
+    ],
+    curves: [
+      {
+        id: "消耗",
+        name: "消耗",
+        entityType: "队员",
+        phase: "turn",
+        condition: 'tag("主力")',
+        effects: [{ ref: "self.力量", op: "add", value: "-1" }],
+      },
+    ],
+    cards: [],
+    endings: [{ id: "满分", title: "满分", kind: "victory", condition: "分 >= 999" }],
+    text: { timeoutEnding: { title: "收摊" } },
+  };
+
+  it("决策：条件/次数/目标过滤生效，效果落到实体", () => {
+    let s = initState(simGame, 5);
+    expect(s.turn).toBe(1);
+    expect(s.cycle).toBe(1);
+    const acts = availableActions(simGame, s);
+    expect(acts.find((a) => a.id === "训练")?.available).toBe(true);
+    expect(eligibleTargets(simGame, s, "训练").map((t) => t.id)).toEqual(["甲"]);
+    s = performAction(simGame, s, "训练", "甲");
+    expect(s.entities!["甲"].attrs.力量).toBe(55);
+    expect(s.vars.钱).toBe(8);
+    expect(() => performAction(simGame, s, "训练", "甲")).toThrow(/次数已用完/);
+  });
+
+  it("标签操作改变目标池与聚合", () => {
+    let s = initState(simGame, 5);
+    s = performAction(simGame, s, "提拔", "乙");
+    expect(s.entities!["乙"].tags).toContain("主力");
+    expect(eligibleTargets(simGame, s, "训练").map((t) => t.id)).toEqual(["甲", "乙"]);
+  });
+
+  it("endTurn：结算按 data 行推进，曲线消耗，回合与周期滚动，resetEachCycle 生效", () => {
+    let s = initState(simGame, 5);
+    s = endTurn(simGame, s); // 第1周：实力50 vs 45 → 胜
+    expect(s.vars.分).toBe(3);
+    expect(s.turn).toBe(2);
+    expect(s.entities!["甲"].attrs.力量).toBe(49); // 曲线 -1
+    expect(s.log.some((l) => l.kind === "settlement" && l.text.includes("胜"))).toBe(true);
+    s = endTurn(simGame, s); // 第2周：49 vs 55 → 负
+    expect(s.vars.分).toBe(3);
+    s = endTurn(simGame, s); // 第3周：季末滚动
+    expect(s.cycle).toBe(2);
+    expect(s.turn).toBe(1);
+    expect(s.vars.分).toBe(0); // resetEachCycle
+    s = endTurn(simGame, s);
+    s = endTurn(simGame, s);
+    s = endTurn(simGame, s); // 第2季末 → maxCycles 用尽
+    expect(s.ended?.title).toBe("收摊");
+  });
+
+  it("同种子同操作可复现", () => {
+    const run = (): string => {
+      let s = initState(simGame, 42);
+      s = performAction(simGame, s, "训练", "甲");
+      while (!s.ended) s = endTurn(simGame, s);
+      return JSON.stringify([s.log, s.vars, s.entities]);
+    };
+    expect(run()).toBe(run());
   });
 });
 

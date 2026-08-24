@@ -151,7 +151,7 @@ export class SqliteGameStore implements GameStore {
       const config = JSON.parse(row.config) as GameConfig;
       title = config.meta?.title ?? row.id;
       description = config.meta?.description ?? "";
-      kind = config.driver?.kind === "story" ? "story" : config.driver?.kind === "life" ? "life" : "unknown";
+      kind = (["story", "life", "sim"] as const).find((k) => k === config.driver?.kind) ?? "unknown";
     } catch {
       // 摘要解析失败不致命
     }

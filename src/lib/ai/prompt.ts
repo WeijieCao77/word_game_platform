@@ -38,9 +38,12 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
 - schemaVersion: 1
 - meta: { title, description?, author?, intro? } intro 是开场白
 - theme?: { preset?: "paper"|"dark"|"terminal", accent?: "#rrggbb" }
-- driver: 二选一
+- driver: 三选一
   - { kind: "story", startCard: "卡id" } 分支叙事：从起始卡开始，靠 goto 跳转
   - { kind: "life", time: { label: "岁", start: 0, step: 1, max: 100 }, drawsPerTurn?: 1 } 随机成长：时间自动推进，每回合抽卡
+  - { kind: "sim", time: { turnLabel: "周", cycleLabel?: "赛季", turnsPerCycle?: 10, maxCycles: 3 }, drawsPerTurn?: 1 }
+    经营模拟：玩家每回合主动执行决策（可多个）→ 结束回合 → 结算 → 随机事件 → 曲线 → 周期滚动。
+    想要「玩家自己操作经营」的游戏（球队/宗门/餐厅/公司）必须选 sim，不要用 life 硬凑
 - vars: [{ id, name, initial, min?, max?, visible? }] 全局数值。id 可用中文。visible:false 表示对玩家隐藏
 - cards: 内容卡数组（核心！）：
   { id, title?, condition?, weight?, priority?, once?, text, effects?, choices?, goto?, ending? }
@@ -53,7 +56,26 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
   - goto: 无选项时自动接下一张卡；ending: 直接触发结局。有 choices 时二者只能放在选项里
 - endings: [{ id, title, kind: "victory"|"defeat"|"neutral", condition?, text?, priority? }]
   condition 满足自动触发（每次卡结算后检查，priority 大者先）；无 condition 的结局必须被某张卡/选项的 ending 引用
-- text?: { turnHeader?, timeoutEnding?: { title, text? } } life 时间走完的兜底结局
+- text?: { turnHeader?, cycleEnd?, timeoutEnding?: { title, text? } } 时间走完的兜底结局
+
+## sim 专用模块（driver.kind = "sim" 时）
+- entityTypes: [{ id, name, attributes: [{id,name,min?,max?,visible?}] }] 实体类型（选手/弟子）
+- entities: [{ id, type, name, attrs: {属性id:数值}, tags?: ["主力"] }] 初始名单；标签做状态流转（主力/替补/市场/伤病）
+- derived: [{ id, name, expr }] 派生值，如 战力 = "avg(\\"选手\\",\\"枪法\\",\\"主力\\") * 0.5 + 士气 * 0.2"
+- actions: 玩家每回合的主动决策（经营感的核心，至少 4~6 个）：
+  [{ id, name, description?, target?: {entityType, condition?(self.*过滤)}, condition?("资金>=20"),
+     usesPerTurn?(默认1,0不限), effects, text?("{target.name}" 插值) }]
+- settlements: 每回合自动结算（比赛/营业）：
+  [{ id, name, every?(每N回合), condition?, data?: [{名称:"雷霆队",强度:60},…](按次数循环取行,row.字段 引用),
+     compute?: [{id,expr}](中间量,后面的可引用前面的), outcomes: [{id,condition,effects,text}](取第一个为真,最后一个条件写 1 兜底) }]
+- curves: 成长/衰退：[{ id, name, entityType, phase: "turn"|"cycle", condition?(self.*), effects(self.*), text? }]
+- vars 可加 resetEachCycle: true（联赛积分每赛季清零）
+- 实体事件卡：cards 里加 scope: { entityType, condition? } —— 随机选一个符合条件的实体绑定为 self，
+  text/effects 可用 self.name/self.属性，选项 effects 也绑定 self
+- 效果扩展：ref 可为 "target.属性"/"self.属性"；op 还可为 "add_tag"/"remove_tag"（ref 为 "target"/"self"，配 tag 字段）
+- 表达式扩展（仅 sim）：cycle（当前周期）、聚合 avg/sum/count/max_of/min_of("类型","属性","标签"?)、
+  tag("标签")（实体上下文中判断）；turn 在 sim 中是周期内回合数
+- sim 的主线节拍不用 priority 卡：用 settlement（如赛季末总结 condition "turn == 10"）或条件事件实现
 
 ## 表达式语言（不是 JS！）
 只支持：数字、变量名、+ - * / %、比较 == != < <= > >=、&& || !、三元 a ? b : c、括号、字符串字面量（仅用于比较和插值文案）。

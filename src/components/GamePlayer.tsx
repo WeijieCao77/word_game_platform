@@ -3,7 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GameConfig, GameState } from "@/lib/schema";
-import { initState, step, choose, pendingChoices } from "@/lib/engine";
+import {
+  initState,
+  step,
+  choose,
+  pendingChoices,
+  performAction,
+  endTurn,
+  availableActions,
+  eligibleTargets,
+  derivedValues,
+} from "@/lib/engine";
 
 // 编辑器与播放器同源：/g/:id 的玩家页面和 /edit/:id 的实时预览
 // 用的都是这一个组件，换 mode 而已。
@@ -29,6 +39,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   const [state, setState] = useState<GameState | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [targetPick, setTargetPick] = useState<string | null>(null); // 正在选目标的决策 id
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const newGame = useCallback((): void => {
@@ -36,12 +47,12 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
       setState(initState(config, seed));
       setFatal(null);
+      setTargetPick(null);
     } catch (err) {
       setFatal(err instanceof Error ? err.message : String(err));
     }
   }, [config]);
 
-  // 初始化：play 模式尝试读档，失败则开新局
   useEffect(() => {
     if (mode === "play" && gameId) {
       try {
@@ -49,8 +60,8 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
         if (raw) {
           const saved = JSON.parse(raw) as { v: number; state: GameState };
           if (saved.v === 1 && saved.state && typeof saved.state.turn === "number") {
-            // 试运行一次派生计算，验证存档与当前配置兼容
             pendingChoices(config, saved.state);
+            availableActions(config, saved.state);
             setState(saved.state);
             return;
           }
@@ -62,7 +73,6 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
     newGame();
   }, [config, gameId, mode, newGame]);
 
-  // 自动存档
   useEffect(() => {
     if (mode === "play" && gameId && state) {
       try {
@@ -86,16 +96,33 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
     }
   }, [config, state]);
 
-  const act = useCallback(
-    (fn: () => GameState): void => {
-      try {
-        setState(fn());
-      } catch (err) {
-        setFatal(err instanceof Error ? err.message : String(err));
-      }
-    },
-    []
-  );
+  const isSim = config.driver.kind === "sim";
+  const actions = useMemo(() => {
+    if (!state || !isSim) return [];
+    try {
+      return availableActions(config, state);
+    } catch {
+      return [];
+    }
+  }, [config, state, isSim]);
+
+  const derived = useMemo(() => {
+    if (!state || !isSim) return [];
+    try {
+      return derivedValues(config, state);
+    } catch {
+      return [];
+    }
+  }, [config, state, isSim]);
+
+  const act = useCallback((fn: () => GameState): void => {
+    try {
+      setState(fn());
+      setTargetPick(null);
+    } catch (err) {
+      setFatal(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   const restart = useCallback((): void => {
     if (mode === "play" && gameId) {
@@ -143,6 +170,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   const visibleVars = config.vars.filter((v) => v.visible !== false);
   const timeLabel = config.driver.kind === "life" ? config.driver.time.label : null;
   const continueLabel = timeLabel === "岁" ? "过一年 ▸" : timeLabel ? `下一${timeLabel} ▸` : "继续 ▸";
+  const simTime = isSim && config.driver.kind === "sim" ? config.driver.time : null;
 
   return (
     <div className={`player ${themeClass}`} style={accentStyle}>
@@ -164,12 +192,26 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
               {timeLabel}数 <b>{formatNum(state.time ?? 0)}</b>
             </span>
           )}
+          {simTime && (
+            <span className="stat">
+              {simTime.cycleLabel && simTime.turnsPerCycle
+                ? `第 ${state.cycle} ${simTime.cycleLabel} · 第 ${state.turn} ${simTime.turnLabel}`
+                : `第 ${state.turn} ${simTime.turnLabel}`}
+            </span>
+          )}
           {visibleVars.map((v) => (
             <span className="stat" key={v.id}>
               {v.name} <b>{formatNum(state.vars[v.id] ?? 0)}</b>
             </span>
           ))}
+          {derived.map((d) => (
+            <span className="stat" key={d.id}>
+              {d.name} <b>{formatNum(d.value)}</b>
+            </span>
+          ))}
         </div>
+
+        {isSim && <Roster config={config} state={state} />}
 
         <div className="gamelog">
           {state.log.map((entry, i) => (
@@ -198,6 +240,44 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                 {c.label}
               </button>
             ))
+          ) : isSim ? (
+            <>
+              <div className="action-grid">
+                {actions.map((a) =>
+                  targetPick === a.id ? (
+                    <div key={a.id} className="target-pick">
+                      <span>{a.name}：选择目标</span>
+                      {eligibleTargets(config, state, a.id).map((t) => (
+                        <button
+                          key={t.id}
+                          className="choice-btn"
+                          onClick={() => act(() => performAction(config, state, a.id, t.id))}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                      <button className="linklike" onClick={() => setTargetPick(null)}>
+                        取消
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      key={a.id}
+                      className="action-btn"
+                      disabled={!a.available}
+                      title={a.reason ?? a.description}
+                      onClick={() => (a.needsTarget ? setTargetPick(a.id) : act(() => performAction(config, state, a.id)))}
+                    >
+                      {a.name}
+                      {a.usesLeft !== null && <span className="uses">×{a.usesLeft}</span>}
+                    </button>
+                  )
+                )}
+              </div>
+              <button className="continue-btn" onClick={() => act(() => endTurn(config, state))}>
+                结束本{simTime?.turnLabel ?? "回合"} ▸
+              </button>
+            </>
           ) : config.driver.kind === "life" ? (
             <button className="continue-btn" onClick={() => act(() => step(config, state))}>
               {continueLabel}
@@ -231,6 +311,60 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** sim 阵容面板：按实体类型分表展示可见属性与标签 */
+function Roster({ config, state }: { config: GameConfig; state: GameState }): React.ReactElement | null {
+  if (!config.entityTypes?.length || !state.entities) return null;
+  return (
+    <div className="roster">
+      {config.entityTypes.map((t) => {
+        const members = (config.entities ?? []).filter((e) => e.type === t.id && state.entities![e.id]);
+        if (members.length === 0) return null;
+        const cols = t.attributes.filter((a) => a.visible !== false);
+        return (
+          <details key={t.id} className="roster-group" open>
+            <summary>
+              {t.name}（{members.length}）
+            </summary>
+            <div className="roster-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    {cols.map((a) => (
+                      <th key={a.id}>{a.name}</th>
+                    ))}
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((e) => {
+                    const st = state.entities![e.id];
+                    return (
+                      <tr key={e.id}>
+                        <td>{e.name}</td>
+                        {cols.map((a) => (
+                          <td key={a.id}>{formatNum(st.attrs[a.id] ?? 0)}</td>
+                        ))}
+                        <td>
+                          {st.tags.map((tag) => (
+                            <span key={tag} className="tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }

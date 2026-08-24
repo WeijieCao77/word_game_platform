@@ -1,0 +1,948 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "title": "电竞经理 Lite",
+    "description": "接手一支中游战队，三个赛季，看你能带它走多远。每周安排训练、转会、团建，然后打比赛——经营模拟调度器的官方示范。",
+    "author": "官方示例",
+    "intro": "你接手了中游战队「北辰」。预算有限，赛程无情。\n一个赛季 10 周，每周你可以安排训练、转会、商务，然后迎来一场联赛。\n三个赛季之后，人们会怎么记住你？"
+  },
+  "theme": {
+    "preset": "dark",
+    "accent": "#4a90d9"
+  },
+  "driver": {
+    "kind": "sim",
+    "time": {
+      "turnLabel": "周",
+      "cycleLabel": "赛季",
+      "turnsPerCycle": 10,
+      "maxCycles": 3
+    },
+    "drawsPerTurn": 1
+  },
+  "vars": [
+    {
+      "id": "资金",
+      "name": "资金",
+      "initial": 60,
+      "min": 0,
+      "max": 999
+    },
+    {
+      "id": "声望",
+      "name": "声望",
+      "initial": 35,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "士气",
+      "name": "士气",
+      "initial": 60,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "积分",
+      "name": "积分",
+      "initial": 0,
+      "min": 0,
+      "max": 99,
+      "resetEachCycle": true
+    },
+    {
+      "id": "冠军数",
+      "name": "冠军",
+      "initial": 0,
+      "min": 0,
+      "max": 9
+    },
+    {
+      "id": "运势",
+      "name": "运势",
+      "initial": 0,
+      "min": 0,
+      "max": 1,
+      "visible": false
+    }
+  ],
+  "entityTypes": [
+    {
+      "id": "选手",
+      "name": "选手",
+      "attributes": [
+        {
+          "id": "枪法",
+          "name": "枪法",
+          "min": 30,
+          "max": 99
+        },
+        {
+          "id": "意识",
+          "name": "意识",
+          "min": 30,
+          "max": 99
+        },
+        {
+          "id": "体能",
+          "name": "体能",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "id": "年龄",
+          "name": "年龄",
+          "min": 15,
+          "max": 40
+        },
+        {
+          "id": "潜力",
+          "name": "潜力",
+          "min": 40,
+          "max": 99,
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "id": "影刃",
+      "type": "选手",
+      "name": "影刃",
+      "attrs": {
+        "枪法": 78,
+        "意识": 70,
+        "体能": 85,
+        "年龄": 22,
+        "潜力": 88
+      },
+      "tags": [
+        "主力"
+      ]
+    },
+    {
+      "id": "白泽",
+      "type": "选手",
+      "name": "白泽",
+      "attrs": {
+        "枪法": 72,
+        "意识": 80,
+        "体能": 80,
+        "年龄": 24,
+        "潜力": 82
+      },
+      "tags": [
+        "主力"
+      ]
+    },
+    {
+      "id": "苍梧",
+      "type": "选手",
+      "name": "苍梧",
+      "attrs": {
+        "枪法": 68,
+        "意识": 74,
+        "体能": 88,
+        "年龄": 20,
+        "潜力": 90
+      },
+      "tags": [
+        "主力"
+      ]
+    },
+    {
+      "id": "老猫",
+      "type": "选手",
+      "name": "老猫",
+      "attrs": {
+        "枪法": 75,
+        "意识": 84,
+        "体能": 62,
+        "年龄": 28,
+        "潜力": 76
+      },
+      "tags": [
+        "主力"
+      ]
+    },
+    {
+      "id": "石头",
+      "type": "选手",
+      "name": "石头",
+      "attrs": {
+        "枪法": 65,
+        "意识": 66,
+        "体能": 90,
+        "年龄": 19,
+        "潜力": 85
+      },
+      "tags": [
+        "主力"
+      ]
+    },
+    {
+      "id": "小满",
+      "type": "选手",
+      "name": "小满",
+      "attrs": {
+        "枪法": 60,
+        "意识": 62,
+        "体能": 95,
+        "年龄": 17,
+        "潜力": 92
+      },
+      "tags": [
+        "替补"
+      ]
+    },
+    {
+      "id": "无归",
+      "type": "选手",
+      "name": "无归",
+      "attrs": {
+        "枪法": 85,
+        "意识": 78,
+        "体能": 75,
+        "年龄": 23,
+        "潜力": 88
+      },
+      "tags": [
+        "市场"
+      ]
+    },
+    {
+      "id": "竹青",
+      "type": "选手",
+      "name": "竹青",
+      "attrs": {
+        "枪法": 70,
+        "意识": 76,
+        "体能": 82,
+        "年龄": 21,
+        "潜力": 86
+      },
+      "tags": [
+        "市场"
+      ]
+    },
+    {
+      "id": "孤火",
+      "type": "选手",
+      "name": "孤火",
+      "attrs": {
+        "枪法": 80,
+        "意识": 60,
+        "体能": 70,
+        "年龄": 26,
+        "潜力": 80
+      },
+      "tags": [
+        "市场"
+      ]
+    }
+  ],
+  "derived": [
+    {
+      "id": "战力",
+      "name": "战力",
+      "expr": "avg(\"选手\", \"枪法\", \"主力\") * 0.45 + avg(\"选手\", \"意识\", \"主力\") * 0.35 + avg(\"选手\", \"体能\", \"主力\") * 0.1 + 士气 * 0.1"
+    }
+  ],
+  "actions": [
+    {
+      "id": "特训枪法",
+      "name": "特训·枪法",
+      "description": "花 3 万加练枪法（受潜力上限约束，消耗体能）",
+      "target": {
+        "entityType": "选手",
+        "condition": "!tag(\"市场\")"
+      },
+      "condition": "资金 >= 3",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "-3"
+        },
+        {
+          "ref": "target.枪法",
+          "op": "add",
+          "value": "target.枪法 < target.潜力 ? randint(1, 3) : (chance(0.3) ? 1 : 0)"
+        },
+        {
+          "ref": "target.体能",
+          "op": "add",
+          "value": "-randint(2, 5)"
+        }
+      ],
+      "text": "加练枪法：{target.name} 枪法 → {target.枪法}"
+    },
+    {
+      "id": "特训意识",
+      "name": "特训·意识",
+      "description": "花 3 万复盘录像磨意识（受潜力上限约束）",
+      "target": {
+        "entityType": "选手",
+        "condition": "!tag(\"市场\")"
+      },
+      "condition": "资金 >= 3",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "-3"
+        },
+        {
+          "ref": "target.意识",
+          "op": "add",
+          "value": "target.意识 < target.潜力 ? randint(1, 3) : (chance(0.3) ? 1 : 0)"
+        },
+        {
+          "ref": "target.体能",
+          "op": "add",
+          "value": "-randint(1, 4)"
+        }
+      ],
+      "text": "复盘特训：{target.name} 意识 → {target.意识}"
+    },
+    {
+      "id": "体能调理",
+      "name": "体能调理",
+      "description": "花 2 万请理疗师，恢复体能",
+      "target": {
+        "entityType": "选手",
+        "condition": "!tag(\"市场\")"
+      },
+      "condition": "资金 >= 2",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "-2"
+        },
+        {
+          "ref": "target.体能",
+          "op": "add",
+          "value": "randint(6, 12)"
+        }
+      ],
+      "text": "理疗调理：{target.name} 体能 → {target.体能}"
+    },
+    {
+      "id": "签下新援",
+      "name": "转会·签人",
+      "description": "花 25 万从转会市场签下选手",
+      "target": {
+        "entityType": "选手",
+        "condition": "tag(\"市场\")"
+      },
+      "condition": "资金 >= 25",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "-25"
+        },
+        {
+          "ref": "target",
+          "op": "remove_tag",
+          "tag": "市场"
+        },
+        {
+          "ref": "target",
+          "op": "add_tag",
+          "tag": "主力"
+        },
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "3"
+        }
+      ],
+      "text": "重磅官宣：{target.name} 加盟北辰！转会费 25 万"
+    },
+    {
+      "id": "轮换休整",
+      "name": "轮换·下放",
+      "description": "把主力转入替补席休整（不再计入战力，不再消耗体能）",
+      "target": {
+        "entityType": "选手",
+        "condition": "tag(\"主力\")"
+      },
+      "usesPerTurn": 2,
+      "effects": [
+        {
+          "ref": "target",
+          "op": "remove_tag",
+          "tag": "主力"
+        },
+        {
+          "ref": "target",
+          "op": "add_tag",
+          "tag": "替补"
+        }
+      ],
+      "text": "{target.name} 转入替补席休整"
+    },
+    {
+      "id": "提拔首发",
+      "name": "轮换·提拔",
+      "description": "把替补提上首发（计入战力）",
+      "target": {
+        "entityType": "选手",
+        "condition": "tag(\"替补\")"
+      },
+      "usesPerTurn": 2,
+      "effects": [
+        {
+          "ref": "target",
+          "op": "remove_tag",
+          "tag": "替补"
+        },
+        {
+          "ref": "target",
+          "op": "add_tag",
+          "tag": "主力"
+        }
+      ],
+      "text": "{target.name} 进入首发名单"
+    },
+    {
+      "id": "商业活动",
+      "name": "商务·接活动",
+      "description": "接商务活动赚钱，队员会有点怨言",
+      "condition": "声望 >= 25",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "randint(6, 12)"
+        },
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "-3"
+        }
+      ],
+      "text": "接了场商务活动，进账不少，训练时间少了半天"
+    },
+    {
+      "id": "团建",
+      "name": "后勤·团建",
+      "description": "花 5 万全队团建，回复士气",
+      "condition": "资金 >= 5",
+      "effects": [
+        {
+          "ref": "资金",
+          "op": "add",
+          "value": "-5"
+        },
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "randint(6, 12)"
+        }
+      ],
+      "text": "全队火锅局，笑声不断，士气回升"
+    }
+  ],
+  "settlements": [
+    {
+      "id": "联赛周赛",
+      "name": "联赛",
+      "every": 1,
+      "data": [
+        {
+          "名称": "雷霆",
+          "强度": 66
+        },
+        {
+          "名称": "星河",
+          "强度": 70
+        },
+        {
+          "名称": "暗涌",
+          "强度": 63
+        },
+        {
+          "名称": "烈阳",
+          "强度": 74
+        },
+        {
+          "名称": "孤舟",
+          "强度": 60
+        },
+        {
+          "名称": "玄武",
+          "强度": 72
+        },
+        {
+          "名称": "赤霄",
+          "强度": 78
+        },
+        {
+          "名称": "风行",
+          "强度": 68
+        },
+        {
+          "名称": "寒鸦",
+          "强度": 64
+        },
+        {
+          "名称": "王庭",
+          "强度": 82
+        }
+      ],
+      "compute": [
+        {
+          "id": "我方",
+          "expr": "战力 + randint(-8, 8)"
+        },
+        {
+          "id": "敌方",
+          "expr": "row.强度 + randint(-8, 8)"
+        },
+        {
+          "id": "净胜",
+          "expr": "round(我方 - 敌方)"
+        }
+      ],
+      "outcomes": [
+        {
+          "id": "横扫",
+          "condition": "净胜 >= 8",
+          "effects": [
+            {
+              "ref": "积分",
+              "op": "add",
+              "value": "3"
+            },
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "8"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "3"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "5"
+            }
+          ],
+          "text": "vs {row.名称}：2:0 横扫！解说都看嗨了（战力 {round(战力)}）"
+        },
+        {
+          "id": "险胜",
+          "condition": "净胜 > 0",
+          "effects": [
+            {
+              "ref": "积分",
+              "op": "add",
+              "value": "3"
+            },
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "6"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "1"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "2"
+            }
+          ],
+          "text": "vs {row.名称}：2:1 拿下，决胜局惊出一身冷汗"
+        },
+        {
+          "id": "惜败",
+          "condition": "净胜 > -8",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "2"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "-2"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-4"
+            }
+          ],
+          "text": "vs {row.名称}：1:2 惜败，赛后复盘室的灯亮到半夜"
+        },
+        {
+          "id": "溃败",
+          "condition": "1",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "1"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "-4"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-8"
+            }
+          ],
+          "text": "vs {row.名称}：0:2 溃败，弹幕已经开始刷「下课」"
+        }
+      ]
+    },
+    {
+      "id": "赛季总结",
+      "name": "赛季总结",
+      "every": 1,
+      "condition": "turn == 10",
+      "outcomes": [
+        {
+          "id": "夺冠",
+          "condition": "积分 >= 24",
+          "effects": [
+            {
+              "ref": "冠军数",
+              "op": "add",
+              "value": "1"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "15"
+            },
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "30"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "10"
+            }
+          ],
+          "text": "🏆 以 {积分} 分登顶！北辰捧起赛季冠军奖杯，全场高呼你的名字！"
+        },
+        {
+          "id": "季后赛",
+          "condition": "积分 >= 15",
+          "effects": [
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "5"
+            },
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "12"
+            }
+          ],
+          "text": "以 {积分} 分闯进季后赛。没摸到奖杯，但赞助商的电话多起来了"
+        },
+        {
+          "id": "垫底",
+          "condition": "1",
+          "effects": [
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "-10"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-6"
+            }
+          ],
+          "text": "以 {积分} 分结束赛季。管理层的脸色和更衣室的空气一样冷"
+        }
+      ]
+    }
+  ],
+  "curves": [
+    {
+      "id": "每周消耗",
+      "name": "主力消耗",
+      "entityType": "选手",
+      "phase": "turn",
+      "condition": "tag(\"主力\")",
+      "effects": [
+        {
+          "ref": "self.体能",
+          "op": "add",
+          "value": "-randint(1, 3)"
+        }
+      ]
+    },
+    {
+      "id": "赛季年龄",
+      "name": "年龄增长",
+      "entityType": "选手",
+      "phase": "cycle",
+      "effects": [
+        {
+          "ref": "self.年龄",
+          "op": "add",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "老将衰退",
+      "name": "老将衰退",
+      "entityType": "选手",
+      "phase": "cycle",
+      "condition": "self.年龄 >= 27",
+      "effects": [
+        {
+          "ref": "self.枪法",
+          "op": "add",
+          "value": "-randint(1, 3)"
+        },
+        {
+          "ref": "self.体能",
+          "op": "add",
+          "value": "-randint(2, 5)"
+        }
+      ],
+      "text": "岁月不饶人：{self.name} 的反应慢了半拍"
+    },
+    {
+      "id": "新星成长",
+      "name": "新星成长",
+      "entityType": "选手",
+      "phase": "cycle",
+      "condition": "self.年龄 <= 21 && self.枪法 < self.潜力",
+      "effects": [
+        {
+          "ref": "self.枪法",
+          "op": "add",
+          "value": "randint(1, 3)"
+        },
+        {
+          "ref": "self.意识",
+          "op": "add",
+          "value": "randint(1, 2)"
+        }
+      ],
+      "text": "休赛期训练营：{self.name} 肉眼可见地变强了"
+    }
+  ],
+  "cards": [
+    {
+      "id": "状态火热",
+      "weight": 3,
+      "scope": {
+        "entityType": "选手",
+        "condition": "tag(\"主力\")"
+      },
+      "text": "{self.name} 最近手感火热，训练赛大杀四方，全队都被带动了。",
+      "effects": [
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "id": "伤病警报",
+      "weight": 4,
+      "scope": {
+        "entityType": "选手",
+        "condition": "tag(\"主力\") && self.体能 < 45"
+      },
+      "text": "队医报告：{self.name} 的手腕出现劳损征兆（体能 {self.体能}），再硬撑要出大问题。",
+      "effects": [
+        {
+          "ref": "self.体能",
+          "op": "add",
+          "value": "-8"
+        },
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "-5"
+        }
+      ]
+    },
+    {
+      "id": "赞助试探",
+      "weight": 2,
+      "condition": "声望 >= 50",
+      "text": "一家外设品牌递来短约，报价不错，但要占用队员两天拍摄时间。",
+      "choices": [
+        {
+          "id": "签约",
+          "label": "签！钱不嫌多",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "15"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-2"
+            }
+          ],
+          "text": "广告拍得很顺利，就是队员的表演有点僵硬。"
+        },
+        {
+          "id": "婉拒",
+          "label": "赛程太紧，婉拒",
+          "effects": [
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "3"
+            }
+          ],
+          "text": "「以竞技为先」——你的回应被粉丝截图转发，风评上涨。"
+        }
+      ]
+    },
+    {
+      "id": "版本更新",
+      "weight": 2,
+      "text": "游戏大版本更新，地图与武器数值大改，各队都在抢时间适应。",
+      "choices": [
+        {
+          "id": "连夜研究",
+          "label": "教练组连夜拆解新版本",
+          "effects": [
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-3"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "2"
+            }
+          ],
+          "text": "队员顶着黑眼圈上场，但战术库已经翻新了一遍。"
+        },
+        {
+          "id": "顺其自然",
+          "label": "按原节奏训练，慢慢适应",
+          "effects": [
+            {
+              "ref": "运势",
+              "op": "set",
+              "value": "chance(0.5) ? 1 : 0"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "运势 == 1 ? 3 : -5"
+            }
+          ],
+          "text": "{运势 == 1 ? \"新版本恰好适合你们的打法，队员越练越顺。\" : \"训练赛连败——新版本和你们的打法八字不合。\"}"
+        }
+      ]
+    },
+    {
+      "id": "粉丝应援",
+      "weight": 2,
+      "condition": "声望 >= 30",
+      "text": "主场比赛日，粉丝拉起了整面看台的应援横幅。队员路过时都放慢了脚步。",
+      "effects": [
+        {
+          "ref": "士气",
+          "op": "add",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "id": "舆论风波",
+      "weight": 2,
+      "condition": "声望 >= 15",
+      "text": "有营销号剪辑了队员赛后采访，断章取义带起节奏，评论区已经吵起来了。",
+      "choices": [
+        {
+          "id": "公关澄清",
+          "label": "发律师函+完整视频澄清",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "-5"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "2"
+            }
+          ],
+          "text": "完整视频放出，风向逆转，营销号删帖跑路。"
+        },
+        {
+          "id": "硬刚",
+          "label": "队员亲自下场对线",
+          "effects": [
+            {
+              "ref": "运势",
+              "op": "set",
+              "value": "chance(0.5) ? 1 : 0"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "运势 == 1 ? 5 : -8"
+            }
+          ],
+          "text": "{运势 == 1 ? \"对线金句频出，路人缘暴涨，黑称变爱称。\" : \"越描越黑，热搜挂了一整天。\"}"
+        }
+      ]
+    }
+  ],
+  "endings": [
+    {
+      "id": "王朝",
+      "title": "王朝奠基",
+      "kind": "victory",
+      "condition": "冠军数 >= 2",
+      "priority": 20,
+      "text": "两座冠军奖杯并排放进荣誉室。解说提起北辰时，开始用那个词——王朝。而缔造它的人，是你。"
+    },
+    {
+      "id": "声名扫地",
+      "title": "声名扫地",
+      "kind": "defeat",
+      "condition": "声望 <= 0",
+      "priority": 15,
+      "text": "赞助商解约、粉丝脱粉、队员挂上转会名单。你在深夜清空了办公室，把工牌留在了桌上。"
+    }
+  ],
+  "text": {
+    "cycleEnd": "—— 第 {cycle} 赛季落幕（本季 {积分} 分 / 冠军 {冠军数} 座）——",
+    "timeoutEnding": {
+      "title": "生涯落幕",
+      "text": "三个赛季，{冠军数} 座奖杯，声望 {round(声望)}。有人记住了北辰，也有人记住了你。记分牌会清零，故事不会。"
+    }
+  }
+}

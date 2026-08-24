@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { getStore } from "@/lib/store";
-import { blankLife, blankStory } from "@/lib/blank";
+import { blankLife, blankSim, blankStory } from "@/lib/blank";
 import { validateGameConfig } from "@/lib/schema";
 import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
 
@@ -28,8 +28,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const template = body.template ?? "blank-life";
   if (template === "blank-life") config = blankLife(title);
   else if (template === "blank-story") config = blankStory(title);
-  else if (template === "demo-life" || template === "demo-story") {
-    const file = template === "demo-life" ? "life-demo.json" : "story-demo.json";
+  else if (template === "blank-sim") config = blankSim(title);
+  else if (template === "demo-life" || template === "demo-story" || template === "demo-sim") {
+    const file =
+      template === "demo-life" ? "life-demo.json" : template === "demo-story" ? "story-demo.json" : "sim-demo.json";
     try {
       const parsed = JSON.parse(readFileSync(path.join(process.cwd(), "templates", file), "utf8"));
       parsed.meta.title = title === "未命名游戏" ? parsed.meta.title : title;

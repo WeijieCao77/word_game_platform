@@ -1,6 +1,15 @@
 import { GameConfig, GameState } from "@/lib/schema";
-import { initState, step, choose, pendingChoices } from "@/lib/engine";
-import { createRng } from "@/lib/engine";
+import {
+  initState,
+  step,
+  choose,
+  pendingChoices,
+  performAction,
+  endTurn,
+  availableActions,
+  eligibleTargets,
+  createRng,
+} from "@/lib/engine";
 
 // 模拟校验：随机策略跑 N 局，统计结局覆盖率与卡片触发情况。
 // 这是"不可达结局"最有力的检测手段，也是 AI 策划的 simulate 工具。
@@ -49,6 +58,27 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
           state = choose(config, state, pick.id);
         } else if (config.driver.kind === "life") {
           state = step(config, state);
+        } else if (config.driver.kind === "sim") {
+          // 随机策略：每回合随机执行 0~2 个可用决策，再结束回合
+          const wanted = pickRng.int(0, 2);
+          for (let a = 0; a < wanted; a++) {
+            const avail = availableActions(config, state).filter((v) => v.available);
+            if (avail.length === 0) break;
+            const action = avail[pickRng.int(0, avail.length - 1)];
+            try {
+              if (action.needsTarget) {
+                const targets = eligibleTargets(config, state, action.id);
+                if (targets.length === 0) continue;
+                state = performAction(config, state, action.id, targets[pickRng.int(0, targets.length - 1)].id);
+              } else {
+                state = performAction(config, state, action.id);
+              }
+            } catch {
+              // 条件竞争等情况下跳过该决策
+            }
+            if (state.ended) break;
+          }
+          if (!state.ended && !state.pendingCard) state = endTurn(config, state);
         } else {
           break;
         }
@@ -63,9 +93,14 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     const entry = endingCount.get(endedId) ?? { title, count: 0 };
     entry.count += 1;
     endingCount.set(endedId, entry);
-    totalTurns += state.turn;
-    minTurns = Math.min(minTurns, state.turn);
-    maxTurns = Math.max(maxTurns, state.turn);
+    // sim 的 turn 是周期内回合数，换算成全局回合数再统计局长
+    const runTurns =
+      config.driver.kind === "sim"
+        ? ((state.cycle ?? 1) - 1) * (config.driver.time.turnsPerCycle ?? 1) + state.turn
+        : state.turn;
+    totalTurns += runTurns;
+    minTurns = Math.min(minTurns, runTurns);
+    maxTurns = Math.max(maxTurns, runTurns);
     for (const [k, v] of Object.entries(state.vars)) varSums[k] = (varSums[k] ?? 0) + v;
   }
 

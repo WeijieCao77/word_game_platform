@@ -3,7 +3,7 @@ import { getStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-const KIND_CN: Record<string, string> = { life: "随机成长", story: "分支叙事", unknown: "文字游戏" };
+const KIND_CN: Record<string, string> = { life: "随机成长", story: "分支叙事", sim: "经营模拟", unknown: "文字游戏" };
 
 export default function HomePage(): React.ReactElement {
   const games = getStore().listPublished();

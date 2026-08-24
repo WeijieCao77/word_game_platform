@@ -1,0 +1,39 @@
+import Link from "next/link";
+import { getStore } from "@/lib/store";
+
+export const dynamic = "force-dynamic";
+
+export default async function AuthorPage({
+  params,
+}: {
+  params: Promise<{ name: string }>;
+}): Promise<React.ReactElement> {
+  const { name } = await params;
+  const author = decodeURIComponent(name);
+  const games = getStore().listByAuthor(author);
+  return (
+    <div className="site">
+      <header className="site-header">
+        <div className="site-title">
+          <Link href="/">字游 WordPlay</Link>
+        </div>
+      </header>
+      <h1 style={{ fontSize: 24, marginBottom: 6 }}>{author}</h1>
+      <p style={{ color: "var(--muted)", marginBottom: 20 }}>已发布 {games.length} 款游戏</p>
+      {games.length === 0 ? (
+        <p style={{ color: "var(--muted)" }}>这位作者还没有发布过游戏。</p>
+      ) : (
+        <div className="game-grid">
+          {games.map((g) => (
+            <div className="game-card" key={g.id}>
+              <h3>
+                <Link href={`/g/${g.id}`}>{g.title}</Link>
+              </h3>
+              <div className="desc">{g.description || "（暂无简介）"}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

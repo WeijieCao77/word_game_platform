@@ -1,0 +1,49 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main, claude/text-game-platform-handoff-op7cmd]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Railway 有两种 token，认证方式不同：project token 走 RAILWAY_TOKEN，
+    # account token 走 RAILWAY_API_TOKEN。CLI 两者都设时优先 RAILWAY_TOKEN，
+    # 所以不猜类型，先按 project token 试，失败再按 account token 试。
+    # （与 val_manager 仓库的部署工作流同款。）
+    env:
+      HAS_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_ENVIRONMENT: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # 测试与构建前置：坏提交不进生产
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: Deploy
+        if: env.HAS_TOKEN != ''
+        env:
+          TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }}
+        run: |
+          npm i -g @railway/cli
+          if RAILWAY_TOKEN="$TOKEN" railway up --service word-game-platform --detach; then
+            exit 0
+          fi
+          echo "::warning::project-token path failed, retrying as an account token"
+          RAILWAY_API_TOKEN="$TOKEN" railway up --service word-game-platform \
+            --project "$RAILWAY_PROJECT" --environment "$RAILWAY_ENVIRONMENT" --detach
+
+      # 没配 secret 时只做构建验证，不让每次推送都发失败邮件
+      - name: Deploy skipped
+        if: env.HAS_TOKEN == ''
+        run: |
+          echo "::notice::RAILWAY_TOKEN is not set — build verified, deploy skipped."
+          echo "Add it under Settings → Secrets and variables → Actions to deploy automatically."

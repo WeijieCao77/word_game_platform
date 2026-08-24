@@ -6,11 +6,12 @@ import GamePlayer from "@/components/GamePlayer";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { parseCardStatus } from "@/lib/ai/designcard";
+import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, shareBlockReason } from "@/lib/library";
 
 // 创作工作台：左边是 AI 驻场策划（主入口），右边是设计卡/配置/校验/预览。
 // 预览用的就是玩家页的 GamePlayer 组件——编辑器与播放器同源。
 
-type Tab = "preview" | "design" | "config" | "check";
+type Tab = "preview" | "design" | "config" | "check" | "library";
 
 interface ChatMsg {
   role: "user" | "assistant" | "system";
@@ -35,7 +36,22 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatSeconds, setChatSeconds] = useState(0);
+  const [libEntries, setLibEntries] = useState<LibraryEntry[] | null>(null);
+  const [libCategory, setLibCategory] = useState("");
+  const [libQ, setLibQ] = useState("");
+  const [shareCardId, setShareCardId] = useState("");
+  const [shareCategory, setShareCategory] = useState<string>(LIBRARY_CATEGORIES[0]);
+  const [shareTags, setShareTags] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const loadLibrary = useCallback(async (category: string, q: string): Promise<void> => {
+    const params = new URLSearchParams();
+    if (category) params.set("category", category);
+    if (q) params.set("q", q);
+    const res = await fetch(`/api/library?${params.toString()}`);
+    const body = await res.json();
+    setLibEntries(body.entries ?? []);
+  }, []);
 
   useEffect(() => {
     if (!chatBusy) return;
@@ -315,9 +331,17 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 ["design", "设计卡"],
                 ["config", "配置"],
                 ["check", `校验${errorCount > 0 ? ` (${errorCount})` : ""}`],
+                ["library", "内容库"],
               ] as [Tab, string][]
             ).map(([t, label]) => (
-              <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+              <button
+                key={t}
+                className={tab === t ? "active" : ""}
+                onClick={() => {
+                  setTab(t);
+                  if (t === "library" && libEntries === null) void loadLibrary(libCategory, libQ);
+                }}
+              >
                 {label}
               </button>
             ))}
@@ -392,6 +416,123 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                   ))}
                 </div>
                 {simText && <div className="sim-report">{simText}</div>}
+              </div>
+            )}
+            {tab === "library" && (
+              <div>
+                <div className="pane-note" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <select value={libCategory} onChange={(e) => setLibCategory(e.target.value)}>
+                    <option value="">全部分类</option>
+                    {LIBRARY_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={libQ}
+                    placeholder="搜索标题/文案/标签"
+                    style={{ flex: 1, minWidth: 120, padding: "4px 8px" }}
+                    onChange={(e) => setLibQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void loadLibrary(libCategory, libQ);
+                    }}
+                  />
+                  <button className="btn small secondary" onClick={() => void loadLibrary(libCategory, libQ)}>
+                    搜索
+                  </button>
+                </div>
+                <div className="issues">
+                  {libEntries === null && <div className="pane-note">加载中…</div>}
+                  {libEntries?.length === 0 && <div className="pane-note">没有匹配的内容。</div>}
+                  {libEntries?.map((entry) => (
+                    <div key={entry.id} className="lib-card">
+                      <div className="lib-head">
+                        <b>{entry.name}</b>
+                        <span className="tag">{entry.category}</span>
+                        {entry.tags.map((t) => (
+                          <span key={t} className="tag">
+                            {t}
+                          </span>
+                        ))}
+                        <span className="lib-src">
+                          {entry.source === "official" ? "官方" : entry.source === "ai" ? "AI" : entry.author}
+                        </span>
+                        <button
+                          className="btn small"
+                          onClick={() => {
+                            if (!config) return;
+                            const before = config.vars.length;
+                            const { config: next, cardId } = insertLibraryCard(config, entry);
+                            setConfig(next);
+                            setConfigText(JSON.stringify(next, null, 2));
+                            setDirty(true);
+                            setPreviewNonce((n) => n + 1);
+                            const added = next.vars.length - before;
+                            setStatusMsg(`已插入「${cardId}」${added > 0 ? `，并补齐 ${added} 个变量` : ""}（未保存）`);
+                          }}
+                        >
+                          插入
+                        </button>
+                      </div>
+                      <div className="lib-preview">{entry.card.text.slice(0, 100)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="pane-note" style={{ borderTop: "1px solid var(--border)", marginTop: 8 }}>
+                  <b>分享本游戏的卡片到内容库</b>（仅限不依赖其他卡片/实体的独立卡）
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <select value={shareCardId} onChange={(e) => setShareCardId(e.target.value)}>
+                      <option value="">选择卡片…</option>
+                      {config.cards
+                        .filter((c) => !shareBlockReason(c))
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.title || c.id}
+                          </option>
+                        ))}
+                    </select>
+                    <select value={shareCategory} onChange={(e) => setShareCategory(e.target.value)}>
+                      {LIBRARY_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={shareTags}
+                      placeholder="标签，逗号分隔（如 修仙,抉择）"
+                      style={{ padding: "4px 8px" }}
+                      onChange={(e) => setShareTags(e.target.value)}
+                    />
+                    <button
+                      className="btn small secondary"
+                      disabled={!shareCardId}
+                      onClick={() => {
+                        void (async () => {
+                          if (dirty) await save();
+                          const res = await fetch("/api/library", {
+                            method: "POST",
+                            headers: { "content-type": "application/json", "x-edit-key": editKey ?? "" },
+                            body: JSON.stringify({
+                              gameId: id,
+                              cardId: shareCardId,
+                              category: shareCategory,
+                              tags: shareTags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
+                            }),
+                          });
+                          const body = await res.json();
+                          setStatusMsg(res.ok ? "已分享到内容库 ✓" : body.error ?? "分享失败");
+                          if (res.ok) void loadLibrary(libCategory, libQ);
+                        })();
+                      }}
+                    >
+                      分享
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

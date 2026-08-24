@@ -2,7 +2,8 @@ import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { GameConfig } from "@/lib/schema";
+import { GameConfig, CardDef } from "@/lib/schema";
+import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
 import { GameRecord, GameStore, GameSummary } from "./types";
 
 function newId(): string {
@@ -55,6 +56,18 @@ export class SqliteGameStore implements GameStore {
         tokens INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (key, date)
       );
+      CREATE TABLE IF NOT EXISTS library_cards (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '',
+        card TEXT NOT NULL,
+        required_vars TEXT NOT NULL DEFAULT '[]',
+        source TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_library_category ON library_cards(category);
     `);
   }
 
@@ -187,5 +200,104 @@ export class SqliteGameStore implements GameStore {
       .prepare("SELECT requests, tokens FROM ai_usage WHERE key = ? AND date = ?")
       .get(key, today()) as { requests: number; tokens: number } | undefined;
     return row ?? { requests: 0, tokens: 0 };
+  }
+
+  libraryAdd(entry: LibraryEntry): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO library_cards (id, name, category, tags, card, required_vars, source, author, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        entry.id,
+        entry.name,
+        entry.category,
+        entry.tags.join(","),
+        JSON.stringify(entry.card),
+        JSON.stringify(entry.requiredVars),
+        entry.source,
+        entry.author,
+        entry.createdAt
+      );
+  }
+
+  libraryList(filter?: { category?: string; tag?: string; q?: string; limit?: number }): LibraryEntry[] {
+    const rows = this.db
+      .prepare("SELECT * FROM library_cards ORDER BY created_at DESC LIMIT 500")
+      .all() as {
+      id: string;
+      name: string;
+      category: string;
+      tags: string;
+      card: string;
+      required_vars: string;
+      source: string;
+      author: string;
+      created_at: string;
+    }[];
+    const q = filter?.q?.trim().toLowerCase();
+    const out: LibraryEntry[] = [];
+    for (const r of rows) {
+      const tags = r.tags ? r.tags.split(",") : [];
+      if (filter?.category && r.category !== filter.category) continue;
+      if (filter?.tag && !tags.includes(filter.tag)) continue;
+      let card: CardDef;
+      try {
+        card = JSON.parse(r.card);
+      } catch {
+        continue;
+      }
+      if (q && !(r.name.toLowerCase().includes(q) || card.text.toLowerCase().includes(q) || tags.some((t) => t.toLowerCase().includes(q)))) {
+        continue;
+      }
+      out.push({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        tags,
+        card,
+        requiredVars: JSON.parse(r.required_vars || "[]"),
+        source: r.source as LibraryEntry["source"],
+        author: r.author,
+        createdAt: r.created_at,
+      });
+      if (out.length >= (filter?.limit ?? 100)) break;
+    }
+    return out;
+  }
+
+  /** 官方内容入库：按 manifest 从示例模板精选卡片（可复跑，覆盖更新） */
+  seedLibrary(templatesDir: string): void {
+    let manifest: { template: string; cardId: string; category: string; tags: string[] }[];
+    try {
+      manifest = JSON.parse(readFileSync(path.join(templatesDir, "library-manifest.json"), "utf8"));
+    } catch {
+      return;
+    }
+    const configs = new Map<string, GameConfig>();
+    const now = new Date().toISOString();
+    for (const m of manifest) {
+      try {
+        if (!configs.has(m.template)) {
+          configs.set(m.template, JSON.parse(readFileSync(path.join(templatesDir, m.template), "utf8")));
+        }
+        const config = configs.get(m.template)!;
+        const card = config.cards.find((c) => c.id === m.cardId);
+        if (!card || shareBlockReason(card)) continue;
+        this.libraryAdd({
+          id: `official:${m.template}:${m.cardId}`,
+          name: card.title?.replace(/^[^：]*：/, "") || card.id,
+          category: m.category,
+          tags: m.tags,
+          card,
+          requiredVars: extractRequiredVars(card, config),
+          source: "official",
+          author: "官方",
+          createdAt: now,
+        });
+      } catch {
+        // 单条失败不阻塞
+      }
+    }
   }
 }

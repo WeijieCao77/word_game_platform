@@ -54,7 +54,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
   try {
     const result = await runAssistant(
-      { config: record.config as GameConfig, designCard: record.designCard },
+      {
+        config: record.config as GameConfig,
+        designCard: record.designCard,
+        searchLibrary: (q, category) => store.libraryList({ q, category, limit: 8 }),
+      },
       history
     );
     const patch: { config?: unknown; designCard?: string } = {};

@@ -3,6 +3,7 @@ import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
 import { SYSTEM_PROMPT } from "./prompt";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
+import { LibraryEntry } from "@/lib/library";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -45,6 +46,21 @@ const TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "search_library",
+      description:
+        "搜索平台内容库（官方与创作者共享的现成事件卡：机遇/挑战/日常/抉择）。写事件卡之前先搜，能复用或改编就不要从零写。返回的卡片附带 requiredVars（引用到的变量定义），插入配置时要把缺失的变量一起补进 vars。",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "关键词（题材/标题/文案），可为空" },
+          category: { type: "string", description: "可选：机遇 / 挑战 / 日常 / 抉择" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "simulate",
       description: "用随机策略把当前配置跑 N 局，返回结局覆盖率、平均局长、从未触发的内容等报告",
       parameters: {
@@ -58,6 +74,7 @@ const TOOLS: ToolDef[] = [
 export interface AgentContext {
   config: GameConfig;
   designCard: string;
+  searchLibrary?: (q: string, category?: string) => LibraryEntry[];
 }
 
 export interface AgentResult {
@@ -143,6 +160,16 @@ export async function runAssistant(
           return warnings.length > 0
             ? `配置已更新。有 ${warnings.length} 个警告可酌情处理：\n${issuesToText(warnings)}`
             : "配置已更新，校验全部通过。";
+        }
+        case "search_library": {
+          if (!ctx.searchLibrary) return "内容库当前不可用。";
+          const entries = ctx.searchLibrary(String(args.query ?? ""), args.category ? String(args.category) : undefined).slice(0, 8);
+          if (entries.length === 0) return "内容库里没有匹配的卡片，需要自己写。";
+          return JSON.stringify(
+            entries.map((e) => ({ 名称: e.name, 分类: e.category, 标签: e.tags, 卡片: e.card, 需要的变量: e.requiredVars })),
+            null,
+            0
+          );
         }
         case "validate":
           return issuesToText(validateGameConfig(config).issues);

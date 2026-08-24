@@ -33,4 +33,7 @@ export interface GameStore {
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */
   aiConsume(key: string, tokens: number): { requests: number; tokens: number };
   aiUsageToday(key: string): { requests: number; tokens: number };
+  /** 内容库 */
+  libraryAdd(entry: import("@/lib/library").LibraryEntry): void;
+  libraryList(filter?: { category?: string; tag?: string; q?: string; limit?: number }): import("@/lib/library").LibraryEntry[];
 }

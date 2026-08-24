@@ -680,6 +680,45 @@ button {
   margin: 14px;
 }
 
+.lib-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.lib-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.lib-head .btn {
+  margin-left: auto;
+}
+
+.lib-src {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-preview {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.pane-note select,
+.pane-note input {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  padding: 4px 8px;
+}
+
 .pane-note {
   padding: 14px;
   color: var(--muted);

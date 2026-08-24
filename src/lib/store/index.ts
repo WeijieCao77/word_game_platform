@@ -12,6 +12,7 @@ export function getStore(): GameStore {
     const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
     const store = new SqliteGameStore(path.join(dataDir, "games.db"));
     store.seedDemos(path.join(process.cwd(), "templates"));
+    store.seedLibrary(path.join(process.cwd(), "templates"));
     g.__wgpStore = store;
   }
   return g.__wgpStore;

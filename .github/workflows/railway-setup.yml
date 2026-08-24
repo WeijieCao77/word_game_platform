@@ -101,4 +101,12 @@ jobs:
             fi
             sleep 10
           done
-          echo "::warning::6 分钟内未返回 200，构建可能还没完成或失败——去 Railway 控制台看 Build Logs"
+          echo "::warning::6 分钟内未返回 200，尝试抓取 Railway 构建日志"
+          if RAILWAY_API_TOKEN="$TOKEN" timeout 40 railway logs --build -s "$SERVICE" 2>&1 | tail -120; then
+            true
+          else
+            echo "（构建日志抓取失败或超时）"
+          fi
+        env:
+          TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SERVICE: word-game-platform

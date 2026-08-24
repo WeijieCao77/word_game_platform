@@ -15,6 +15,7 @@ jobs:
     env:
       HAS_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_ENVIRONMENT: production
+      RAILWAY_PROJECT_FALLBACK: efc1e1df-e1c7-4ae9-837e-ea8a7f21af3f
     steps:
       - uses: actions/checkout@v4
 
@@ -34,12 +35,13 @@ jobs:
           RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }}
         run: |
           npm i -g @railway/cli
+          PROJECT="${RAILWAY_PROJECT:-$RAILWAY_PROJECT_FALLBACK}"
           if RAILWAY_TOKEN="$TOKEN" railway up --service word-game-platform --detach; then
             exit 0
           fi
           echo "::warning::project-token path failed, retrying as an account token"
           RAILWAY_API_TOKEN="$TOKEN" railway up --service word-game-platform \
-            --project "$RAILWAY_PROJECT" --environment "$RAILWAY_ENVIRONMENT" --detach
+            --project "$PROJECT" --environment "$RAILWAY_ENVIRONMENT" --detach
 
       # 没配 secret 时只做构建验证，不让每次推送都发失败邮件
       - name: Deploy skipped

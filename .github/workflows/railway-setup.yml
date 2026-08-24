@@ -69,8 +69,9 @@ jobs:
           run_rw status || true
 
           run_rw add --service "$SERVICE" || echo "service 可能已存在，继续"
-          run_rw volume add --mount-path /data --service "$SERVICE" || echo "volume 可能已存在，继续"
-          run_rw volume list || true
+          # 注意：-s 是 volume 命令级选项，要放在 add 子命令之前
+          run_rw volume -s "$SERVICE" add --mount-path /data || echo "volume 可能已存在，继续"
+          run_rw volume -s "$SERVICE" list || true
 
           VAR_ARGS=(--service "$SERVICE" --skip-deploys \
             --set "DATA_DIR=/data" \
@@ -84,3 +85,20 @@ jobs:
 
           echo "=== 最终状态 ==="
           run_rw status || true
+
+      - name: Wait for deploy and smoke check
+        run: |
+          URL="https://word-game-platform-production.up.railway.app"
+          echo "等待部署就绪：$URL"
+          for i in $(seq 1 36); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL/" || echo 000)
+            echo "check $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "✅ 平台已上线：$URL"
+              echo "游戏库接口自检："
+              curl -s "$URL/api/games" | head -c 400; echo
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::6 分钟内未返回 200，构建可能还没完成或失败——去 Railway 控制台看 Build Logs"

@@ -17,6 +17,8 @@ export interface GameMeta {
   author?: string;
   /** 开场文案，进入游戏时展示 */
   intro?: string;
+  /** 封面样式：素材库预设 id（GameCover COVER_PRESETS）；上传的自定义封面优先于预设 */
+  coverPreset?: string;
 }
 
 /** 表现层主题（反同质化：让游戏长得不一样） */

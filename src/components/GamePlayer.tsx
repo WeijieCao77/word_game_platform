@@ -36,9 +36,18 @@ function saveKey(gameId: string): string {
   return `wgp_save_${gameId}`;
 }
 
+/** 配置指纹：游戏更新后能识别出旧存档 */
+function configHash(config: GameConfig): number {
+  const s = JSON.stringify(config);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
 export default function GamePlayer({ config, gameId, author, mode }: Props): React.ReactElement {
   const [state, setState] = useState<GameState | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  const [staleSave, setStaleSave] = useState(false);
   const [copied, setCopied] = useState(false);
   const [targetPick, setTargetPick] = useState<string | null>(null); // 正在选目标的决策 id
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -48,6 +57,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
       setState(initState(config, seed));
       setFatal(null);
+      setStaleSave(false);
       setTargetPick(null);
     } catch (err) {
       setFatal(err instanceof Error ? err.message : String(err));
@@ -59,11 +69,13 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       try {
         const raw = localStorage.getItem(saveKey(gameId));
         if (raw) {
-          const saved = JSON.parse(raw) as { v: number; state: GameState };
-          if (saved.v === 1 && saved.state && typeof saved.state.turn === "number") {
+          const saved = JSON.parse(raw) as { v: number; cfg?: number; state: GameState };
+          if ((saved.v === 1 || saved.v === 2) && saved.state && typeof saved.state.turn === "number") {
             pendingChoices(config, saved.state);
             availableActions(config, saved.state);
             setState(saved.state);
+            // 游戏内容更新后旧存档还能继续，但提示玩家新版有新内容
+            setStaleSave(saved.cfg !== configHash(config));
             return;
           }
         }
@@ -77,12 +89,12 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   useEffect(() => {
     if (mode === "play" && gameId && state) {
       try {
-        localStorage.setItem(saveKey(gameId), JSON.stringify({ v: 1, state }));
+        localStorage.setItem(saveKey(gameId), JSON.stringify({ v: 2, cfg: configHash(config), state }));
       } catch {
         // 存储满等情况不致命
       }
     }
-  }, [state, gameId, mode]);
+  }, [state, gameId, mode, config]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -195,6 +207,17 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
           </div>
         )}
         <div className="player-title">{config.meta.title}</div>
+        {staleSave && (
+          <div className="stale-save-notice">
+            <span>这个游戏更新过内容，你的存档来自旧版本，可能错过新玩法（如开局设定）。</span>
+            <button className="btn small" onClick={restart}>
+              用新版重新开始
+            </button>
+            <button className="btn small secondary" onClick={() => setStaleSave(false)}>
+              继续旧存档
+            </button>
+          </div>
+        )}
         <div className="player-author">
           {author ? (
             <>

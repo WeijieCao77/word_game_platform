@@ -31,7 +31,13 @@ export default async function AuthorPage({
           {games.map((g) => (
             <div className="game-card" key={g.id}>
               <Link className="card-link" href={`/g/${g.id}`}>
-                <GameCover id={g.id} title={g.title} kind={g.kind} />
+                <GameCover
+                  id={g.id}
+                  title={g.title}
+                  kind={g.kind}
+                  preset={g.coverPreset}
+                  coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
+                />
                 <div className="game-card-body">
                   <div className="desc">{g.description || "（暂无简介）"}</div>
                 </div>

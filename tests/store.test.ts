@@ -59,3 +59,26 @@ describe("SqliteGameStore 对话持久化", () => {
     expect(() => store.appendChat("nope", [{ role: "user", content: "hi" }])).not.toThrow();
   });
 });
+
+describe("SqliteGameStore 封面存取", () => {
+  it("setCover/getCover 回环，删除后为空，摘要与记录带 hasCover", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    expect(store.get(id)!.hasCover).toBe(false);
+    expect(store.getCover(id)).toBeNull();
+
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    store.setCover(id, bytes, "image/jpeg");
+    const cover = store.getCover(id)!;
+    expect(cover.contentType).toBe("image/jpeg");
+    expect(Array.from(cover.data)).toEqual(Array.from(bytes));
+    expect(store.get(id)!.hasCover).toBe(true);
+
+    store.setPublished(id, true);
+    expect(store.listPublished().find((g) => g.id === id)!.hasCover).toBe(true);
+
+    store.setCover(id, null);
+    expect(store.getCover(id)).toBeNull();
+    expect(store.get(id)!.hasCover).toBe(false);
+  });
+});

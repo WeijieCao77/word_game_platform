@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import GamePlayer from "@/components/GamePlayer";
+import GameCover, { COVER_PRESET_LIST } from "@/components/GameCover";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { parseCardStatus } from "@/lib/ai/designcard";
@@ -11,7 +12,7 @@ import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries
 // 创作工作台：左边是 AI 驻场策划（主入口），右边是设计卡/配置/校验/预览。
 // 预览用的就是玩家页的 GamePlayer 组件——编辑器与播放器同源。
 
-type Tab = "preview" | "design" | "config" | "check" | "library";
+type Tab = "preview" | "design" | "config" | "check" | "library" | "cover";
 
 interface ChatMsg {
   role: "user" | "assistant" | "system";
@@ -36,6 +37,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatSeconds, setChatSeconds] = useState(0);
+  const [hasCover, setHasCover] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverVersion, setCoverVersion] = useState(0);
   const [libEntries, setLibEntries] = useState<LibraryEntry[] | null>(null);
   const [libCategory, setLibCategory] = useState("");
   const [libQ, setLibQ] = useState("");
@@ -75,6 +79,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setDesignCard(body.designCard ?? "");
       setPublished(body.published);
       if (Array.isArray(body.chat)) setChat(body.chat as ChatMsg[]);
+      setHasCover(!!body.hasCover);
       setDirty(false);
     },
     [id]
@@ -145,6 +150,78 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       return false;
     }
   }, [config, designCard, editKey, id]);
+
+  const setPreset = useCallback(
+    (presetId: string | undefined): void => {
+      if (!config) return;
+      const meta = { ...config.meta };
+      if (presetId) meta.coverPreset = presetId;
+      else delete meta.coverPreset;
+      const next: GameConfig = { ...config, meta };
+      setConfig(next);
+      setConfigText(JSON.stringify(next, null, 2));
+      void save(next);
+    },
+    [config, save]
+  );
+
+  const uploadCover = useCallback(
+    async (file: File): Promise<void> => {
+      if (!editKey) return;
+      setCoverBusy(true);
+      try {
+        // 浏览器端裁剪压缩到 640×360 JPEG：上传永远不超限，服务端零图片依赖
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("图片读取失败"));
+          img.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 360;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("浏览器不支持 canvas");
+        const scale = Math.max(640 / img.width, 360 / img.height);
+        ctx.drawImage(img, (640 - img.width * scale) / 2, (360 - img.height * scale) / 2, img.width * scale, img.height * scale);
+        URL.revokeObjectURL(url);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+        if (!blob) throw new Error("图片编码失败");
+        const res = await fetch(`/api/games/${id}/cover`, {
+          method: "PUT",
+          headers: { "content-type": "image/jpeg", "x-edit-key": editKey },
+          body: blob,
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "上传失败");
+        setHasCover(true);
+        setCoverVersion((v) => v + 1);
+        setStatusMsg("封面已更新 ✓");
+      } catch (err) {
+        setStatusMsg(err instanceof Error ? err.message : String(err));
+      } finally {
+        setCoverBusy(false);
+      }
+    },
+    [editKey, id]
+  );
+
+  const removeCover = useCallback(async (): Promise<void> => {
+    if (!editKey) return;
+    setCoverBusy(true);
+    try {
+      const res = await fetch(`/api/games/${id}/cover`, { method: "DELETE", headers: { "x-edit-key": editKey } });
+      if (!res.ok) throw new Error((await res.json()).error ?? "移除失败");
+      setHasCover(false);
+      setCoverVersion((v) => v + 1);
+      setStatusMsg("已移除自定义封面");
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCoverBusy(false);
+    }
+  }, [editKey, id]);
 
   const rename = useCallback((): void => {
     if (!config) return;
@@ -365,6 +442,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 ["config", "配置"],
                 ["check", `校验${errorCount > 0 ? ` (${errorCount})` : ""}`],
                 ["library", "内容库"],
+                ["cover", "封面"],
               ] as [Tab, string][]
             ).map(([t, label]) => (
               <button
@@ -449,6 +527,68 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                   ))}
                 </div>
                 {simText && <div className="sim-report">{simText}</div>}
+              </div>
+            )}
+            {tab === "cover" && (
+              <div>
+                <div className="pane-note">
+                  封面显示在游戏库、作者页与「我的创作」。上传自定义图片（自动裁剪为 16:9 并压缩），
+                  或从素材库选一套主题样式；两者都没有时使用默认渐变。
+                </div>
+                <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", padding: "10px 0" }}>
+                  <div style={{ width: 300 }}>
+                    <GameCover
+                      key={coverVersion}
+                      id={id}
+                      title={config.meta.title}
+                      kind={config.driver.kind}
+                      preset={config.meta.coverPreset}
+                      coverUrl={hasCover ? `/api/games/${id}/cover?v=e${coverVersion}` : undefined}
+                    />
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                      <label className="btn small secondary" style={{ cursor: "pointer" }}>
+                        {coverBusy ? "处理中…" : "上传图片"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          disabled={coverBusy}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (f) void uploadCover(f);
+                          }}
+                        />
+                      </label>
+                      {hasCover && (
+                        <button className="btn small secondary" disabled={coverBusy} onClick={() => void removeCover()}>
+                          移除自定义封面
+                        </button>
+                      )}
+                      {config.meta.coverPreset && (
+                        <button className="btn small secondary" onClick={() => setPreset(undefined)}>
+                          清除预设
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 320 }}>
+                    <div className="pane-note" style={{ paddingTop: 0 }}>素材库（点击选用）</div>
+                    <div className="preset-grid">
+                      {COVER_PRESET_LIST.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={`preset-tile ${config.meta.coverPreset === p.id ? "selected" : ""}`}
+                          onClick={() => setPreset(p.id)}
+                          title={p.label}
+                        >
+                          <GameCover id={`preset-${p.id}`} title={p.label.split("·")[1]?.trim() ?? p.label} kind="unknown" preset={p.id} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
             {tab === "library" && (

@@ -31,6 +31,7 @@ export const GameMetaSchema = z.object({
   description: z.string().max(500).optional(),
   author: z.string().max(40).optional(),
   intro: z.string().max(4000).optional(),
+  coverPreset: z.string().max(40).optional(),
 });
 
 export const GameThemeSchema = z.object({

@@ -17,6 +17,8 @@ interface MineEntry {
   kind: string;
   published: boolean;
   updatedAt: string;
+  hasCover?: boolean;
+  coverPreset?: string;
   missing?: boolean;
 }
 
@@ -52,6 +54,8 @@ export default function MinePage(): React.ReactElement {
             kind: body.config?.driver?.kind ?? "unknown",
             published: !!body.published,
             updatedAt: body.updatedAt ?? "",
+            hasCover: !!body.hasCover,
+            coverPreset: body.config?.meta?.coverPreset,
           };
         } catch {
           return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
@@ -144,7 +148,13 @@ export default function MinePage(): React.ReactElement {
             ) : (
               <div className="game-card" key={e.id}>
                 <Link className="card-link" href={`/edit/${e.id}`}>
-                  <GameCover id={e.id} title={e.title} kind={e.kind} />
+                  <GameCover
+                    id={e.id}
+                    title={e.title}
+                    kind={e.kind}
+                    preset={e.coverPreset}
+                    coverUrl={e.hasCover ? `/api/games/${e.id}/cover?v=${encodeURIComponent(e.updatedAt)}` : undefined}
+                  />
                   <div className="game-card-body">
                     <div className="meta">
                       <span className="tag">{KIND_CN[e.kind] ?? KIND_CN.unknown}</span>

@@ -14,6 +14,8 @@ export interface GameRecord {
   designCard: string;
   /** 与 AI 策划的历史对话 */
   chat: ChatTurn[];
+  /** 是否有作者上传的自定义封面 */
+  hasCover: boolean;
   author: string;
   published: boolean;
   createdAt: string;
@@ -27,6 +29,10 @@ export interface GameSummary {
   author: string;
   kind: "story" | "life" | "sim" | "unknown";
   updatedAt: string;
+  /** 是否有作者上传的自定义封面（有则 /api/games/:id/cover 可取） */
+  hasCover: boolean;
+  /** 作者选的封面预设样式 id */
+  coverPreset?: string;
 }
 
 export interface GameStore {
@@ -37,6 +43,9 @@ export interface GameStore {
   update(id: string, patch: { config?: unknown; designCard?: string; author?: string }): void;
   /** 追加对话记录（服务端持久化，超出上限时保留最新的） */
   appendChat(id: string, turns: ChatTurn[]): void;
+  /** 自定义封面：data=null 表示移除 */
+  setCover(id: string, data: Uint8Array | null, contentType?: string): void;
+  getCover(id: string): { data: Uint8Array; contentType: string } | null;
   setPublished(id: string, published: boolean): void;
   listPublished(limit?: number): GameSummary[];
   listByAuthor(author: string): GameSummary[];

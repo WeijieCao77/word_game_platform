@@ -28,6 +28,8 @@ interface GameRow {
   edit_key: string;
   created_at: string;
   updated_at: string;
+  /** 列表查询带出的 (cover IS NOT NULL) */
+  has_cover?: number;
 }
 
 /** 对话记录条数上限：超出后丢最旧的（防单行无限膨胀） */
@@ -73,11 +75,17 @@ export class SqliteGameStore implements GameStore {
       );
       CREATE INDEX IF NOT EXISTS idx_library_category ON library_cards(category);
     `);
-    // 老库升级：games 表补 chat 列（已存在则忽略）
-    try {
-      this.db.exec("ALTER TABLE games ADD COLUMN chat TEXT NOT NULL DEFAULT '[]'");
-    } catch {
-      // 列已存在
+    // 老库升级：games 表补列（已存在则忽略）
+    for (const ddl of [
+      "ALTER TABLE games ADD COLUMN chat TEXT NOT NULL DEFAULT '[]'",
+      "ALTER TABLE games ADD COLUMN cover BLOB",
+      "ALTER TABLE games ADD COLUMN cover_type TEXT",
+    ]) {
+      try {
+        this.db.exec(ddl);
+      } catch {
+        // 列已存在
+      }
     }
   }
 
@@ -121,7 +129,13 @@ export class SqliteGameStore implements GameStore {
   }
 
   get(id: string): GameRecord | null {
-    const row = this.db.prepare("SELECT * FROM games WHERE id = ?").get(id) as GameRow | undefined;
+    const row = this.db
+      .prepare(
+        `SELECT id, config, design_card, chat, author, published, edit_key, created_at, updated_at,
+                (cover IS NOT NULL) AS has_cover
+         FROM games WHERE id = ?`
+      )
+      .get(id) as GameRow | undefined;
     if (!row) return null;
     let chat: ChatTurn[] = [];
     try {
@@ -134,6 +148,7 @@ export class SqliteGameStore implements GameStore {
       config: JSON.parse(row.config),
       designCard: row.design_card,
       chat,
+      hasCover: row.has_cover === 1,
       author: row.author,
       published: row.published === 1,
       createdAt: row.created_at,
@@ -182,6 +197,24 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("UPDATE games SET chat = ? WHERE id = ?").run(JSON.stringify(next), id);
   }
 
+  setCover(id: string, data: Uint8Array | null, contentType?: string): void {
+    if (data === null) {
+      this.db.prepare("UPDATE games SET cover = NULL, cover_type = NULL, updated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), id);
+    } else {
+      this.db.prepare("UPDATE games SET cover = ?, cover_type = ?, updated_at = ? WHERE id = ?")
+        .run(Buffer.from(data), contentType ?? "image/jpeg", new Date().toISOString(), id);
+    }
+  }
+
+  getCover(id: string): { data: Uint8Array; contentType: string } | null {
+    const row = this.db.prepare("SELECT cover, cover_type FROM games WHERE id = ?").get(id) as
+      | { cover: Buffer | null; cover_type: string | null }
+      | undefined;
+    if (!row?.cover) return null;
+    return { data: row.cover, contentType: row.cover_type ?? "image/jpeg" };
+  }
+
   setPublished(id: string, published: boolean): void {
     this.db
       .prepare("UPDATE games SET published = ?, updated_at = ? WHERE id = ?")
@@ -192,27 +225,41 @@ export class SqliteGameStore implements GameStore {
     let title = row.id;
     let description = "";
     let kind: GameSummary["kind"] = "unknown";
+    let coverPreset: string | undefined;
     try {
       const config = JSON.parse(row.config) as GameConfig;
       title = config.meta?.title ?? row.id;
       description = config.meta?.description ?? "";
+      coverPreset = config.meta?.coverPreset;
       kind = (["story", "life", "sim"] as const).find((k) => k === config.driver?.kind) ?? "unknown";
     } catch {
       // 摘要解析失败不致命
     }
-    return { id: row.id, title, description, author: row.author, kind, updatedAt: row.updated_at };
+    return {
+      id: row.id,
+      title,
+      description,
+      author: row.author,
+      kind,
+      updatedAt: row.updated_at,
+      hasCover: row.has_cover === 1,
+      coverPreset,
+    };
   }
+
+  private static readonly SUMMARY_COLS =
+    "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, (cover IS NOT NULL) AS has_cover";
 
   listPublished(limit = 100): GameSummary[] {
     const rows = this.db
-      .prepare("SELECT * FROM games WHERE published = 1 ORDER BY updated_at DESC LIMIT ?")
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 ORDER BY updated_at DESC LIMIT ?`)
       .all(limit) as GameRow[];
     return rows.map((r) => this.toSummary(r));
   }
 
   listByAuthor(author: string): GameSummary[] {
     const rows = this.db
-      .prepare("SELECT * FROM games WHERE published = 1 AND author = ? ORDER BY updated_at DESC")
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 AND author = ? ORDER BY updated_at DESC`)
       .all(author) as GameRow[];
     return rows.map((r) => this.toSummary(r));
   }

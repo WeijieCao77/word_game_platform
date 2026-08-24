@@ -24,6 +24,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     canEdit,
     designCard: canEdit ? record.designCard : undefined,
     chat: canEdit ? record.chat : undefined,
+    hasCover: record.hasCover,
     updatedAt: record.updatedAt,
   });
 }

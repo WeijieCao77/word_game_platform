@@ -50,7 +50,7 @@ export async function callChat(messages: ChatMessage[], tools?: ToolDef[]): Prom
       model: process.env.AI_MODEL,
       messages,
       tools: tools && tools.length > 0 ? tools : undefined,
-      temperature: 0.7,
+      // 不设 temperature：gpt-5 系推理模型只接受默认值，其余供应商默认值也够用
     }),
   });
   if (!res.ok) {

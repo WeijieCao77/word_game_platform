@@ -700,6 +700,30 @@ export function choose(config: GameConfig, input: GameState, choiceId: string): 
   return state;
 }
 
+/** 本回合将要运行的带数据结算的下一行（"下一场预告"面板用） */
+export function upcomingRows(
+  config: GameConfig,
+  state: GameState
+): { settlement: string; row: Record<string, number | string> }[] {
+  if (config.driver.kind !== "sim" || state.ended) return [];
+  const rng = createRng(state.rngState);
+  const scope = new GameScope(config, state, rng);
+  const globalTurn = clockOf(config, state);
+  const out: { settlement: string; row: Record<string, number | string> }[] = [];
+  for (const s of config.settlements ?? []) {
+    if (!s.data || s.data.length === 0) continue;
+    if (globalTurn % (s.every ?? 1) !== 0) continue;
+    try {
+      if (s.condition && !truthy(evaluate(s.condition, scope))) continue;
+    } catch {
+      continue;
+    }
+    const runIdx = state.counters?.[s.id] ?? 0;
+    out.push({ settlement: s.name, row: s.data[runIdx % s.data.length] });
+  }
+  return out;
+}
+
 /** 可见派生值的当前数值（状态栏渲染用） */
 export function derivedValues(config: GameConfig, state: GameState): { id: string; name: string; value: number }[] {
   const rng = createRng(state.rngState);

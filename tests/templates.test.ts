@@ -18,22 +18,12 @@ describe("官方示例：修仙人生重开（life）", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("模拟 600 局：无运行时错误，全部正常结束", () => {
+  it("模拟 600 局：无错误、正常结束、结局与卡片全可达", { timeout: 120000 }, () => {
     const r = validateGameConfig(raw);
     const report = simulate(r.config!, 600, 2024);
     expect(report.errors).toEqual([]);
     expect(report.endings["__unfinished__"]).toBeUndefined();
-  });
-
-  it("模拟 600 局：每个结局都能触发（无不可达结局）", () => {
-    const r = validateGameConfig(raw);
-    const report = simulate(r.config!, 600, 2024);
     expect(report.unreachedEndings).toEqual([]);
-  });
-
-  it("模拟 600 局：每张卡都出现过（无死内容）", () => {
-    const r = validateGameConfig(raw);
-    const report = simulate(r.config!, 600, 2024);
     expect(report.unfiredCards).toEqual([]);
   });
 });

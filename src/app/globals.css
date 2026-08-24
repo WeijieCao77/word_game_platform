@@ -337,6 +337,39 @@ button {
   color: var(--defeat);
 }
 
+.player-back {
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.upcoming {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.upcoming-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.upcoming-label {
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.upcoming-detail b {
+  font-size: 15px;
+}
+
 .log-action {
   color: var(--muted);
   font-size: 14px;

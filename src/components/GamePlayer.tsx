@@ -13,6 +13,7 @@ import {
   availableActions,
   eligibleTargets,
   derivedValues,
+  upcomingRows,
 } from "@/lib/engine";
 
 // 编辑器与播放器同源：/g/:id 的玩家页面和 /edit/:id 的实时预览
@@ -115,6 +116,15 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
     }
   }, [config, state, isSim]);
 
+  const upcoming = useMemo(() => {
+    if (!state || !isSim) return [];
+    try {
+      return upcomingRows(config, state);
+    } catch {
+      return [];
+    }
+  }, [config, state, isSim]);
+
   const act = useCallback((fn: () => GameState): void => {
     try {
       setState(fn());
@@ -175,6 +185,11 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   return (
     <div className={`player ${themeClass}`} style={accentStyle}>
       <div className="player-inner">
+        {mode === "play" && (
+          <div className="player-back">
+            <Link href="/">← 返回字游</Link>
+          </div>
+        )}
         <div className="player-title">{config.meta.title}</div>
         <div className="player-author">
           {author ? (
@@ -210,6 +225,23 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
             </span>
           ))}
         </div>
+
+        {upcoming.length > 0 && !state.ended && !state.pendingCard && (
+          <div className="upcoming">
+            {upcoming.map((u, i) => (
+              <div key={i} className="upcoming-item">
+                <span className="upcoming-label">本{config.driver.kind === "sim" ? config.driver.time.turnLabel : "回合"}对阵 · {u.settlement}</span>
+                <span className="upcoming-detail">
+                  {Object.entries(u.row).map(([k, v]) => (
+                    <span key={k}>
+                      {typeof v === "string" ? <b>{v}</b> : `${k} ${v}`}{" "}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {isSim && <Roster config={config} state={state} />}
 

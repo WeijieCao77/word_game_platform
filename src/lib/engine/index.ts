@@ -10,5 +10,6 @@ export {
   availableActions,
   eligibleTargets,
   derivedValues,
+  upcomingRows,
 } from "./engine";
 export type { ActionView } from "./engine";

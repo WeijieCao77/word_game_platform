@@ -16,7 +16,8 @@ interface ProviderDef {
 
 const PROVIDERS: Record<string, ProviderDef> = {
   openai: { base: "https://api.openai.com/v1", keyEnv: "OPENAI_API_KEY", defaultModel: "gpt-5-mini" },
-  deepseek: { base: "https://api.deepseek.com", keyEnv: "DEEPSEEK_API_KEY", defaultModel: "deepseek-chat" },
+  // deepseek-chat/reasoner 别名 2026-07 已下线，V4 起用 deepseek-v4-flash / deepseek-v4-pro
+  deepseek: { base: "https://api.deepseek.com", keyEnv: "DEEPSEEK_API_KEY", defaultModel: "deepseek-v4-flash" },
   anthropic: { base: "https://api.anthropic.com", keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-haiku-4-5" },
   qwen: { base: "https://dashscope.aliyuncs.com/compatible-mode/v1", keyEnv: "QWEN_API_KEY", defaultModel: "qwen-plus" },
   kimi: { base: "https://api.moonshot.cn/v1", keyEnv: "KIMI_API_KEY", defaultModel: "moonshot-v1-8k" },

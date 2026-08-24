@@ -53,7 +53,7 @@ npm run build && npm start   # 生产模式
 | `DATA_DIR` | SQLite 数据目录 | `./data` |
 | `AI_PROVIDER` | AI 供应商：`openai` / `deepseek` / `anthropic` / `qwen` / `kimi` | 未设则走旧三件套 |
 | `OPENAI_API_KEY` 等 | 各供应商的密钥，按 `<供应商>_API_KEY` 命名，可同时存多把 | 未配置则 AI 面板降级提示 |
-| `AI_MODEL` | 模型名（可选），不填用该供应商默认模型 | `gpt-5-mini` / `deepseek-chat` / … |
+| `AI_MODEL` | 模型名（可选），不填用该供应商默认模型 | `gpt-5-mini` / `deepseek-v4-flash` / … |
 | `AI_DAILY_REQUESTS` | 每把编辑钥匙每日 AI 次数上限 | `40` |
 | `AI_DAILY_TOKENS` | 每把编辑钥匙每日 token 上限 | `400000` |
 

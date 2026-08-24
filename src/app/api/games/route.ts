@@ -8,6 +8,24 @@ import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
 
 export const dynamic = "force-dynamic";
 
+// 创建限流：每 IP 每小时最多 12 个新游戏（内存计数，防脚本刷库；多实例部署时换 Redis）
+const createLog = new Map<string, number[]>();
+const CREATE_LIMIT = 12;
+const CREATE_WINDOW_MS = 60 * 60 * 1000;
+
+function createAllowed(ip: string): boolean {
+  const now = Date.now();
+  const times = (createLog.get(ip) ?? []).filter((t) => now - t < CREATE_WINDOW_MS);
+  if (times.length >= CREATE_LIMIT) {
+    createLog.set(ip, times);
+    return false;
+  }
+  times.push(now);
+  createLog.set(ip, times);
+  if (createLog.size > 10000) createLog.clear();
+  return true;
+}
+
 /** 游戏库：已发布游戏列表 */
 export function GET(): NextResponse {
   return NextResponse.json({ games: getStore().listPublished() });
@@ -15,6 +33,10 @@ export function GET(): NextResponse {
 
 /** 创建游戏：从空白或官方模板起步，返回 id + editKey */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!createAllowed(ip)) {
+    return NextResponse.json({ error: "创建太频繁了，休息一会儿再来（每小时上限 12 个）" }, { status: 429 });
+  }
   let body: { template?: string; title?: string; author?: string };
   try {
     body = await req.json();

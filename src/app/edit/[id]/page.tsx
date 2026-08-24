@@ -5,6 +5,7 @@ import Link from "next/link";
 import GamePlayer from "@/components/GamePlayer";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
+import { parseCardStatus } from "@/lib/ai/designcard";
 
 // 创作工作台：左边是 AI 驻场策划（主入口），右边是设计卡/配置/校验/预览。
 // 预览用的就是玩家页的 GamePlayer 组件——编辑器与播放器同源。
@@ -77,6 +78,19 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   }, [config]);
 
   const errorCount = issues.filter((i) => i.severity === "error").length;
+  const cardStatus = parseCardStatus(designCard);
+
+  const exportConfig = useCallback((): void => {
+    if (!config) return;
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${config.meta.title || "game"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatusMsg("配置已导出——你的作品永远属于你");
+  }, [config]);
 
   const save = useCallback(async (): Promise<boolean> => {
     if (!config || !editKey) return false;
@@ -230,11 +244,17 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       <div className="editor-topbar">
         <Link href="/">← 字游</Link>
         <span className="title">{config.meta.title}</span>
+        <span className="tag" title="创作流程：需求对齐中 → 方案待确认 → 已确认 → 调优中">
+          {cardStatus}
+        </span>
         <span className="status">
           {dirty ? "有未保存修改 · " : ""}
           {errorCount > 0 ? `${errorCount} 个错误 · ` : ""}
           {statusMsg}
         </span>
+        <button className="btn small secondary" onClick={exportConfig} title="下载完整游戏配置 JSON——作品可导出，不锁作者">
+          导出
+        </button>
         <button className="btn small secondary" onClick={() => void save()}>
           保存
         </button>

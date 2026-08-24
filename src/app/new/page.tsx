@@ -60,21 +60,19 @@ export default function NewGamePage(): React.ReactElement {
         </div>
         <div>
           <label>起点</label>
-          {TEMPLATES.map((t) => (
-            <div key={t.id} style={{ margin: "6px 0" }}>
-              <label style={{ color: "inherit", fontSize: 14, cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="template"
-                  checked={template === t.id}
-                  onChange={() => setTemplate(t.id)}
-                  style={{ marginRight: 8 }}
-                />
+          <div className="tile-grid" style={{ marginTop: 8 }}>
+            {TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`tile ${template === t.id ? "selected" : ""}`}
+                onClick={() => setTemplate(t.id)}
+              >
                 <b>{t.name}</b>
-                <span style={{ color: "var(--muted)", marginLeft: 8, fontSize: 13 }}>{t.desc}</span>
-              </label>
-            </div>
-          ))}
+                <span>{t.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
         {error && <div className="notice">{error}</div>}
         <div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getStore } from "@/lib/store";
+import GameCover from "@/components/GameCover";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,11 @@ export default async function AuthorPage({
     <div className="site">
       <header className="site-header">
         <div className="site-title">
-          <Link href="/">字游 WordPlay</Link>
+          <Link href="/">字游·WordPlay</Link>
         </div>
+        <Link className="btn small" href="/new">
+          ＋ 开始创作
+        </Link>
       </header>
       <h1 style={{ fontSize: 24, marginBottom: 6 }}>{author}</h1>
       <p style={{ color: "var(--muted)", marginBottom: 20 }}>已发布 {games.length} 款游戏</p>
@@ -26,10 +30,12 @@ export default async function AuthorPage({
         <div className="game-grid">
           {games.map((g) => (
             <div className="game-card" key={g.id}>
-              <h3>
-                <Link href={`/g/${g.id}`}>{g.title}</Link>
-              </h3>
-              <div className="desc">{g.description || "（暂无简介）"}</div>
+              <Link className="card-link" href={`/g/${g.id}`}>
+                <GameCover id={g.id} title={g.title} kind={g.kind} />
+                <div className="game-card-body">
+                  <div className="desc">{g.description || "（暂无简介）"}</div>
+                </div>
+              </Link>
             </div>
           ))}
         </div>

@@ -156,7 +156,11 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   }, []);
 
   const themeClass =
-    config.theme?.preset === "dark" ? "theme-dark" : config.theme?.preset === "terminal" ? "theme-terminal" : "";
+    config.theme?.preset === "dark"
+      ? "theme-dark"
+      : config.theme?.preset === "terminal"
+        ? "theme-terminal"
+        : "theme-paper";
   const accentStyle = config.theme?.accent ? ({ "--accent": config.theme.accent } as React.CSSProperties) : undefined;
 
   if (fatal) {

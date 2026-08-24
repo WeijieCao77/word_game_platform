@@ -23,6 +23,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     published: record.published,
     canEdit,
     designCard: canEdit ? record.designCard : undefined,
+    chat: canEdit ? record.chat : undefined,
     updatedAt: record.updatedAt,
   });
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { GameConfig, CardDef } from "@/lib/schema";
-import { extractRequiredVars, insertLibraryCard, shareBlockReason, LibraryEntry } from "@/lib/library";
+import { extractRequiredVars, insertLibraryCard, rankLibraryEntries, shareBlockReason, LibraryEntry } from "@/lib/library";
 
 const sourceGame: GameConfig = {
   schemaVersion: 1,
@@ -91,5 +91,52 @@ describe("内容库", () => {
       const vars = extractRequiredVars(card!, configs.get(m.template)!);
       expect(vars.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("rankLibraryEntries 推荐排序", () => {
+  const mkEntry = (id: string, tags: string[], varIds: string[] = []): LibraryEntry => ({
+    id,
+    name: id,
+    category: "机遇",
+    tags,
+    card: { id, weight: 1, text: "……" },
+    requiredVars: varIds.map((v) => ({ id: v, name: v, initial: 0 })),
+    source: "official",
+    author: "官方",
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  const wuxiaGame: GameConfig = {
+    schemaVersion: 1,
+    meta: { title: "江湖浪客行", description: "武侠江湖背景：行走门派与镖局之间" },
+    driver: { kind: "life", time: { label: "年", start: 0, step: 1, max: 30 } },
+    vars: [
+      { id: "内力", name: "内力", initial: 10 },
+      { id: "银两", name: "银两", initial: 5 },
+    ],
+    cards: [{ id: "开场", weight: 1, text: "你背着剑走进江湖。" }],
+    endings: [{ id: "e", title: "完", kind: "neutral", condition: "turn >= 999" }],
+    text: { timeoutEnding: { title: "完" } },
+  };
+
+  it("标签命中题材的条目排前并标记推荐；无关条目沉底", () => {
+    const entries = [mkEntry("电竞卡", ["电竞"]), mkEntry("江湖卡", ["江湖"]), mkEntry("修仙卡", ["修仙"])];
+    const ranked = rankLibraryEntries(entries, wuxiaGame);
+    expect(ranked[0].entry.id).toBe("江湖卡");
+    expect(ranked[0].recommended).toBe(true);
+    expect(ranked.find((r) => r.entry.id === "电竞卡")!.recommended).toBe(false);
+  });
+
+  it("依赖变量与游戏已有变量重合时加分（即插即用优先）", () => {
+    const entries = [mkEntry("通用卡", ["通用"]), mkEntry("用银两的卡", ["通用"], ["银两"])];
+    const ranked = rankLibraryEntries(entries, wuxiaGame);
+    expect(ranked[0].entry.id).toBe("用银两的卡");
+    expect(ranked[0].score).toBeGreaterThan(ranked[1].score);
+  });
+
+  it("同分保持原有顺序（最新在前）", () => {
+    const entries = [mkEntry("甲", ["通用"]), mkEntry("乙", ["通用"])];
+    const ranked = rankLibraryEntries(entries, wuxiaGame);
+    expect(ranked.map((r) => r.entry.id)).toEqual(["甲", "乙"]);
   });
 });

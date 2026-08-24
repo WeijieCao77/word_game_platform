@@ -1,11 +1,19 @@
 // 存储层接口。v1 用 SQLite（一游戏一行 JSON），
 // 将来换 Postgres 只需要重新实现这个接口。
 
+/** 与 AI 策划的对话记录（服务端持久化，关页面不丢） */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface GameRecord {
   id: string;
   config: unknown;
   /** AI 策划与作者共同维护的设计卡（markdown） */
   designCard: string;
+  /** 与 AI 策划的历史对话 */
+  chat: ChatTurn[];
   author: string;
   published: boolean;
   createdAt: string;
@@ -27,6 +35,8 @@ export interface GameStore {
   /** 校验 editKey；true 表示有编辑权 */
   checkEditKey(id: string, editKey: string): boolean;
   update(id: string, patch: { config?: unknown; designCard?: string; author?: string }): void;
+  /** 追加对话记录（服务端持久化，超出上限时保留最新的） */
+  appendChat(id: string, turns: ChatTurn[]): void;
   setPublished(id: string, published: boolean): void;
   listPublished(limit?: number): GameSummary[];
   listByAuthor(author: string): GameSummary[];

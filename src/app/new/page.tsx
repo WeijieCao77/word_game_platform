@@ -47,6 +47,9 @@ export default function NewGamePage(): React.ReactElement {
         <div className="site-title">
           <Link href="/">字游 WordPlay</Link>
         </div>
+        <Link className="btn small secondary" href="/mine">
+          我的创作
+        </Link>
       </header>
       <h1 style={{ fontSize: 24, marginBottom: 18 }}>创建新游戏</h1>
       <div className="form">

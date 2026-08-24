@@ -3,6 +3,7 @@ import { getStore } from "@/lib/store";
 import { GameConfig } from "@/lib/schema";
 import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
+import { rankLibraryEntries } from "@/lib/library";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -57,7 +58,10 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       {
         config: record.config as GameConfig,
         designCard: record.designCard,
-        searchLibrary: (q, category) => store.libraryList({ q, category, limit: 8 }),
+        searchLibrary: (q, category) =>
+          rankLibraryEntries(store.libraryList({ q, category, limit: 32 }), record.config as GameConfig)
+            .slice(0, 8)
+            .map((r) => r.entry),
       },
       history
     );
@@ -65,6 +69,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     if (result.config) patch.config = result.config;
     if (result.designCard !== undefined) patch.designCard = result.designCard;
     if (Object.keys(patch).length > 0) store.update(id, patch);
+    // 对话落库：关掉页面再回来，聊天记录还在
+    store.appendChat(id, [
+      { role: "user", content: history[history.length - 1].content },
+      { role: "assistant", content: result.reply || "（无回复）" },
+    ]);
     const quota = store.aiConsume(editKey, result.totalTokens);
     return NextResponse.json({
       reply: result.reply,

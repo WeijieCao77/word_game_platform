@@ -9,8 +9,9 @@
 ## 它长什么样
 
 - **玩家**：打开 `/g/:id` 就能玩，免登录，进度自动存在本地浏览器；玩完看到"我也要做一个"，一分钟后成为创作者。
-- **创作者**：`/new` 创建 → 进入工作台 `/edit/:id`。左边是 **AI 驻场策划**（对话式创作的主入口），右边是实时预览 / 设计卡 / 配置 / 校验四个页签。预览用的就是玩家页的渲染器——所见即所得。
+- **创作者**：`/new` 创建 → 进入工作台 `/edit/:id`。左边是 **AI 驻场策划**（对话式创作的主入口），右边是实时预览 / 设计卡 / 配置 / 校验 / 内容库五个页签。预览用的就是玩家页的渲染器——所见即所得。
 - **游戏库**：首页陈列所有已发布的游戏，游戏反向为平台引流。
+- **我的创作**：`/mine` 列出本机持有编辑钥匙的全部作品（含未发布草稿）。与 AI 的对话、设计卡、配置都存服务端，关掉页面回来继续；编辑钥匙支持一键导出/导入（钥匙串备份），换设备不丢作品。
 
 ## 核心设计
 
@@ -78,7 +79,7 @@ src/lib/engine     纯函数引擎（initState/step/choose，种子化 RNG）
 src/lib/simulate   批量模拟与报告（校验面板与 AI 共用）
 src/lib/store      GameStore 接口 + SQLite 实现（可换 Postgres）
 src/lib/ai         驻场策划：OpenAI 兼容 provider + agent 循环 + 四工具
-src/app            页面与 API（/ 游戏库、/new、/g/:id、/edit/:id、/u/:name）
+src/app            页面与 API（/ 游戏库、/new、/mine 我的创作、/g/:id、/edit/:id、/u/:name）
 src/components     GamePlayer——玩家页与编辑器预览共用的渲染器
 templates          官方示例（life / story 各一）
 tests              vitest 单测

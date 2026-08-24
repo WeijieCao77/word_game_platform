@@ -22,6 +22,9 @@ export default function HomePage(): React.ReactElement {
           <Link className="topnav-link" href="/new">
             创作工作台
           </Link>
+          <Link className="topnav-link" href="/mine">
+            我的创作
+          </Link>
           <span className="topnav-spacer" />
           <Link className="btn small" href="/new">
             ＋ 开始创作

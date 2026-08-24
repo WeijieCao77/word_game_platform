@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { GameConfig, CardDef } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
-import { GameRecord, GameStore, GameSummary } from "./types";
+import { ChatTurn, GameRecord, GameStore, GameSummary } from "./types";
 
 function newId(): string {
   return randomBytes(6).toString("base64url").replace(/[-_]/g, "a").toLowerCase();
@@ -22,12 +22,16 @@ interface GameRow {
   id: string;
   config: string;
   design_card: string;
+  chat: string;
   author: string;
   published: number;
   edit_key: string;
   created_at: string;
   updated_at: string;
 }
+
+/** 对话记录条数上限：超出后丢最旧的（防单行无限膨胀） */
+const CHAT_CAP = 200;
 
 export class SqliteGameStore implements GameStore {
   private db: Database.Database;
@@ -69,6 +73,12 @@ export class SqliteGameStore implements GameStore {
       );
       CREATE INDEX IF NOT EXISTS idx_library_category ON library_cards(category);
     `);
+    // 老库升级：games 表补 chat 列（已存在则忽略）
+    try {
+      this.db.exec("ALTER TABLE games ADD COLUMN chat TEXT NOT NULL DEFAULT '[]'");
+    } catch {
+      // 列已存在
+    }
   }
 
   /** 启动时同步官方示例：不存在则作为已发布游戏入库，已存在则刷新配置（模板改进随部署上线） */
@@ -113,10 +123,17 @@ export class SqliteGameStore implements GameStore {
   get(id: string): GameRecord | null {
     const row = this.db.prepare("SELECT * FROM games WHERE id = ?").get(id) as GameRow | undefined;
     if (!row) return null;
+    let chat: ChatTurn[] = [];
+    try {
+      chat = JSON.parse(row.chat || "[]");
+    } catch {
+      // 损坏则视为无记录
+    }
     return {
       id: row.id,
       config: JSON.parse(row.config),
       designCard: row.design_card,
+      chat,
       author: row.author,
       published: row.published === 1,
       createdAt: row.created_at,
@@ -148,6 +165,21 @@ export class SqliteGameStore implements GameStore {
     }
     args.push(id);
     this.db.prepare(`UPDATE games SET ${sets.join(", ")} WHERE id = ?`).run(...args);
+  }
+
+  appendChat(id: string, turns: ChatTurn[]): void {
+    const row = this.db.prepare("SELECT chat FROM games WHERE id = ?").get(id) as
+      | { chat: string }
+      | undefined;
+    if (!row) return;
+    let chat: ChatTurn[] = [];
+    try {
+      chat = JSON.parse(row.chat || "[]");
+    } catch {
+      // 损坏则重建
+    }
+    const next = [...chat, ...turns].slice(-CHAT_CAP);
+    this.db.prepare("UPDATE games SET chat = ? WHERE id = ?").run(JSON.stringify(next), id);
   }
 
   setPublished(id: string, published: boolean): void {

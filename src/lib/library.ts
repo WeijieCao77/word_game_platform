@@ -102,6 +102,60 @@ export function extractRequiredVars(card: CardDef, source: GameConfig): Variable
   return source.vars.filter((v) => idents.has(v.id));
 }
 
+// ---------------- 推荐排序 ----------------
+// 内容库不是死列表，是跟着当前作品变的推荐库：
+// 按「题材画像」给条目打分——库条目的标签出现在游戏文本里（江湖背景推江湖卡）、
+// 依赖变量与游戏已有变量重合（即插即用）、条目名称与游戏文本的双字重合（兜底信号）。
+
+const CJK_RE = /[一-鿿]/;
+
+function cjkBigrams(text: string): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i < text.length - 1; i++) {
+    if (CJK_RE.test(text[i]) && CJK_RE.test(text[i + 1])) out.add(text[i] + text[i + 1]);
+  }
+  return out;
+}
+
+/** 游戏的题材画像文本：标题/简介/变量名/卡片标题与文案 */
+function themeTextOf(config: GameConfig): string {
+  const parts: string[] = [config.meta.title ?? "", config.meta.description ?? ""];
+  for (const v of config.vars) parts.push(v.id, v.name ?? "");
+  for (const c of config.cards.slice(0, 80)) parts.push(c.id, c.title ?? "", c.text);
+  return parts.join(" ").toLowerCase();
+}
+
+export interface RankedLibraryEntry {
+  entry: LibraryEntry;
+  score: number;
+  /** 达到推荐线（UI 可标「贴合本作」并置顶展示） */
+  recommended: boolean;
+}
+
+/** 按与当前作品的贴合度排序（分数降序，同分保持原有顺序=最新在前） */
+export function rankLibraryEntries(entries: LibraryEntry[], config: GameConfig): RankedLibraryEntry[] {
+  const gameText = themeTextOf(config);
+  const gameBigrams = cjkBigrams(gameText);
+  const gameVarIds = new Set(config.vars.map((v) => v.id));
+  const scored = entries.map((entry, i) => {
+    let score = 0;
+    for (const tag of entry.tags) {
+      const t = tag.trim().toLowerCase();
+      if (t && gameText.includes(t)) score += 3;
+    }
+    for (const v of entry.requiredVars) if (gameVarIds.has(v.id)) score += 2;
+    // 名称/标签的双字重合：捕捉没有精确标签的题材相关性，权重压低当兜底
+    let overlap = 0;
+    for (const bg of cjkBigrams(`${entry.name} ${entry.tags.join(" ")}`)) {
+      if (gameBigrams.has(bg)) overlap++;
+    }
+    score += Math.min(overlap, 6) * 0.5;
+    return { entry, score, recommended: score >= 2, i };
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return scored.map(({ entry, score, recommended }) => ({ entry, score, recommended }));
+}
+
 /** 把库中卡片插入目标配置：补缺失变量、避开 id 冲突，返回新配置 */
 export function insertLibraryCard(config: GameConfig, entry: LibraryEntry): { config: GameConfig; cardId: string } {
   const next: GameConfig = structuredClone(config);

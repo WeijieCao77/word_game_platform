@@ -1,0 +1,98 @@
+name: Railway variables
+
+# 查看/修改 Railway 服务的环境变量（仅非敏感项），并体检 AI key 配置状况。
+# 手动触发（workflow_dispatch）。
+#
+# 安全约定：
+# - 密钥类变量（*_API_KEY / *TOKEN*）不允许通过这里设置——workflow 输入会留在
+#   运行记录里。密钥一律在 Railway 控制台 Variables 页添加。
+# - 日志只打印变量名与白名单内的非敏感值；key 只报告「已配置 + 有效性 HTTP 码」，
+#   值全程打码。
+
+on:
+  workflow_dispatch:
+    inputs:
+      set_vars:
+        description: "要设置的非敏感变量，空格分隔的 KEY=VALUE（如 AI_PROVIDER=deepseek AI_MODEL=deepseek-chat）；留空只查看"
+        required: false
+        default: ""
+
+jobs:
+  vars:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SERVICE: word-game-platform
+      SET_VARS: ${{ inputs.set_vars }}
+    steps:
+      - name: Inspect and update variables
+        run: |
+          set -e
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN secret 未配置"; exit 1
+          fi
+          npm i -g @railway/cli >/dev/null 2>&1
+
+          KIND=""
+          if RAILWAY_API_TOKEN="$TOKEN" railway whoami >/dev/null 2>&1; then
+            KIND="account"
+          elif RAILWAY_TOKEN="$TOKEN" railway status >/dev/null 2>&1; then
+            KIND="project"
+          else
+            echo "::error::RAILWAY_TOKEN 无效"; exit 1
+          fi
+          run_rw() {
+            if [ "$KIND" = "account" ]; then
+              RAILWAY_API_TOKEN="$TOKEN" railway "$@"
+            else
+              RAILWAY_TOKEN="$TOKEN" railway "$@"
+            fi
+          }
+          if [ "$KIND" = "account" ]; then
+            run_rw link --project "$SERVICE" --environment production
+          fi
+
+          SAFE_VARS='^(DATA_DIR|AI_PROVIDER|AI_MODEL|AI_BASE_URL|AI_REASONING_EFFORT|FLAGSHIP_URL|AI_DAILY_REQUESTS|AI_DAILY_TOKENS)='
+          dump() {
+            run_rw variables --service "$SERVICE" --kv > /tmp/vars.kv
+            echo "--- 变量名清单 ---"
+            cut -d= -f1 /tmp/vars.kv | sort
+            echo "--- 非敏感变量取值 ---"
+            grep -E "$SAFE_VARS" /tmp/vars.kv || echo "（无）"
+          }
+          echo "=== 当前配置 ==="
+          dump
+
+          echo "=== AI key 体检 ==="
+          check_key() {
+            VAL=$(grep "^$1=" /tmp/vars.kv | head -1 | cut -d= -f2-)
+            if [ -z "$VAL" ]; then echo "$1: 未配置"; return; fi
+            echo "::add-mask::$VAL"
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H "Authorization: Bearer $VAL" "$2" || echo 000)
+            echo "$1: 已配置，有效性检查 HTTP $CODE（200=有效，401=key 无效）"
+          }
+          check_key DEEPSEEK_API_KEY https://api.deepseek.com/models
+          check_key OPENAI_API_KEY   https://api.openai.com/v1/models
+          check_key AI_API_KEY       https://api.openai.com/v1/models
+
+          if [ -n "$SET_VARS" ]; then
+            echo "=== 设置变量 ==="
+            VAR_ARGS=(--service "$SERVICE" --skip-deploys)
+            for kv in $SET_VARS; do
+              case "$kv" in
+                *_API_KEY=*|*TOKEN*=*|*SECRET*=*)
+                  echo "::error::拒绝通过 workflow 设置密钥类变量（$kv 的名字像密钥）。密钥请在 Railway 控制台 Variables 页添加。"
+                  exit 1;;
+                *=*) VAR_ARGS+=(--set "$kv");;
+                *)
+                  echo "::error::参数不是 KEY=VALUE 形式：$kv"; exit 1;;
+              esac
+            done
+            run_rw variables "${VAR_ARGS[@]}"
+            run_rw redeploy --service "$SERVICE" -y || echo "::warning::redeploy 触发失败，请在 Railway 控制台手动 redeploy 使新变量生效"
+            echo "=== 更新后配置 ==="
+            dump
+          fi
+
+          echo "=== Volume（持久化磁盘）==="
+          run_rw volume list || true

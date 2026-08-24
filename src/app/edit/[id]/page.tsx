@@ -6,7 +6,7 @@ import GamePlayer from "@/components/GamePlayer";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { parseCardStatus } from "@/lib/ai/designcard";
-import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, shareBlockReason } from "@/lib/library";
+import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries, shareBlockReason } from "@/lib/library";
 
 // 创作工作台：左边是 AI 驻场策划（主入口），右边是设计卡/配置/校验/预览。
 // 预览用的就是玩家页的 GamePlayer 组件——编辑器与播放器同源。
@@ -74,6 +74,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setConfigText(JSON.stringify(body.config, null, 2));
       setDesignCard(body.designCard ?? "");
       setPublished(body.published);
+      if (Array.isArray(body.chat)) setChat(body.chat as ChatMsg[]);
       setDirty(false);
     },
     [id]
@@ -88,6 +89,16 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chat, chatBusy]);
 
+  // 有未保存修改或 AI 正在工作时，关页面先确认
+  useEffect(() => {
+    if (!dirty && !chatBusy) return;
+    const warn = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, chatBusy]);
+
   const issues: ValidationIssue[] = useMemo(() => {
     if (!config) return [];
     return validateGameConfig(config).issues;
@@ -95,6 +106,12 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
 
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const cardStatus = parseCardStatus(designCard);
+
+  // 内容库按当前作品题材排序：贴合的置顶并标出
+  const rankedLib = useMemo(() => {
+    if (!libEntries || !config) return null;
+    return rankLibraryEntries(libEntries, config);
+  }, [libEntries, config]);
 
   const exportConfig = useCallback((): void => {
     if (!config) return;
@@ -108,14 +125,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setStatusMsg("配置已导出——你的作品永远属于你");
   }, [config]);
 
-  const save = useCallback(async (): Promise<boolean> => {
-    if (!config || !editKey) return false;
+  const save = useCallback(async (override?: GameConfig): Promise<boolean> => {
+    const payload = override ?? config;
+    if (!payload || !editKey) return false;
     setStatusMsg("保存中…");
     try {
       const res = await fetch(`/api/games/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json", "x-edit-key": editKey },
-        body: JSON.stringify({ config, designCard }),
+        body: JSON.stringify({ config: payload, designCard }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "保存失败");
@@ -127,6 +145,16 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       return false;
     }
   }, [config, designCard, editKey, id]);
+
+  const rename = useCallback((): void => {
+    if (!config) return;
+    const t = window.prompt("给游戏起个名字：", config.meta.title)?.trim();
+    if (!t || t === config.meta.title) return;
+    const next: GameConfig = { ...config, meta: { ...config.meta, title: t.slice(0, 60) } };
+    setConfig(next);
+    setConfigText(JSON.stringify(next, null, 2));
+    void save(next);
+  }, [config, save]);
 
   const togglePublish = useCallback(async (): Promise<void> => {
     if (!editKey) return;
@@ -259,7 +287,12 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     <div className="editor">
       <div className="editor-topbar">
         <Link href="/">← 字游</Link>
-        <span className="title">{config.meta.title}</span>
+        <Link href="/mine" style={{ color: "var(--muted)", fontSize: 13 }}>
+          我的创作
+        </Link>
+        <span className="title" title="点击改名" style={{ cursor: "pointer" }} onClick={rename}>
+          {config.meta.title} ✎
+        </span>
         <span className="tag" title="创作流程：需求对齐中 → 方案待确认 → 已确认 → 调优中">
           {cardStatus}
         </span>
@@ -271,7 +304,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         <button className="btn small secondary" onClick={exportConfig} title="下载完整游戏配置 JSON——作品可导出，不锁作者">
           导出
         </button>
-        <button className="btn small secondary" onClick={() => void save()}>
+        <button className={`btn small${dirty ? "" : " secondary"}`} onClick={() => void save()}>
           保存
         </button>
         <button className="btn small secondary" onClick={() => void togglePublish()}>
@@ -421,7 +454,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
             {tab === "library" && (
               <div>
                 <div className="pane-note" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <select value={libCategory} onChange={(e) => setLibCategory(e.target.value)}>
+                  <select
+                    value={libCategory}
+                    onChange={(e) => {
+                      setLibCategory(e.target.value);
+                      void loadLibrary(e.target.value, libQ);
+                    }}
+                  >
                     <option value="">全部分类</option>
                     {LIBRARY_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -446,10 +485,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 <div className="issues">
                   {libEntries === null && <div className="pane-note">加载中…</div>}
                   {libEntries?.length === 0 && <div className="pane-note">没有匹配的内容。</div>}
-                  {libEntries?.map((entry) => (
+                  {rankedLib?.map(({ entry, recommended }) => (
                     <div key={entry.id} className="lib-card">
                       <div className="lib-head">
                         <b>{entry.name}</b>
+                        {recommended && (
+                          <span className="tag" style={{ color: "var(--accent, #7cd67c)" }} title="标签/变量与当前作品题材贴合，排在前面">
+                            贴合本作
+                          </span>
+                        )}
                         <span className="tag">{entry.category}</span>
                         {entry.tags.map((t) => (
                           <span key={t} className="tag">

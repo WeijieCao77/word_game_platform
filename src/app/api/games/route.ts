@@ -4,6 +4,7 @@ import path from "node:path";
 import { getStore } from "@/lib/store";
 import { blankLife, blankStory } from "@/lib/blank";
 import { validateGameConfig } from "@/lib/schema";
+import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!check.ok) {
     return NextResponse.json({ error: "模板配置未通过校验", issues: check.issues }, { status: 500 });
   }
-  const { id, editKey } = getStore().create({ config, author });
+  const { id, editKey } = getStore().create({ config, author, designCard: DESIGN_CARD_TEMPLATE });
   return NextResponse.json({ id, editKey });
 }

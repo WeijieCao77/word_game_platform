@@ -2,6 +2,7 @@ import { GameConfig, validateGameConfig, ValidationIssue } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
 import { SYSTEM_PROMPT } from "./prompt";
+import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -76,13 +77,13 @@ export async function runAssistant(
   history: { role: "user" | "assistant"; content: string }[]
 ): Promise<AgentResult> {
   let config = ctx.config;
-  let designCard = ctx.designCard;
+  let designCard = ctx.designCard || DESIGN_CARD_TEMPLATE;
   let configChanged = false;
-  let designChanged = false;
+  let designChanged = ctx.designCard !== designCard;
   let totalTokens = 0;
 
   const contextMsg =
-    `【当前设计卡】\n${designCard || "（还没有设计卡）"}\n\n` +
+    `【当前设计卡】\n${designCard}\n\n` +
     `【当前游戏配置】\n${JSON.stringify(config)}\n\n` +
     `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
 
@@ -126,6 +127,10 @@ export async function runAssistant(
           return "设计卡已更新。";
         }
         case "update_config": {
+          // 流程门禁：需求没对齐、方案没经创作者批准，禁止生成配置
+          if (!configUnlocked(designCard)) {
+            return `已拒绝：设计卡状态是「${parseCardStatus(designCard)}」。请先完成需求对齐并向创作者展示方案，获得其明确同意后把设计卡状态改为「已确认」，才能生成配置。`;
+          }
           const raw = typeof args.config === "string" ? JSON.parse(args.config) : args.config;
           const check = validateGameConfig(raw);
           const errors = check.issues.filter((i) => i.severity === "error");

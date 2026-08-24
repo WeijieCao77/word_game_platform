@@ -1,0 +1,89 @@
+name: Railway one-time setup
+
+# 一次性初始化：创建 Railway 项目与服务、挂 /data Volume、配环境变量、
+# 生成公网域名、完成首次部署。手动触发（workflow_dispatch），成功后日常
+# 部署走 railway.yml。
+#
+# 需要的 Secrets（GitHub 仓库 Settings → Secrets and variables → Actions）：
+#   RAILWAY_TOKEN   Railway 账号 token（Account Settings → Tokens）
+#   AI_API_KEY      可选，AI 供应商密钥（如 DeepSeek）；不配则先不开 AI
+# 可选 Variables（同页面的 Variables 页签，非敏感）：
+#   AI_BASE_URL     默认 https://api.deepseek.com
+#   AI_MODEL        默认 deepseek-chat
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SERVICE: word-game-platform
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
+      AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-chat' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Guard
+        run: |
+          if [ -z "$RAILWAY_API_TOKEN" ]; then
+            echo "::error::RAILWAY_TOKEN secret 未配置"; exit 1
+          fi
+          npm i -g @railway/cli
+          railway --version
+          railway whoami
+
+      - name: Create or link project
+        run: |
+          set -x
+          # 已有同名项目则复用，否则创建
+          if railway link --project "$SERVICE" --environment production 2>/dev/null; then
+            echo "linked existing project"
+          else
+            railway init --name "$SERVICE"
+          fi
+          railway status || true
+
+      - name: Ensure service exists
+        run: |
+          set -x
+          railway add --service "$SERVICE" || echo "service may already exist, continuing"
+          railway status || true
+
+      - name: Attach /data volume
+        run: |
+          set -x
+          railway volume add --mount-path /data --service "$SERVICE" \
+            || echo "volume may already exist, continuing"
+          railway volume list || true
+
+      - name: Set variables
+        run: |
+          set -x
+          ARGS=(--service "$SERVICE" --skip-deploys \
+            --set "DATA_DIR=/data" \
+            --set "AI_BASE_URL=$AI_BASE_URL" \
+            --set "AI_MODEL=$AI_MODEL")
+          if [ -n "$AI_API_KEY" ]; then ARGS+=(--set "AI_API_KEY=$AI_API_KEY"); fi
+          railway variables "${ARGS[@]}"
+
+      - name: Generate public domain
+        run: |
+          set -x
+          railway domain --service "$SERVICE" || echo "domain may already exist, continuing"
+
+      - name: First deploy
+        run: |
+          set -x
+          railway up --service "$SERVICE" --detach
+
+      - name: Report
+        run: |
+          echo "=== 状态 ==="
+          railway status || true
+          echo "=== 域名（在上面 Generate public domain 步骤的输出里）==="

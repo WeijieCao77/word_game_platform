@@ -49,6 +49,26 @@ describe("官方示例：电竞经理 Lite（sim）", () => {
   });
 });
 
+describe("官方示例：整条巷子都知道我心动了（romance/story）", () => {
+  const raw = load("romance-demo.json");
+
+  it("通过结构 + 语义校验，无错误无警告", () => {
+    const r = validateGameConfig(raw);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.filter((i) => i.severity === "warning")).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("模拟 600 局：无错误，全部结局与卡片可达", { timeout: 60000 }, () => {
+    const r = validateGameConfig(raw);
+    const report = simulate(r.config!, 600, 20260824);
+    expect(report.errors).toEqual([]);
+    expect(report.endings["__unfinished__"]).toBeUndefined();
+    expect(report.unreachedEndings).toEqual([]);
+    expect(report.unfiredCards).toEqual([]);
+  });
+});
+
 describe("官方示例：雨夜末班车（story）", () => {
   const raw = load("story-demo.json");
 
@@ -59,7 +79,7 @@ describe("官方示例：雨夜末班车（story）", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("模拟 400 局：无错误，四个结局全部可达", () => {
+  it("模拟 400 局：无错误，15 个结局全部可达", () => {
     const r = validateGameConfig(raw);
     const report = simulate(r.config!, 400, 7);
     expect(report.errors).toEqual([]);

@@ -19,7 +19,16 @@ interface MineEntry {
   updatedAt: string;
   hasCover?: boolean;
   coverPreset?: string;
+  likes?: number;
+  plays?: number;
+  avgPlaySeconds?: number;
   missing?: boolean;
+}
+
+function fmtDuration(s?: number): string {
+  if (!s) return "—";
+  if (s < 60) return `${s} 秒`;
+  return `${Math.round(s / 60)} 分钟`;
 }
 
 function localKeys(): { id: string; key: string }[] {
@@ -47,7 +56,16 @@ export default function MinePage(): React.ReactElement {
           if (!res.ok) return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
           const body = await res.json();
           if (!body.canEdit) return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
+          let stats: { likes?: number; plays?: number; avgPlaySeconds?: number } = {};
+          try {
+            stats = await (await fetch(`/api/games/${id}/stats`, { headers: { "x-edit-key": key } })).json();
+          } catch {
+            // 统计拉取失败不影响列表
+          }
           return {
+            likes: stats.likes,
+            plays: stats.plays,
+            avgPlaySeconds: stats.avgPlaySeconds,
             id,
             key,
             title: body.config?.meta?.title ?? id,
@@ -160,6 +178,11 @@ export default function MinePage(): React.ReactElement {
                       <span className="tag">{KIND_CN[e.kind] ?? KIND_CN.unknown}</span>
                       <span className="tag">{e.published ? "已发布" : "草稿"}</span>
                       {e.updatedAt && <span>{e.updatedAt.slice(0, 10)}</span>}
+                    </div>
+                    <div className="meta" style={{ marginTop: 6 }} title="点赞 · 游玩次数 · 平均游玩时长">
+                      <span className="stat-chip">♡ {e.likes ?? 0}</span>
+                      <span className="stat-chip">▶ {e.plays ?? 0}</span>
+                      <span className="stat-chip">⌀ {fmtDuration(e.avgPlaySeconds)}</span>
                     </div>
                   </div>
                 </Link>

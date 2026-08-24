@@ -238,6 +238,11 @@ export interface CardDef {
   cooldown?: number;
   /** 正文，支持 {表达式} 插值 */
   text: string;
+  /**
+   * 反重复文案变体：填了则每次触发从 [text, ...textVariants] 中按种子随机挑一套展示。
+   * 高频卡（日常/事件）建议至少配 2 条变体，同一张卡多次出现不再一字不差。
+   */
+  textVariants?: string[];
   effects?: Effect[];
   choices?: ChoiceDef[];
   /** 无选项时自动接到下一张卡（叙事链） */

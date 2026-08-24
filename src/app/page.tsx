@@ -83,6 +83,8 @@ export default function HomePage(): React.ReactElement {
                     <div className="meta">
                       <span className="tag">{KIND_CN[g.kind]}</span>
                       <span>{g.author}</span>
+                      <span className="stat-chip" title="点赞">♡ {g.likes}</span>
+                      <span className="stat-chip" title="游玩次数">▶ {g.plays}</span>
                     </div>
                   </div>
                 </Link>

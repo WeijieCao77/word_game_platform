@@ -238,6 +238,9 @@ class Validator {
       const ctx: ExprContext = { entity: entityCtx };
       if (card.condition) this.checkExpr(card.condition, `${base}.condition`, {});
       this.checkTemplate(card.text, `${base}.text`, ctx);
+      for (let vi = 0; vi < (card.textVariants?.length ?? 0); vi++) {
+        this.checkTemplate(card.textVariants![vi], `${base}.textVariants[${vi}]`, ctx);
+      }
       this.checkEffects(card.effects, `${base}.effects`, ctx);
       if (card.goto && card.ending) this.error(base, `卡片 "${card.id}" 不能同时设置 goto 和 ending`);
       if (card.goto && !this.cardIds.has(card.goto)) {

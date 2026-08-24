@@ -11,6 +11,7 @@ const TEMPLATES = [
   { id: "demo-sim", name: "从示例出发 · 电竞经理 Lite", desc: "复制官方经营示例（阵容/训练/转会/联赛）改成你的版本" },
   { id: "demo-life", name: "从示例出发 · 修仙人生重开", desc: "复制官方修仙示例改成你的版本" },
   { id: "demo-story", name: "从示例出发 · 雨夜末班车", desc: "复制官方怪谈示例改成你的版本" },
+  { id: "demo-romance", name: "从示例出发 · 恋爱互动小说", desc: "复制官方橙光式恋爱示例改成你的版本" },
 ];
 
 export default function NewGamePage(): React.ReactElement {

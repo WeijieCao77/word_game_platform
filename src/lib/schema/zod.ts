@@ -169,6 +169,7 @@ export const CardDefSchema = z.object({
   once: z.boolean().optional(),
   cooldown: z.number().min(0).max(200).optional(),
   text: TextSchema,
+  textVariants: z.array(TextSchema).max(8).optional(),
   effects: z.array(EffectSchema).max(20).optional(),
   choices: z.array(ChoiceDefSchema).max(8).optional(),
   goto: IdSchema.optional(),

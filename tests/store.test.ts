@@ -82,3 +82,25 @@ describe("SqliteGameStore 封面存取", () => {
     expect(store.get(id)!.hasCover).toBe(false);
   });
 });
+
+describe("SqliteGameStore 统计", () => {
+  it("play/like/时长累计与按日明细，unlike 不会减到负数", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    store.addPlay(id);
+    store.addPlay(id);
+    store.addLike(id, 1);
+    store.addLike(id, -1);
+    store.addLike(id, -1); // 不应变成 -1
+    store.addPlaySeconds(id, 90);
+    store.addPlaySeconds(id, 100000); // 单次封顶 600
+    const s = store.getStats(id);
+    expect(s.plays).toBe(2);
+    expect(s.likes).toBe(0);
+    expect(s.playSeconds).toBe(690);
+    expect(s.daily).toHaveLength(1);
+    expect(s.daily[0].plays).toBe(2);
+    expect(s.daily[0].playSeconds).toBe(690);
+    expect(() => store.addPlay("nope")).not.toThrow();
+  });
+});

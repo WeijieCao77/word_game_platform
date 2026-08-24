@@ -30,6 +30,8 @@ interface GameRow {
   updated_at: string;
   /** 列表查询带出的 (cover IS NOT NULL) */
   has_cover?: number;
+  likes?: number;
+  plays?: number;
 }
 
 /** 对话记录条数上限：超出后丢最旧的（防单行无限膨胀） */
@@ -80,12 +82,31 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN chat TEXT NOT NULL DEFAULT '[]'",
       "ALTER TABLE games ADD COLUMN cover BLOB",
       "ALTER TABLE games ADD COLUMN cover_type TEXT",
+      "ALTER TABLE games ADD COLUMN likes INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE games ADD COLUMN plays INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE games ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
       } catch {
         // 列已存在
       }
+    }
+    // 按日统计表：创作者数据后台的地基（趋势图/日活直接从这查）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS game_stats_daily (
+        game_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        plays INTEGER NOT NULL DEFAULT 0,
+        likes INTEGER NOT NULL DEFAULT 0,
+        play_seconds INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (game_id, date)
+      );
+    `);
+    try {
+      this.db.exec("ALTER TABLE game_stats_daily ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0");
+    } catch {
+      // 列已存在
     }
   }
 
@@ -219,6 +240,58 @@ export class SqliteGameStore implements GameStore {
     return { data: row.cover, contentType: row.cover_type ?? "image/jpeg" };
   }
 
+  addPlay(id: string): void {
+    const r = this.db.prepare("UPDATE games SET plays = plays + 1 WHERE id = ?").run(id);
+    if (r.changes === 0) return;
+    this.db
+      .prepare(
+        `INSERT INTO game_stats_daily (game_id, date, plays, likes) VALUES (?, ?, 1, 0)
+         ON CONFLICT(game_id, date) DO UPDATE SET plays = plays + 1`
+      )
+      .run(id, today());
+  }
+
+  addLike(id: string, delta: 1 | -1): void {
+    const r = this.db.prepare("UPDATE games SET likes = MAX(0, likes + ?) WHERE id = ?").run(delta, id);
+    if (r.changes === 0) return;
+    this.db
+      .prepare(
+        `INSERT INTO game_stats_daily (game_id, date, plays, likes) VALUES (?, ?, 0, ?)
+         ON CONFLICT(game_id, date) DO UPDATE SET likes = likes + excluded.likes`
+      )
+      .run(id, today(), delta);
+  }
+
+  addPlaySeconds(id: string, seconds: number): void {
+    const s = Math.max(0, Math.min(600, Math.floor(seconds)));
+    if (s === 0) return;
+    const r = this.db.prepare("UPDATE games SET play_seconds = play_seconds + ? WHERE id = ?").run(s, id);
+    if (r.changes === 0) return;
+    this.db
+      .prepare(
+        `INSERT INTO game_stats_daily (game_id, date, plays, likes, play_seconds) VALUES (?, ?, 0, 0, ?)
+         ON CONFLICT(game_id, date) DO UPDATE SET play_seconds = play_seconds + excluded.play_seconds`
+      )
+      .run(id, today(), s);
+  }
+
+  getStats(id: string): {
+    likes: number;
+    plays: number;
+    playSeconds: number;
+    daily: { date: string; plays: number; likes: number; playSeconds: number }[];
+  } {
+    const totals = this.db.prepare("SELECT likes, plays, play_seconds FROM games WHERE id = ?").get(id) as
+      | { likes: number; plays: number; play_seconds: number }
+      | undefined;
+    const daily = this.db
+      .prepare(
+        "SELECT date, plays, likes, play_seconds AS playSeconds FROM game_stats_daily WHERE game_id = ? ORDER BY date DESC LIMIT 90"
+      )
+      .all(id) as { date: string; plays: number; likes: number; playSeconds: number }[];
+    return { likes: totals?.likes ?? 0, plays: totals?.plays ?? 0, playSeconds: totals?.play_seconds ?? 0, daily };
+  }
+
   setPublished(id: string, published: boolean): void {
     this.db
       .prepare("UPDATE games SET published = ?, updated_at = ? WHERE id = ?")
@@ -248,11 +321,13 @@ export class SqliteGameStore implements GameStore {
       updatedAt: row.updated_at,
       hasCover: row.has_cover === 1,
       coverPreset,
+      likes: row.likes ?? 0,
+      plays: row.plays ?? 0,
     };
   }
 
   private static readonly SUMMARY_COLS =
-    "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, (cover IS NOT NULL) AS has_cover";
+    "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, likes, plays, (cover IS NOT NULL) AS has_cover";
 
   listPublished(limit = 100): GameSummary[] {
     const rows = this.db

@@ -266,6 +266,21 @@ function clockOf(config: GameConfig, state: GameState): number {
   return state.time ?? state.turn;
 }
 
+/**
+ * 反重复文案变体：从 [text, ...textVariants] 中确定性轮转挑选。
+ * 起点由 (seed, 卡片id) 决定、每次触发前进一格——同一张卡连续两次触发必不同文案，
+ * 且完全可复现（不消耗随机流，不影响既有存档回放）。
+ */
+function pickCardText(card: CardDef, state: GameState): string {
+  const variants = card.textVariants;
+  if (!variants || variants.length === 0) return card.text;
+  const pool = [card.text, ...variants];
+  let h = 0;
+  const key = `${state.seed}:${card.id}`;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return pool[(h + (state.fired[card.id] ?? 1)) % pool.length];
+}
+
 /** 触发一张卡，沿 goto 链执行到需要选择、触发结局或链条终止。scopeEntity 为实体事件的 self 绑定。 */
 function resolveCard(config: GameConfig, state: GameState, scope: GameScope, startId: string, scopeEntity?: string): void {
   let id: string | undefined = startId;
@@ -281,7 +296,7 @@ function resolveCard(config: GameConfig, state: GameState, scope: GameScope, sta
     state.lastFired[card.id] = clockOf(config, state);
     if (config.driver.kind !== "sim") state.turn += 1;
     applyEffects(config, state, cardScope, card.effects, bindings);
-    state.log.push({ kind: "card", text: renderText(card.text, cardScope), turn: state.turn });
+    state.log.push({ kind: "card", text: renderText(pickCardText(card, state), cardScope), turn: state.turn });
     if (card.ending) {
       endGame(config, state, cardScope, card.ending);
       return;

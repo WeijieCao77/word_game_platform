@@ -33,6 +33,9 @@ export interface GameSummary {
   hasCover: boolean;
   /** 作者选的封面预设样式 id */
   coverPreset?: string;
+  /** 点赞数与进入游玩次数（累计） */
+  likes: number;
+  plays: number;
 }
 
 export interface GameStore {
@@ -46,6 +49,16 @@ export interface GameStore {
   /** 自定义封面：data=null 表示移除 */
   setCover(id: string, data: Uint8Array | null, contentType?: string): void;
   getCover(id: string): { data: Uint8Array; contentType: string } | null;
+  /** 统计：进入游玩 +1 / 点赞增减 / 游玩时长累计（按日累计，创作者数据后台的地基） */
+  addPlay(id: string): void;
+  addLike(id: string, delta: 1 | -1): void;
+  addPlaySeconds(id: string, seconds: number): void;
+  getStats(id: string): {
+    likes: number;
+    plays: number;
+    playSeconds: number;
+    daily: { date: string; plays: number; likes: number; playSeconds: number }[];
+  };
   setPublished(id: string, published: boolean): void;
   listPublished(limit?: number): GameSummary[];
   listByAuthor(author: string): GameSummary[];

@@ -49,6 +49,8 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   const [fatal, setFatal] = useState<string | null>(null);
   const [staleSave, setStaleSave] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [likes, setLikes] = useState<number | null>(null);
+  const [liked, setLiked] = useState(false);
   const [targetPick, setTargetPick] = useState<string | null>(null); // 正在选目标的决策 id
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +147,102 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       setFatal(err instanceof Error ? err.message : String(err));
     }
   }, []);
+
+  // 进入游玩计一次点击量（每浏览器会话每游戏一次），并拉取点赞数
+  useEffect(() => {
+    if (mode !== "play" || !gameId) return;
+    try {
+      setLiked(localStorage.getItem(`wgp_liked_${gameId}`) === "1");
+      const guard = `wgp_played_${gameId}`;
+      if (!sessionStorage.getItem(guard)) {
+        sessionStorage.setItem(guard, "1");
+        void fetch(`/api/games/${gameId}/stats`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ event: "play" }),
+        })
+          .then((r) => r.json())
+          .then((b) => typeof b.likes === "number" && setLikes(b.likes))
+          .catch(() => undefined);
+      } else {
+        void fetch(`/api/games/${gameId}/stats`)
+          .then((r) => r.json())
+          .then((b) => typeof b.likes === "number" && setLikes(b.likes))
+          .catch(() => undefined);
+      }
+    } catch {
+      // 隐私模式等场景下静默降级
+    }
+  }, [mode, gameId]);
+
+  // 游玩时长：页面可见时累计，每 60s 上报一次，离开页面用 sendBeacon 补尾——
+  // 创作者后台「平均玩多久」的数据源
+  useEffect(() => {
+    if (mode !== "play" || !gameId) return;
+    let acc = 0;
+    let last = Date.now();
+    const flush = (useBeacon: boolean): void => {
+      const secs = Math.round(acc);
+      if (secs < 3) return;
+      acc = 0;
+      const payload = JSON.stringify({ event: "time", seconds: secs });
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(`/api/games/${gameId}/stats`, new Blob([payload], { type: "application/json" }));
+      } else {
+        void fetch(`/api/games/${gameId}/stats`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => undefined);
+      }
+    };
+    const tick = setInterval(() => {
+      if (document.visibilityState === "visible") acc += (Date.now() - last) / 1000;
+      last = Date.now();
+      if (acc >= 60) flush(false);
+    }, 5000);
+    const onVis = (): void => {
+      if (document.visibilityState === "visible") last = Date.now();
+      else {
+        acc += (Date.now() - last) / 1000;
+        last = Date.now();
+      }
+    };
+    const onHide = (): void => {
+      if (document.visibilityState === "visible") acc += (Date.now() - last) / 1000;
+      flush(true);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onHide);
+      onHide();
+    };
+  }, [mode, gameId]);
+
+  const toggleLike = useCallback((): void => {
+    if (!gameId) return;
+    const next = !liked;
+    setLiked(next);
+    setLikes((n) => (n === null ? n : Math.max(0, n + (next ? 1 : -1))));
+    try {
+      if (next) localStorage.setItem(`wgp_liked_${gameId}`, "1");
+      else localStorage.removeItem(`wgp_liked_${gameId}`);
+    } catch {
+      // 忽略
+    }
+    void fetch(`/api/games/${gameId}/stats`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: next ? "like" : "unlike" }),
+    })
+      .then((r) => r.json())
+      .then((b) => typeof b.likes === "number" && setLikes(b.likes))
+      .catch(() => undefined);
+  }, [gameId, liked]);
 
   const restart = useCallback((): void => {
     if (mode === "play" && gameId) {
@@ -351,6 +449,9 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
         <div className="player-footer">
           {mode === "play" ? (
             <>
+              <button className={`like-btn ${liked ? "liked" : ""}`} onClick={toggleLike} title={liked ? "取消点赞" : "给这个游戏点个赞，鼓励作者"}>
+                {liked ? "❤" : "♡"} {likes ?? "…"}
+              </button>
               <button className="linklike" onClick={share}>
                 {copied ? "链接已复制 ✓" : "分享此游戏"}
               </button>

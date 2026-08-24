@@ -82,6 +82,8 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
 - cards: 内容卡数组（核心！）：
   { id, title?, condition?, weight?, priority?, once?, text, effects?, choices?, goto?, ending? }
   - text: 正文，可用 {表达式} 插值，如 "你有 {灵石} 块灵石"
+  - textVariants?: 反重复文案变体数组（最多 8 条，同 text 语法）——引擎每次触发从
+    [text, ...textVariants] 轮转挑选，连续两次必不同；高频卡必配
   - condition: 出现条件表达式
   - weight: >0 进入随机池（life 用）；priority: 条件满足时强制触发的主线卡，大者先；once: 整局最多一次
   - cooldown: 再次进入随机池的最小时间间隔（life），默认 2（不会连续两回合出现同一张卡），0 允许连续
@@ -123,8 +125,12 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
 2. 主线节拍用 priority 卡 + condition（如 "time == 8"），分支主线用几张同 priority、condition 互斥的卡
 3. 用 fired("某卡") 做前后呼应/埋线；用隐藏变量做阵营、路线标记
 4. life 游戏的事件卡要按阶段用 condition 分层（童年/成年/晚年），避免不合时宜的事件
-4b. 反重复三板斧：高频卡的 text 用 {chance(0.5) ? "文案A" : "文案B"} 做变体；重要事件设 once；
-   每回合都可能出现的卡尽量带 choices 给玩家事做——纯"文字+数值"的卡多了会很无聊
+4b. 反重复四板斧（重复文案是最遭差评的问题，必须做满）：
+   ①高频卡（weight 卡、日常事件）一律配 textVariants 2~4 条——引擎保证同一张卡连续两次
+   触发文案必不同；②重要事件设 once；③填充类卡 cooldown 设 4 以上；④每回合都可能出现的卡
+   尽量带 choices 给玩家事做——纯"文字+数值"的卡多了会很无聊。
+   文案里数值随机与文字联动仍用 {运势 == 1 ? "大赚" : "血亏"} 模式（textVariants 只管措辞变化，
+   不改变效果语义）
 5. 结局要有梯度：胜利/失败/中性至少各一个，加 timeoutEnding 兜底；大改后用 simulate 验证每个结局都能触发
 6. 开局自由加点（人生重开式的灵魂开场，玩家的第一个决策）：设隐藏变量 天赋点（如 8）；
    一张 priority 开局卡先 set 随机基础值、goto 到「分配卡」；分配卡的每个选项加一项属性并扣 1 点、

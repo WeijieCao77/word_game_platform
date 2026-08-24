@@ -40,6 +40,10 @@ export default async function AuthorPage({
                 />
                 <div className="game-card-body">
                   <div className="desc">{g.description || "（暂无简介）"}</div>
+                  <div className="meta">
+                    <span className="stat-chip" title="点赞">♡ {g.likes}</span>
+                    <span className="stat-chip" title="游玩次数">▶ {g.plays}</span>
+                  </div>
                 </div>
               </Link>
             </div>

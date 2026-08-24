@@ -77,7 +77,8 @@ jobs:
           VAR_ARGS=(--service "$SERVICE" --skip-deploys \
             --set "DATA_DIR=/data" \
             --set "AI_BASE_URL=$AI_BASE_URL" \
-            --set "AI_MODEL=$AI_MODEL")
+            --set "AI_MODEL=$AI_MODEL" \
+            --set "FLAGSHIP_URL=https://val-manager-production.up.railway.app/")
           if [ -n "$AI_API_KEY" ]; then VAR_ARGS+=(--set "AI_API_KEY=$AI_API_KEY"); fi
           run_rw variables "${VAR_ARGS[@]}"
 

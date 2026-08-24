@@ -255,6 +255,14 @@ textarea {
   line-height: 1.3;
 }
 
+.linklike.danger {
+  color: #d9534f;
+  opacity: 0.75;
+}
+.linklike.danger:hover {
+  opacity: 1;
+}
+
 /* 卡片上的统计小徽标 */
 .stat-chip {
   font-size: 12px;

@@ -44,6 +44,8 @@ export interface GameStore {
   /** 校验 editKey；true 表示有编辑权 */
   checkEditKey(id: string, editKey: string): boolean;
   update(id: string, patch: { config?: unknown; designCard?: string; author?: string }): void;
+  /** 删除游戏（连带按日统计；已分享到内容库的卡片是独立副本，保留） */
+  delete(id: string): void;
   /** 追加对话记录（服务端持久化，超出上限时保留最新的） */
   appendChat(id: string, turns: ChatTurn[]): void;
   /** 自定义封面：data=null 表示移除 */

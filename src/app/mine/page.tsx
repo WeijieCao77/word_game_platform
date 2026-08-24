@@ -126,6 +126,27 @@ export default function MinePage(): React.ReactElement {
     [refresh]
   );
 
+  const remove = useCallback(
+    (e: MineEntry): void => {
+      const warn = e.published
+        ? `确定删除《${e.title}》吗？\n\n这个游戏已经发布，删除后玩家的链接会全部失效，且无法恢复。\n如需备份，请先到工作台点「导出」。`
+        : `确定删除草稿《${e.title}》吗？删除后无法恢复。`;
+      if (!window.confirm(warn)) return;
+      void (async () => {
+        try {
+          const res = await fetch(`/api/games/${e.id}`, { method: "DELETE", headers: { "x-edit-key": e.key } });
+          if (!res.ok) throw new Error((await res.json()).error ?? "删除失败");
+          localStorage.removeItem(`wgp_key_${e.id}`);
+          setNotice(`已删除《${e.title}》`);
+          void refresh();
+        } catch (err) {
+          setNotice(err instanceof Error ? err.message : String(err));
+        }
+      })();
+    },
+    [refresh]
+  );
+
   return (
     <div className="site">
       <header className="site-header">
@@ -196,6 +217,10 @@ export default function MinePage(): React.ReactElement {
                         玩家页
                       </Link>
                     )}
+                    <span style={{ flex: 1 }} />
+                    <button className="linklike danger" title="删除这个作品（不可恢复）" onClick={() => remove(e)}>
+                      删除
+                    </button>
                   </div>
                 </div>
               </div>

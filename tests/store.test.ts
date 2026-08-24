@@ -104,3 +104,18 @@ describe("SqliteGameStore 统计", () => {
     expect(() => store.addPlay("nope")).not.toThrow();
   });
 });
+
+describe("SqliteGameStore 删除", () => {
+  it("删除后游戏与统计消失，重复删除安全", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    store.addPlay(id);
+    store.setPublished(id, true);
+    store.delete(id);
+    expect(store.get(id)).toBeNull();
+    expect(store.getStats(id).plays).toBe(0);
+    expect(store.getStats(id).daily).toHaveLength(0);
+    expect(store.listPublished().find((g) => g.id === id)).toBeUndefined();
+    expect(() => store.delete(id)).not.toThrow();
+  });
+});

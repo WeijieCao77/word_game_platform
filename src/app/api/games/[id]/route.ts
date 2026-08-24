@@ -29,6 +29,18 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   });
 }
 
+/** 删除作品：凭编辑钥匙，不可恢复（建议前端先提示导出配置备份） */
+export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { id } = await params;
+  const store = getStore();
+  if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  if (!store.checkEditKey(id, req.headers.get("x-edit-key") ?? "")) {
+    return NextResponse.json({ error: "没有编辑权限（editKey 不正确）" }, { status: 403 });
+  }
+  store.delete(id);
+  return NextResponse.json({ ok: true });
+}
+
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params;
   const store = getStore();

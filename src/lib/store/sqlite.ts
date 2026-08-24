@@ -207,6 +207,11 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare(`UPDATE games SET ${sets.join(", ")} WHERE id = ?`).run(...args);
   }
 
+  delete(id: string): void {
+    this.db.prepare("DELETE FROM game_stats_daily WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
+  }
+
   appendChat(id: string, turns: ChatTurn[]): void {
     const row = this.db.prepare("SELECT chat FROM games WHERE id = ?").get(id) as
       | { chat: string }

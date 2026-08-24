@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run",
-    "export-schema": "node --experimental-strip-types scripts/export-json-schema.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

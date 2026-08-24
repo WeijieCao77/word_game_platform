@@ -96,3 +96,14 @@ jobs:
 
           echo "=== Volume（持久化磁盘）==="
           run_rw volume list || true
+
+      - name: Check live health
+        run: |
+          URL="https://word-game-platform-production.up.railway.app/api/health"
+          echo "线上健康检查（含当前 AI 供应商/模型）："
+          for i in $(seq 1 18); do
+            BODY=$(curl -s --max-time 10 "$URL" || true)
+            if [ -n "$BODY" ]; then echo "$BODY"; exit 0; fi
+            sleep 10
+          done
+          echo "::warning::健康检查未返回内容（服务可能正在重启）"

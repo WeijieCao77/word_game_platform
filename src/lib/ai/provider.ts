@@ -78,6 +78,13 @@ export function aiConfigured(): boolean {
   return resolveProvider() !== null;
 }
 
+/** 运维可见的非敏感信息：当前供应商与模型名（绝不含密钥） */
+export function aiRuntimeInfo(): { provider: string; model: string | null } {
+  const name = (process.env.AI_PROVIDER ?? "").trim().toLowerCase();
+  const provider = name && PROVIDERS[name] ? name : "legacy";
+  return { provider, model: resolveProvider()?.model ?? null };
+}
+
 export async function callChat(messages: ChatMessage[], tools?: ToolDef[]): Promise<ChatResult> {
   const p = resolveProvider();
   if (!p) throw new Error("AI 尚未配置");

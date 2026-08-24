@@ -50,13 +50,13 @@ npm run build && npm start   # 生产模式
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `DATA_DIR` | SQLite 数据目录 | `./data` |
-| `AI_BASE_URL` | OpenAI 兼容端点，如 `https://api.deepseek.com` | 未配置则 AI 面板降级提示 |
-| `AI_API_KEY` | 密钥 | — |
-| `AI_MODEL` | 模型名，如 `deepseek-chat` | — |
+| `AI_PROVIDER` | AI 供应商：`openai` / `deepseek` / `anthropic` / `qwen` / `kimi` | 未设则走旧三件套 |
+| `OPENAI_API_KEY` 等 | 各供应商的密钥，按 `<供应商>_API_KEY` 命名，可同时存多把 | 未配置则 AI 面板降级提示 |
+| `AI_MODEL` | 模型名（可选），不填用该供应商默认模型 | `gpt-5-mini` / `deepseek-chat` / … |
 | `AI_DAILY_REQUESTS` | 每把编辑钥匙每日 AI 次数上限 | `40` |
 | `AI_DAILY_TOKENS` | 每把编辑钥匙每日 token 上限 | `400000` |
 
-AI 供应商随环境变量热插拔：DeepSeek / Qwen（DashScope 兼容模式）/ Kimi / 豆包 / GLM 等任何 OpenAI 兼容端点均可，见 `.env.example`。
+**切换模型只改一个变量**：各家 key 各自存放（`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`QWEN_API_KEY`、`KIMI_API_KEY`），想换模型时把 `AI_PROVIDER` 改成对应供应商即可，key 不用动。旧用法（`AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL` 三件套指向任意 OpenAI 兼容端点）在不设 `AI_PROVIDER` 时继续生效，见 `.env.example`。
 
 ## 部署到 Railway
 
@@ -64,7 +64,7 @@ AI 供应商随环境变量热插拔：DeepSeek / Qwen（DashScope 兼容模式�
 
 1. Railway → New Project → **Deploy from GitHub repo**，选中本仓库
 2. 给服务挂一个 **Volume**，挂载点填 `/data`（SQLite 落盘，否则每次重新部署数据清零）
-3. Variables 里设置：`DATA_DIR=/data`，以及 `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL`
+3. Variables 里设置：`DATA_DIR=/data`，以及 `AI_PROVIDER` + 对应的 `<供应商>_API_KEY`
 4. Settings → Networking → **Generate Domain**，得到 `xxx.up.railway.app` 即可对外分享
 
 注意：微信内打开 Railway 域名容易被拦，内测期让用户复制链接到浏览器打开即可（交接文档已有此结论，不值得为此折腾）。将来要放量/收费时的合规硬墙（备案、许可证、内容审核、实名防沉迷）已记录在 `docs/HANDOFF.md` 第五节，当前阶段全部延后。

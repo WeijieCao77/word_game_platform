@@ -69,9 +69,10 @@ jobs:
           run_rw status || true
 
           run_rw add --service "$SERVICE" || echo "service 可能已存在，继续"
-          # 注意：-s 是 volume 命令级选项，要放在 add 子命令之前
-          run_rw volume -s "$SERVICE" add --mount-path /data || echo "volume 可能已存在，继续"
-          run_rw volume -s "$SERVICE" list || true
+          # CLI 5.43 在非交互环境下带 -s 加卷会 panic：先把 service link 进上下文再加
+          run_rw service "$SERVICE" || echo "service link 失败，继续"
+          run_rw volume add --mount-path /data || echo "volume 添加失败或已存在，继续"
+          run_rw volume list || true
 
           VAR_ARGS=(--service "$SERVICE" --skip-deploys \
             --set "DATA_DIR=/data" \

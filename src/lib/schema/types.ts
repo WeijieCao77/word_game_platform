@@ -80,7 +80,8 @@ export interface SimTimeModel {
   /** 每周期回合数 */
   turnsPerCycle?: number;
   /** 最多周期数，走完触发 timeout 兜底结局 */
-  maxCycles: number;
+  /** 不填 = 开放式生涯：赛季无上限，游戏不会因为「打完」而结束 */
+  maxCycles?: number;
 }
 
 /**

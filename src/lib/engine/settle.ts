@@ -125,13 +125,14 @@ function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope):
     for (const lg of config.leagues ?? []) {
       if (lg.resetEachCycle !== false && state.leagues?.[lg.id]) delete state.leagues[lg.id];
     }
-    if (state.cycle > t.maxCycles) {
+    // maxCycles 不填 = 开放式生涯，永远不会因为「打完」而结束
+    if (t.maxCycles !== undefined && state.cycle > t.maxCycles) {
       timeoutEnd(config, state, scope, "落幕");
       return;
     }
   } else {
     state.turn += 1;
-    if (t.turnsPerCycle === undefined && state.turn > t.maxCycles) {
+    if (t.turnsPerCycle === undefined && t.maxCycles !== undefined && state.turn > t.maxCycles) {
       timeoutEnd(config, state, scope, "落幕");
       return;
     }

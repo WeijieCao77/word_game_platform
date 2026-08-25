@@ -67,7 +67,8 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     expectedLength = Math.max(1, Math.ceil((t.max - t.start) / (t.step || 1)));
   } else if (config.driver.kind === "sim") {
     const t = config.driver.time;
-    expectedLength = Math.max(1, t.maxCycles * (t.turnsPerCycle ?? 1));
+    // 开放式生涯（无 maxCycles）没有固定局长，开局即死检测不适用
+    expectedLength = t.maxCycles === undefined ? 0 : Math.max(1, t.maxCycles * (t.turnsPerCycle ?? 1));
   }
   const earlyThreshold = expectedLength > 0 ? Math.max(2, Math.ceil(expectedLength * 0.1)) : 0;
   let earlyEnds = 0;

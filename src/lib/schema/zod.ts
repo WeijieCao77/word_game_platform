@@ -54,7 +54,9 @@ export const SimTimeModelSchema = z.object({
   turnLabel: z.string().min(1).max(10),
   cycleLabel: z.string().min(1).max(10).optional(),
   turnsPerCycle: z.number().int().min(1).max(365).optional(),
-  maxCycles: z.number().int().min(1).max(200),
+  // 不填 = 开放式生涯（无限赛季）。经理类游戏没有「打完三个赛季就结束」这回事——
+  // 参照 VAL MANAGER：赛季一直往前，下课了换一家俱乐部继续。
+  maxCycles: z.number().int().min(1).max(200).optional(),
 });
 
 export const DriverSchema = z.discriminatedUnion("kind", [
@@ -93,9 +95,9 @@ export const AttributeDefSchema = z.object({
 export const EntityTypeDefSchema = z.object({
   id: IdSchema,
   name: NameSchema,
-  attributes: z.array(AttributeDefSchema).min(1).max(30),
+  attributes: z.array(AttributeDefSchema).min(1).max(48),
   // 名单分组：按标签把表拆成几段（自家阵容 / 转会市场…），不配就是一张大表
-  groups: z.array(z.object({ tag: NameSchema, label: NameSchema })).max(8).optional(),
+  groups: z.array(z.object({ tag: NameSchema, label: NameSchema })).max(12).optional(),
   restLabel: NameSchema.optional(),
 });
 
@@ -104,7 +106,7 @@ export const EntityInstanceSchema = z.object({
   type: IdSchema,
   name: NameSchema,
   attrs: z.record(IdSchema, z.number()),
-  tags: z.array(IdSchema).max(20).optional(),
+  tags: z.array(IdSchema).max(30).optional(),
 });
 
 export const DerivedDefSchema = z.object({
@@ -122,7 +124,7 @@ export const ActionDefSchema = z.object({
   condition: ExprSchema.optional(),
   usesPerTurn: z.number().int().min(0).max(99).optional(),
   cost: z.number().int().min(0).max(10).optional(),
-  effects: z.array(EffectSchema).max(20),
+  effects: z.array(EffectSchema).max(40),
   text: z.string().max(2000).optional(),
 });
 
@@ -131,14 +133,14 @@ export const SettlementDefSchema = z.object({
   name: NameSchema,
   every: z.number().int().min(1).max(365).optional(),
   condition: ExprSchema.optional(),
-  data: z.array(z.record(IdSchema, z.union([z.number(), z.string().max(120)]))).max(400).optional(),
-  compute: z.array(z.object({ id: IdSchema, expr: ExprSchema })).max(30).optional(),
+  data: z.array(z.record(IdSchema, z.union([z.number(), z.string().max(120)]))).max(800).optional(),
+  compute: z.array(z.object({ id: IdSchema, expr: ExprSchema })).max(60).optional(),
   outcomes: z
     .array(
       z.object({
         id: IdSchema,
         condition: ExprSchema,
-        effects: z.array(EffectSchema).max(20),
+        effects: z.array(EffectSchema).max(40),
         text: z.string().max(2000).optional(),
         leagueResult: z.enum(["win", "loss"]).optional(),
       })
@@ -153,7 +155,7 @@ export const LeagueDefSchema = z.object({
   teams: z
     .array(z.object({ name: z.string().min(1).max(40), strength: z.number().min(0).max(1000) }))
     .min(4)
-    .max(40),
+    .max(64),
   playerTeam: z.string().min(1).max(40),
   settlement: IdSchema,
   opponentKey: IdSchema.optional(),
@@ -167,7 +169,7 @@ export const CurveDefSchema = z.object({
   entityType: IdSchema,
   phase: z.enum(["turn", "cycle"]),
   condition: ExprSchema.optional(),
-  effects: z.array(EffectSchema).max(20),
+  effects: z.array(EffectSchema).max(40),
   text: z.string().max(2000).optional(),
 });
 
@@ -175,7 +177,7 @@ export const ChoiceDefSchema = z.object({
   id: IdSchema,
   label: z.string().min(1).max(120),
   condition: ExprSchema.optional(),
-  effects: z.array(EffectSchema).max(20).optional(),
+  effects: z.array(EffectSchema).max(40).optional(),
   text: z.string().max(4000).optional(),
   goto: IdSchema.optional(),
   ending: IdSchema.optional(),
@@ -185,7 +187,7 @@ export const InputAnswerDefSchema = z.object({
   id: IdSchema,
   keywords: z.array(z.string().min(1).max(40)).min(1).max(20),
   condition: ExprSchema.optional(),
-  effects: z.array(EffectSchema).max(20).optional(),
+  effects: z.array(EffectSchema).max(40).optional(),
   text: z.string().max(4000).optional(),
   goto: IdSchema.optional(),
   ending: IdSchema.optional(),
@@ -193,7 +195,7 @@ export const InputAnswerDefSchema = z.object({
 
 export const CardInputDefSchema = z.object({
   prompt: z.string().max(200).optional(),
-  answers: z.array(InputAnswerDefSchema).min(1).max(40),
+  answers: z.array(InputAnswerDefSchema).min(1).max(60),
   fallbackText: z.string().max(2000).optional(),
 });
 
@@ -207,9 +209,9 @@ export const CardDefSchema = z.object({
   cooldown: z.number().min(0).max(200).optional(),
   text: TextSchema,
   image: z.string().max(300).optional(),
-  textVariants: z.array(TextSchema).max(8).optional(),
-  effects: z.array(EffectSchema).max(20).optional(),
-  choices: z.array(ChoiceDefSchema).max(8).optional(),
+  textVariants: z.array(TextSchema).max(16).optional(),
+  effects: z.array(EffectSchema).max(40).optional(),
+  choices: z.array(ChoiceDefSchema).max(12).optional(),
   input: CardInputDefSchema.optional(),
   goto: IdSchema.optional(),
   ending: IdSchema.optional(),
@@ -246,7 +248,7 @@ export const SearchEntryDefSchema = z.object({
   condition: ExprSchema.optional(),
   text: z.string().min(1).max(4000),
   image: z.string().max(300).optional(),
-  effects: z.array(EffectSchema).max(20).optional(),
+  effects: z.array(EffectSchema).max(40).optional(),
 });
 
 export const SearchDefSchema = z.object({
@@ -254,7 +256,7 @@ export const SearchDefSchema = z.object({
   prompt: z.string().max(200).optional(),
   fallbackText: z.string().max(2000).optional(),
   side: z.enum(["left", "right"]).optional(),
-  entries: z.array(SearchEntryDefSchema).min(1).max(200),
+  entries: z.array(SearchEntryDefSchema).min(1).max(400),
 });
 
 export const NotebookItemDefSchema = z.object({
@@ -269,7 +271,7 @@ export const NotebookItemDefSchema = z.object({
 export const NotebookDefSchema = z.object({
   label: z.string().min(1).max(12).optional(),
   side: z.enum(["left", "right"]).optional(),
-  items: z.array(NotebookItemDefSchema).min(1).max(120),
+  items: z.array(NotebookItemDefSchema).min(1).max(300),
 });
 
 export const GameConfigSchema = z.object({
@@ -277,19 +279,20 @@ export const GameConfigSchema = z.object({
   meta: GameMetaSchema,
   theme: GameThemeSchema.optional(),
   driver: DriverSchema,
-  vars: z.array(VariableDefSchema).max(30),
-  cards: z.array(CardDefSchema).min(1).max(500),
-  endings: EndingDefSchema.array().min(1).max(50),
+  vars: z.array(VariableDefSchema).max(80),
+  cards: z.array(CardDefSchema).min(1).max(1500),
+  // 允许为空：开放式生涯类游戏没有结局，只有一章一章的任期
+  endings: EndingDefSchema.array().max(80),
   text: GameTextSchema.optional(),
   search: SearchDefSchema.optional(),
   notebook: NotebookDefSchema.optional(),
-  leagues: z.array(LeagueDefSchema).max(6).optional(),
-  entityTypes: z.array(EntityTypeDefSchema).max(10).optional(),
-  entities: z.array(EntityInstanceSchema).max(200).optional(),
-  derived: z.array(DerivedDefSchema).max(50).optional(),
-  actions: z.array(ActionDefSchema).max(30).optional(),
-  settlements: z.array(SettlementDefSchema).max(20).optional(),
-  curves: z.array(CurveDefSchema).max(30).optional(),
+  leagues: z.array(LeagueDefSchema).max(16).optional(),
+  entityTypes: z.array(EntityTypeDefSchema).max(20).optional(),
+  entities: z.array(EntityInstanceSchema).max(800).optional(),
+  derived: z.array(DerivedDefSchema).max(120).optional(),
+  actions: z.array(ActionDefSchema).max(80).optional(),
+  settlements: z.array(SettlementDefSchema).max(60).optional(),
+  curves: z.array(CurveDefSchema).max(60).optional(),
 });
 
 export type GameConfigInput = z.input<typeof GameConfigSchema>;

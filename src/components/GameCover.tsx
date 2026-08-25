@@ -613,6 +613,7 @@ export const OFFICIAL_PRESET_BY_GAME: Record<string, string> = {
   "yeye-bus": "night-bus",
   "esports-lite": "esports",
   romance: "romance",
+  "romance-m": "campus",
   "snow-manor": "snowlodge",
   "cold-case": "mystery",
   "val-manager": "valorant",

@@ -110,8 +110,17 @@ export function ownershipOf(req: NextRequest, gameId: string): { owned: boolean;
   return { owned: true, isOwner: !!user && user.id === owner };
 }
 
-/** AI 配额的计数口径：登录用账号，游客用编辑钥匙 */
+/**
+ * AI 配额的计数口径。
+ *
+ * 登录用户按账号（额度池），游客按 **IP**——早先按编辑钥匙计是个洞：
+ * 每建一个新游戏就换一把新钥匙，等于随手就能把当天额度重置一次，
+ * 游客的日额度形同虚设。IP 不是完美口径（同一出口的人会互相挤占），
+ * 但它至少让「刷额度」有成本；真要稳定额度就该去注册。
+ */
 export function quotaKeyOf(req: NextRequest, fallback: string): string {
   const user = currentUser(req);
-  return user ? `u:${user.id}` : fallback;
+  if (user) return `u:${user.id}`;
+  const ip = ipOf(req);
+  return ip === "unknown" ? `k:${fallback}` : `ip:${ip}`;
 }

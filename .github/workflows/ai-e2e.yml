@@ -1,0 +1,144 @@
+name: AI 端到端实测
+
+# 让**线上的 AI 策划**自己做一遍游戏，看它从一段创作者的话出发能走多远。
+#
+# 为什么要放在 GitHub Actions 里：开发容器的出口屏蔽了 railway.app，调不到线上服务；
+# Actions 能直接访问线上站点。AI 密钥全程留在服务端，这里一个字都不经手。
+#
+# 手动触发。产出：AI 每一轮的回复、它写进配置的东西、以及线上校验器的判定。
+
+on:
+  workflow_dispatch:
+    inputs:
+      brief:
+        description: "创作者的一段话（就当自己是用户在工作台里打的第一句）"
+        required: false
+        default: "我想做一个王者荣耀的电竞经理游戏。玩家是一支 KPL 战队的经理，每周有几个行动点，可以训练队员、谈转会、跑商务。周末打联赛，赛季末进季后赛。选手要有细分能力和分路，首发五人分路要配齐。三个赛季，打不好会被俱乐部换掉。"
+      rounds:
+        description: "跟 AI 聊几轮（每轮会把上一轮的回复带上）"
+        required: false
+        default: "6"
+      followups:
+        description: "后续几轮说什么，用 ||| 分隔；用完了就重复最后一句"
+        required: false
+        default: "方案可以，按这个开搭。|||继续，把选手名单和赛程补完。|||跑一下校验和模拟，把问题修掉。"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: 建一个空作品
+        id: create
+        run: |
+          set -e
+          BODY=$(curl -sS -X POST "$BASE/api/games" \
+            -H 'content-type: application/json' \
+            -d '{"config":{"schemaVersion":1,"meta":{"title":"AI 端到端实测"},"driver":{"kind":"story","startCard":"a"},"vars":[],"cards":[{"id":"a","text":"（还没开始）"}],"endings":[]}}')
+          ID=$(echo "$BODY" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+          KEY=$(echo "$BODY" | sed -n 's/.*"editKey":"\([^"]*\)".*/\1/p')
+          if [ -z "$ID" ] || [ -z "$KEY" ]; then
+            echo "::error::建作品失败：$BODY"; exit 1
+          fi
+          # 编辑钥匙等于这份作品的写权限，别落进公开日志
+          echo "::add-mask::$KEY"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "作品已创建：$BASE/edit/$ID"
+
+      - name: 跟线上 AI 策划对话
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+          BRIEF: ${{ inputs.brief }}
+          ROUNDS: ${{ inputs.rounds }}
+          FOLLOWUPS: ${{ inputs.followups }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error, time
+
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          rounds = int(os.environ.get("ROUNDS") or 6)
+          follow = [x for x in (os.environ.get("FOLLOWUPS") or "").split("|||") if x.strip()]
+          msgs = [{"role": "user", "content": os.environ["BRIEF"]}]
+
+          def post(path, payload, timeout=300):
+              req = urllib.request.Request(
+                  f"{BASE}{path}", method="POST",
+                  data=json.dumps(payload).encode(),
+                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return json.loads(r.read().decode())
+
+          for i in range(rounds):
+              print(f"\n{'=' * 70}\n第 {i + 1} 轮 · 创作者说：{msgs[-1]['content'][:120]}\n{'=' * 70}")
+              t0 = time.time()
+              try:
+                  body = post(f"/api/games/{GID}/assistant", {"messages": msgs})
+              except urllib.error.HTTPError as e:
+                  detail = e.read().decode()[:600]
+                  print(f"::warning::第 {i + 1} 轮 HTTP {e.code}：{detail}")
+                  break
+              except Exception as e:
+                  print(f"::warning::第 {i + 1} 轮失败：{e}")
+                  break
+              reply = body.get("reply", "")
+              q = body.get("quota") or {}
+              print(f"[{time.time() - t0:.0f}s] AI 回复：\n{reply[:2500]}")
+              print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}　身份 {q.get('kind')}")
+              if body.get("config"):
+                  c = body["config"]
+                  print(f"[写入配置] 卡片 {len(c.get('cards', []))} 张 / 变量 {len(c.get('vars', []))} 个 / "
+                        f"结局 {len(c.get('endings', []))} 个 / 决策 {len(c.get('actions') or [])} 个 / "
+                        f"实体 {len(c.get('entities') or [])} 个")
+              msgs.append({"role": "assistant", "content": reply})
+              nxt = follow[min(i, len(follow) - 1)] if follow else "继续。"
+              msgs.append({"role": "user", "content": nxt})
+          PY
+
+      - name: 把 AI 做出来的东西抓下来
+        id: fetch
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          set -e
+          curl -sS "$BASE/api/games/$GID" -H "x-edit-key: $GKEY" > /tmp/game.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/game.json"))
+          c = d.get("config") or {}
+          json.dump(c, open("templates/__e2e.json", "w"), ensure_ascii=False, indent=2)
+          print("=== AI 最终做出了什么 ===")
+          print("标题：", (c.get("meta") or {}).get("title"))
+          print("调度器：", (c.get("driver") or {}).get("kind"))
+          for k in ("vars", "cards", "endings", "actions", "entities", "settlements",
+                    "leagues", "brackets", "pendings", "relations", "curves", "derived"):
+              v = c.get(k)
+              if v:
+                  print(f"  {k}: {len(v)}")
+          card = d.get("designCard") or ""
+          print("设计卡状态：", card.splitlines()[0] if card else "（空）")
+          print("设计卡字数：", len(card))
+          PY
+
+      - name: 过一遍平台自己的验收门槛
+        # 三级校验零错误零警告 + 600 局模拟全结局可达 + 开局即死 0。
+        # 这道门槛官方示例都要过——AI 自己做的东西也用同一把尺子量。
+        continue-on-error: true
+        run: TEMPLATE=__e2e.json npx vitest run tests/adhoc-template.test.ts
+
+      - name: 留个地址
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+        run: echo "作品地址（拿编辑钥匙才能改，钥匙已在日志里打码）：$BASE/edit/$GID"

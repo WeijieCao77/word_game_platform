@@ -452,3 +452,36 @@ describe("活联赛（leagues）", () => {
     expect(report.unreachedEndings).toEqual([]);
   });
 });
+
+describe("兜底结局（timeoutEnding）", () => {
+  const cfg: GameConfig = {
+    schemaVersion: 1,
+    meta: { title: "尽头", intro: "开始。" },
+    driver: { kind: "life", time: { label: "岁", start: 0, step: 1, max: 2 } },
+    vars: [{ id: "修为", name: "修为", initial: 3 }],
+    cards: [{ id: "日常", weight: 1, text: "平静的一年。", effects: [{ ref: "修为", op: "add", value: "2" }] }],
+    endings: [],
+    text: { timeoutEnding: { title: "落幕于 {修为} 层", text: "修为 {修为}，就到这里了。" } },
+  };
+
+  it("标题与文案都做 {} 插值", () => {
+    let s = initState(cfg, 5);
+    while (!s.ended) s = step(cfg, s);
+    // 两回合各 +2，初始 3 → 7
+    expect(s.ended?.title).toBe("落幕于 7 层");
+    expect(s.ended?.text).toBe("修为 7，就到这里了。");
+    expect(s.log.at(-1)?.text).toContain("【落幕于 7 层】");
+  });
+
+  it("story 走到没有后续时同样插值", () => {
+    const story: GameConfig = {
+      ...cfg,
+      driver: { kind: "story", startCard: "开场" },
+      cards: [{ id: "开场", text: "一句话就结束了。", effects: [{ ref: "修为", op: "add", value: "4" }] }],
+    };
+    // story 走完卡片链没有后续 → 开局解析时就落定兜底结局
+    const s = initState(story, 1);
+    expect(s.ended?.title).toBe("落幕于 7 层");
+    expect(s.ended?.text).toBe("修为 7，就到这里了。");
+  });
+});

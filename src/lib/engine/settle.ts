@@ -6,7 +6,7 @@ import { Value, evaluate } from "@/lib/expr";
 import { GameConfig, GameState } from "@/lib/schema";
 import { createRng } from "./rng";
 import { Bindings, GameScope, applyEffects, clampVar, clockOf, renderText, truthy } from "./internal";
-import { checkConditionEndings, implicitEnd } from "./endings";
+import { checkConditionEndings, timeoutEnd } from "./endings";
 import { drawEventCards } from "./cards";
 import { leagueTick } from "./leagues";
 import { simHeader } from "./state";
@@ -126,15 +126,13 @@ function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope):
       if (lg.resetEachCycle !== false && state.leagues?.[lg.id]) delete state.leagues[lg.id];
     }
     if (state.cycle > t.maxCycles) {
-      const te = config.text?.timeoutEnding;
-      implicitEnd(state, te?.title ?? "落幕", te?.text ? renderText(te.text, scope) : undefined);
+      timeoutEnd(config, state, scope, "落幕");
       return;
     }
   } else {
     state.turn += 1;
     if (t.turnsPerCycle === undefined && state.turn > t.maxCycles) {
-      const te = config.text?.timeoutEnding;
-      implicitEnd(state, te?.title ?? "落幕", te?.text ? renderText(te.text, scope) : undefined);
+      timeoutEnd(config, state, scope, "落幕");
       return;
     }
   }
@@ -150,8 +148,7 @@ export function continueAfterResolution(config: GameConfig, state: GameState, ba
   if (!state.pendingCard && !state.ended) {
     checkConditionEndings(config, state, baseScope);
     if (config.driver.kind === "life" && !state.ended && (state.time ?? 0) >= config.driver.time.max) {
-      const te = config.text?.timeoutEnding;
-      implicitEnd(state, te?.title ?? "岁月尽头", te?.text ? renderText(te.text, renderScope) : undefined);
+      timeoutEnd(config, state, renderScope, "岁月尽头");
     }
     // sim：事件处理完后继续走完本回合剩余管线
     if (config.driver.kind === "sim" && !state.ended) {

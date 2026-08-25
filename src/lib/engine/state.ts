@@ -6,7 +6,7 @@ import { evaluate } from "@/lib/expr";
 import { GameConfig, GameState } from "@/lib/schema";
 import { createRng } from "./rng";
 import { GameScope, clampVar, formatNumber, renderText, truthy } from "./internal";
-import { checkConditionEndings, implicitEnd } from "./endings";
+import { checkConditionEndings, timeoutEnd } from "./endings";
 import { drawEventCards, resolveCard } from "./cards";
 
 // ---------------- 初始化 ----------------
@@ -92,8 +92,7 @@ export function step(config: GameConfig, input: GameState): GameState {
     checkConditionEndings(config, state, scope);
   }
   if (!state.pendingCard && !state.ended && state.time >= t.max) {
-    const te = config.text?.timeoutEnding;
-    implicitEnd(state, te?.title ?? "岁月尽头", te?.text ? renderText(te.text, scope) : undefined);
+    timeoutEnd(config, state, scope, "岁月尽头");
   }
   state.rngState = rng.state();
   return state;

@@ -7,7 +7,7 @@ import { GameConfig, GameState } from "@/lib/schema";
 import { normalizeKeyword } from "@/lib/keyword";
 import { createRng } from "./rng";
 import { Bindings, GameScope, applyEffects, renderText, truthy } from "./internal";
-import { DEFAULT_END, checkConditionEndings, endGame, implicitEnd } from "./endings";
+import { checkConditionEndings, endGame, timeoutEnd } from "./endings";
 import { resolveCard } from "./cards";
 import { continueAfterResolution } from "./settle";
 
@@ -69,7 +69,7 @@ export function submitInput(config: GameConfig, input: GameState, textRaw: strin
   } else if (hit.goto) {
     resolveCard(config, state, baseScope, hit.goto, scopeEntity);
   } else if (config.driver.kind === "story") {
-    implicitEnd(state, config.text?.timeoutEnding?.title ?? DEFAULT_END.title, config.text?.timeoutEnding?.text);
+    timeoutEnd(config, state, scope);
   }
 
   continueAfterResolution(config, state, baseScope, scope);

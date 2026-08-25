@@ -26,6 +26,25 @@ export function endGame(config: GameConfig, state: GameState, scope: GameScope, 
 
 export const DEFAULT_END: { title: string; kind: "neutral" } = { title: "完", kind: "neutral" };
 
+/**
+ * 没有具名结局命中时的兜底收尾（时间到、story 走到头）。
+ * 标题与文案都走 {} 插值——作者常在兜底文案里写「修为 {修为}」这种收束语。
+ * fallbackTitle 是作者没写 timeoutEnding.title 时的语境默认值（岁月尽头 / 落幕 / 完）。
+ */
+export function timeoutEnd(
+  config: GameConfig,
+  state: GameState,
+  scope: GameScope,
+  fallbackTitle: string = DEFAULT_END.title
+): void {
+  const te = config.text?.timeoutEnding;
+  implicitEnd(
+    state,
+    te?.title ? renderText(te.title, scope) : fallbackTitle,
+    te?.text ? renderText(te.text, scope) : undefined
+  );
+}
+
 export function implicitEnd(state: GameState, title: string, text?: string): void {
   state.ended = { endingId: "__implicit__", title, kind: DEFAULT_END.kind, text };
   state.pendingCard = undefined;

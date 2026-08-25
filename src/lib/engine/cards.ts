@@ -6,7 +6,7 @@ import { evaluate } from "@/lib/expr";
 import { CardDef, ChoiceDef, GameConfig, GameState } from "@/lib/schema";
 import { Rng } from "./rng";
 import { Bindings, GameScope, applyEffects, clockOf, renderText, truthy } from "./internal";
-import { DEFAULT_END, endGame, implicitEnd } from "./endings";
+import { endGame, timeoutEnd } from "./endings";
 
 const CHAIN_LIMIT = 32;
 const DEFAULT_COOLDOWN = 2;
@@ -65,7 +65,7 @@ export function resolveCard(config: GameConfig, state: GameState, scope: GameSco
     id = card.goto;
   }
   if (config.driver.kind === "story" && !state.ended) {
-    implicitEnd(state, config.text?.timeoutEnding?.title ?? DEFAULT_END.title, config.text?.timeoutEnding?.text);
+    timeoutEnd(config, state, scope);
   }
 }
 

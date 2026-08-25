@@ -5,7 +5,7 @@
 import { GameConfig, GameState } from "@/lib/schema";
 import { createRng } from "./rng";
 import { Bindings, GameScope, applyEffects, renderText } from "./internal";
-import { DEFAULT_END, endGame, implicitEnd } from "./endings";
+import { endGame, timeoutEnd } from "./endings";
 import { availableChoicesOf, resolveCard } from "./cards";
 import { continueAfterResolution } from "./settle";
 
@@ -34,7 +34,7 @@ export function choose(config: GameConfig, input: GameState, choiceId: string): 
   } else if (choice.goto) {
     resolveCard(config, state, baseScope, choice.goto, scopeEntity);
   } else if (config.driver.kind === "story") {
-    implicitEnd(state, config.text?.timeoutEnding?.title ?? DEFAULT_END.title, config.text?.timeoutEnding?.text);
+    timeoutEnd(config, state, scope);
   }
 
   continueAfterResolution(config, state, baseScope, scope);

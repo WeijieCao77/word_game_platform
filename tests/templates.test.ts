@@ -28,7 +28,7 @@ describe("官方示例：修仙人生重开（life）", () => {
   });
 });
 
-describe("官方示例：电竞经理 Lite（sim）", () => {
+describe("官方示例：无畏契约经理（sim）", () => {
   const raw = load("sim-demo.json");
 
   it("通过结构 + 语义校验，无错误无警告", () => {

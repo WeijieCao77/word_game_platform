@@ -519,13 +519,23 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
           const recentLog = state.log.slice(-8);
           const pendingEvent = !state.ended && state.pendingCard;
           const lastCardText = [...state.log].reverse().find((l) => l.kind === "card")?.text;
+          // 页签由配置推导：没这个模块就没这个页；名字默认取自游戏内容，可用 text.tabLabels 定制
+          const labels = config.text?.tabLabels ?? {};
+          const dataSettlements = (config.settlements ?? []).filter((st) => (st.data?.length ?? 0) > 0);
+          const hasActions = (config.actions ?? []).length > 0;
+          const hasRoster = (config.entityTypes?.length ?? 0) > 0 && Object.keys(state.entities ?? {}).length > 0;
           const SIM_TABS: ["overview" | "actions" | "roster" | "schedule" | "log", string][] = [
-            ["overview", "总览"],
-            ["actions", "行动"],
-            ["roster", "阵容"],
-            ["schedule", "赛程"],
-            ["log", "日志"],
+            ["overview", labels.overview ?? "总览"] as ["overview", string],
+            ...(hasActions ? [["actions", labels.actions ?? "行动"] as ["actions", string]] : []),
+            ...(hasRoster
+              ? [["roster", labels.roster ?? config.entityTypes?.[0]?.name ?? "阵容"] as ["roster", string]]
+              : []),
+            ...(dataSettlements.length > 0
+              ? [["schedule", labels.schedule ?? (dataSettlements.length === 1 ? dataSettlements[0].name : "日程")] as ["schedule", string]]
+              : []),
+            ["log", labels.log ?? "日志"] as ["log", string],
           ];
+          const activeTab = SIM_TABS.some(([t]) => t === simTab) ? simTab : "overview";
           return (
             <>
               {state.ended && <div className="controls">{endingBanner}</div>}
@@ -538,12 +548,12 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
               )}
               <div className="sim-nav">
                 {SIM_TABS.map(([t, label]) => (
-                  <button key={t} className={simTab === t ? "active" : ""} onClick={() => setSimTab(t)}>
+                  <button key={t} className={activeTab === t ? "active" : ""} onClick={() => setSimTab(t)}>
                     {label}
                   </button>
                 ))}
               </div>
-              {simTab === "overview" && (
+              {activeTab === "overview" && (
                 <div className="sim-panel">
                   {upcomingPanel}
                   <div className="gamelog sim-recent">{recentLog.map(renderEntry)}</div>
@@ -559,18 +569,18 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                   )}
                 </div>
               )}
-              {simTab === "actions" && <div className="sim-panel">{!state.ended && !pendingEvent ? actionPanel : <div className="pane-note">先处理上方事件。</div>}</div>}
-              {simTab === "roster" && (
+              {activeTab === "actions" && <div className="sim-panel">{!state.ended && !pendingEvent ? actionPanel : <div className="pane-note">先处理上方事件。</div>}</div>}
+              {activeTab === "roster" && (
                 <div className="sim-panel">
                   <Roster config={config} state={state} />
                 </div>
               )}
-              {simTab === "schedule" && (
+              {activeTab === "schedule" && (
                 <div className="sim-panel">
                   <SimSchedule config={config} state={state} />
                 </div>
               )}
-              {simTab === "log" && <div className="sim-panel">{fullLog}</div>}
+              {activeTab === "log" && <div className="sim-panel">{fullLog}</div>}
             </>
           );
         })()}

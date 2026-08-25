@@ -305,6 +305,11 @@ export interface EndingDef {
 export interface GameText {
   /** 每回合的标题模板（life 默认 "{time} 岁"；sim 默认 "第 {cycle} 赛季 第 {turn} 周"式） */
   turnHeader?: string;
+  /**
+   * sim 界面页签的自定义名称（贴合题材：宗门游戏的 schedule 可以叫「大比日程」）。
+   * 页签本身按配置推导显隐：没有 actions 就没有行动页，结算没有 data 行就没有日程页。
+   */
+  tabLabels?: { overview?: string; actions?: string; roster?: string; schedule?: string; log?: string };
   /** sim：周期结束时的文案模板 */
   cycleEnd?: string;
   /** 到达时间上限仍无结局时的兜底结局 */

@@ -208,6 +208,15 @@ export const EndingDefSchema = z.object({
 
 export const GameTextSchema = z.object({
   turnHeader: z.string().max(200).optional(),
+  tabLabels: z
+    .object({
+      overview: z.string().min(1).max(12).optional(),
+      actions: z.string().min(1).max(12).optional(),
+      roster: z.string().min(1).max(12).optional(),
+      schedule: z.string().min(1).max(12).optional(),
+      log: z.string().min(1).max(12).optional(),
+    })
+    .optional(),
   cycleEnd: z.string().max(2000).optional(),
   timeoutEnding: z.object({ title: NameSchema, text: z.string().max(4000).optional() }).optional(),
 });

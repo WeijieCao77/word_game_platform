@@ -31,12 +31,14 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
   // 配额：登录用户按账号记账，游客按 editKey（交接文档要求第一天就有）
   const quotaKey = quotaKeyOf(req, editKey);
-  const maxRequests = Number(process.env.AI_DAILY_REQUESTS ?? 40);
-  const maxTokens = Number(process.env.AI_DAILY_TOKENS ?? 400000);
+  const maxRequests = Number(process.env.AI_DAILY_REQUESTS ?? 200);
+  const maxTokens = Number(process.env.AI_DAILY_TOKENS ?? 1000000);
   const usage = store.aiUsageToday(quotaKey);
   if (usage.requests >= maxRequests || usage.tokens >= maxTokens) {
     return NextResponse.json(
-      { error: `今日 AI 用量已达上限（${maxRequests} 次 / ${maxTokens} tokens），明天再来吧。` },
+      {
+        error: `今日 AI 用量已达上限（${Math.round(maxTokens / 10000) / 100}M tokens 或 ${maxRequests} 次），明天零点后重置。`,
+      },
       { status: 429 }
     );
   }
@@ -84,9 +86,30 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       quota,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "AI 请求失败" },
-      { status: 502 }
-    );
+    const detail = err instanceof Error ? err.message : String(err);
+    // 服务端日志留全文，方便按时间点回查（Railway 的 Logs 里能看到）
+    console.error("[assistant] 失败:", detail);
+    return NextResponse.json({ error: explainAiFailure(detail) }, { status: 502 });
   }
+}
+
+/** 把上游返回的技术错误翻译成作者能行动的提示 */
+function explainAiFailure(detail: string): string {
+  const d = detail.toLowerCase();
+  if (d.includes("context") && (d.includes("length") || d.includes("exceed"))) {
+    return `这轮对话太长了，超出模型的上下文上限。建议：把要求拆小一点重发，或者新开一个作品从设计卡继续。（原始错误：${detail.slice(0, 160)}）`;
+  }
+  if (d.includes("max_tokens") || d.includes("too long") || d.includes("output limit")) {
+    return `这一轮要生成的内容超过了模型单次输出上限——十几个队伍、几十名选手一次性建出来必然超。让它先建骨架，再分批补名单（每批 15~25 条）。（原始错误：${detail.slice(0, 160)}）`;
+  }
+  if (d.includes("429") || d.includes("rate limit")) {
+    return `AI 服务限流了，等一两分钟再试。（原始错误：${detail.slice(0, 160)}）`;
+  }
+  if (d.includes("401") || d.includes("403") || d.includes("invalid api key")) {
+    return `AI 服务拒绝了这次调用，多半是密钥失效或余额不足，需要在部署环境变量里更新。（原始错误：${detail.slice(0, 160)}）`;
+  }
+  if (d.includes("timeout") || d.includes("etimedout") || d.includes("fetch failed") || d.includes("socket")) {
+    return `连接 AI 服务超时或中断。稍等片刻重试；如果这一轮改动很大，先把要求拆小。（原始错误：${detail.slice(0, 160)}）`;
+  }
+  return detail || "AI 请求失败";
 }

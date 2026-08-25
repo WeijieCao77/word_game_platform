@@ -1,4 +1,4 @@
-import { GameConfig, validateGameConfig, ValidationIssue } from "@/lib/schema";
+import { GameConfig, GameConfigSchema, validateGameConfig, ValidationIssue } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
 import { SYSTEM_PROMPT } from "./prompt";
@@ -32,6 +32,33 @@ const TOOLS: ToolDef[] = [
         type: "object",
         properties: { config: { type: "object", description: "完整的 GameConfig 对象" } },
         required: ["config"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "patch_config",
+      description:
+        "分批写配置：只提交某一个分节的条目，避免一次吐出整份 JSON 被输出上限截断。" +
+        "内容多的游戏（几十个选手/几十张卡）必须用它分批建：先用 update_config 建骨架，" +
+        "再用本工具一批批 append（每批 15~25 条）。只做结构校验，语义校验用 validate 收尾。",
+      parameters: {
+        type: "object",
+        properties: {
+          section: {
+            type: "string",
+            description: "要写的分节",
+            enum: ["cards", "entities", "entityTypes", "actions", "settlements", "endings", "vars", "curves", "leagues"],
+          },
+          mode: {
+            type: "string",
+            description: "append=追加（同 id 覆盖），replace=整节替换。默认 append",
+            enum: ["append", "replace"],
+          },
+          items: { type: "array", description: "该分节的条目数组", items: { type: "object" } },
+        },
+        required: ["section", "items"],
       },
     },
   },
@@ -160,6 +187,47 @@ export async function runAssistant(
           return warnings.length > 0
             ? `配置已更新。有 ${warnings.length} 个警告可酌情处理：\n${issuesToText(warnings)}`
             : "配置已更新，校验全部通过。";
+        }
+        case "patch_config": {
+          if (!configUnlocked(designCard)) {
+            return `已拒绝：设计卡状态是「${parseCardStatus(designCard)}」。请先完成需求对齐并取得创作者同意。`;
+          }
+          const section = String(args.section ?? "");
+          const allowed = ["cards", "entities", "entityTypes", "actions", "settlements", "endings", "vars", "curves", "leagues"];
+          if (!allowed.includes(section)) return `不支持的分节「${section}」，可用：${allowed.join(" / ")}`;
+          const raw = typeof args.items === "string" ? JSON.parse(args.items) : args.items;
+          if (!Array.isArray(raw)) return "参数错误：items 必须是数组";
+          const mode = args.mode === "replace" ? "replace" : "append";
+
+          const current = config as unknown as Record<string, unknown>;
+          const before = Array.isArray(current[section]) ? (current[section] as Record<string, unknown>[]) : [];
+          let merged: Record<string, unknown>[];
+          if (mode === "replace") {
+            merged = raw as Record<string, unknown>[];
+          } else {
+            const byId = new Map<string, Record<string, unknown>>();
+            for (const it of [...before, ...(raw as Record<string, unknown>[])]) {
+              const key = String(it?.id ?? `${byId.size}`);
+              byId.set(key, it); // 同 id 后来居上，分批重跑不会写出重复条目
+            }
+            merged = [...byId.values()];
+          }
+
+          // 只做结构校验：分批过程中难免有暂时的悬空引用（卡片先于结局写入），
+          // 那属于语义问题，交给 validate 在收尾时统一查。
+          const candidate = { ...(config as object), [section]: merged };
+          const structural = GameConfigSchema.safeParse(candidate);
+          if (!structural.success) {
+            const first = structural.error.issues.slice(0, 5).map((i) => `${i.path.join(".")}: ${i.message}`).join("\n");
+            return `这一批结构不合法（未落盘）：\n${first}`;
+          }
+          config = structural.data as GameConfig;
+          configChanged = true;
+          const semantic = validateGameConfig(config).issues.filter((i) => i.severity === "error");
+          return semantic.length > 0
+            ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
+                `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
+            : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
         }
         case "search_library": {
           if (!ctx.searchLibrary) return "内容库当前不可用。";

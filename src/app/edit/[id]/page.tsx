@@ -30,8 +30,9 @@ import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries
 /** 新手引导看过一次就不再自动弹（顶栏「引导」可随时重看） */
 const TOUR_KEY = "wgp_tour_edit_v1";
 
-/** token 数看着舒服些：4321 → 4.3k */
+/** token 数看着舒服些：4321 → 4.3k，1000000 → 1M */
 function kilo(n: number): string {
+  if (n >= 1_000_000) return n % 1_000_000 === 0 ? `${n / 1_000_000}M` : `${(n / 1_000_000).toFixed(2)}M`;
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
@@ -500,8 +501,19 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system") }),
         signal: controller.signal,
       }).finally(() => clearTimeout(kill));
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "AI 请求失败");
+      // 网关超时/请求体过大这类失败返回的是 HTML，不是 JSON——别让真正的原因被吞掉
+      const rawText = await res.text();
+      let body: { error?: string; reply?: string; config?: unknown; designCard?: string; quota?: { requests: number; tokens: number; maxRequests?: number; maxTokens?: number } };
+      try {
+        body = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          res.ok
+            ? `服务返回了无法解析的内容（HTTP ${res.status}）：${rawText.slice(0, 120)}`
+            : `请求失败 HTTP ${res.status}：${rawText.replace(/<[^>]+>/g, " ").trim().slice(0, 160) || "网关未返回具体原因，多半是这一轮生成太大或耗时过长"}`
+        );
+      }
+      if (!res.ok) throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
       setChat((c) => [...c, { role: "assistant", content: body.reply ?? "（无回复）" }]);
       if (body.config) {
         setConfig(body.config as GameConfig);
@@ -514,7 +526,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         setStatusMsg(quotaText(body.quota));
       }
     } catch (err) {
-      setChat((c) => [...c, { role: "system", content: `⚠ ${err instanceof Error ? err.message : String(err)}` }]);
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      const msg = aborted
+        ? "等待超过 5 分钟已自动中断。多半是这一轮要生成的东西太多了——把要求拆小一点（比如先建骨架，再分批补名单），或者让它先只改一部分。你的对话记录都还在。"
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      setChat((c) => [...c, { role: "system", content: `⚠ ${msg}` }]);
     } finally {
       setChatBusy(false);
     }

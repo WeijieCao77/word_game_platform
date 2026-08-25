@@ -66,8 +66,8 @@ npm run build && npm start   # 生产模式
 | `AI_PROVIDER` | AI 供应商：`openai` / `deepseek` / `anthropic` / `qwen` / `kimi` | 未设则走旧三件套 |
 | `OPENAI_API_KEY` 等 | 各供应商的密钥，按 `<供应商>_API_KEY` 命名，可同时存多把 | 未配置则 AI 面板降级提示 |
 | `AI_MODEL` | 模型名（可选），不填用该供应商默认模型 | `gpt-5-mini` / `deepseek-v4-flash` / … |
-| `AI_DAILY_REQUESTS` | 每把编辑钥匙每日 AI 次数上限 | `40` |
-| `AI_DAILY_TOKENS` | 每把编辑钥匙每日 token 上限 | `400000` |
+| `AI_DAILY_REQUESTS` | 每个账号（游客按编辑钥匙）每日 AI 次数上限 | `200` |
+| `AI_DAILY_TOKENS` | 每个账号（游客按编辑钥匙）每日 token 上限 | `1000000`（1M） |
 | `FLAGSHIP_URL` | 旗舰作品地址，设了首页才出现旗舰位（点进 `/flagship` 站内直接玩） | 未设则不显示 |
 | `ADMIN_USERS` | 可选兜底：逗号分隔的用户名，登录时自动提升为管理员（正常用不到——平台第一个注册账号就是管理员） | 未设 |
 

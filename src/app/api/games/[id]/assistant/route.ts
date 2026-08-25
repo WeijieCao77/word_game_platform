@@ -14,6 +14,17 @@ type Params = { params: Promise<{ id: string }> };
 
 const MAX_HISTORY = 24;
 
+// 额度读数：工作台一进来就要显示「已用多少 / 还剩多少」，不必等发完一条消息。
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { id } = await params;
+  const store = getStore();
+  if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+  const editKey = req.headers.get("x-edit-key") ?? "";
+  const user = currentUser(req);
+  return NextResponse.json({ quota: quotaView(store, { user, quotaKey: quotaKeyOf(req, editKey) }) });
+}
+
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
   const { id } = await params;
   const store = getStore();

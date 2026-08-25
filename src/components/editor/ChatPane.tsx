@@ -68,6 +68,46 @@ function waitingHint(sec: number): string {
   return "（已经超过 5 分钟，可能是卡住了：刷新页面后把要求拆小一点重发，聊天记录不会丢）";
 }
 
+export interface QuotaInfo {
+  kind: "admin" | "user" | "guest";
+  unlimited: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  requests: number;
+  maxRequests: number;
+}
+
+const fmtTok = (n: number): string =>
+  n >= 10_000_000 ? `${(n / 10_000_000).toFixed(2)} 千万` : n >= 10_000 ? `${(n / 10_000).toFixed(1)} 万` : String(n);
+
+/**
+ * 输入框下面的额度计数器。
+ * 额度给得很足（正常创作根本用不完），但不能让人心里没数——
+ * 「我用了多少」本身就是信息，何况用完了要走审批。
+ */
+function QuotaMeter({ quota }: { quota: QuotaInfo | null }): React.ReactElement | null {
+  if (!quota) return null;
+  if (quota.unlimited) {
+    return <div className="quota-meter">管理员 · 不限量　累计已用 {fmtTok(quota.used)} tokens</div>;
+  }
+  const pct = quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : 0;
+  const low = quota.limit > 0 && quota.remaining <= quota.limit * 0.1;
+  return (
+    <div className={`quota-meter${low ? " low" : ""}`}>
+      <span className="quota-bar" aria-hidden>
+        <span className="quota-bar-fill" style={{ width: `${pct}%` }} />
+      </span>
+      <span>
+        {quota.kind === "guest" ? "今日额度" : "AI 额度"} {fmtTok(quota.used)} / {fmtTok(quota.limit)}
+        　剩 {fmtTok(quota.remaining)}
+      </span>
+      {quota.kind === "guest" && <span className="quota-note">注册后额度大得多</span>}
+      {low && quota.kind === "user" && <span className="quota-note">用完会自动向管理员申请</span>}
+    </div>
+  );
+}
+
 export default function ChatPane({
   cardStatus,
   chat,
@@ -77,6 +117,7 @@ export default function ChatPane({
   onChatInput,
   onSend,
   chatEndRef,
+  quota,
 }: {
   cardStatus: string;
   chat: ChatMsg[];
@@ -87,6 +128,8 @@ export default function ChatPane({
   onChatInput: (value: string) => void;
   onSend: () => void;
   chatEndRef: React.RefObject<HTMLDivElement | null>;
+  /** 额度读数；null 表示还没取到 */
+  quota: QuotaInfo | null;
 }): React.ReactElement {
   return (
     <div className="chat-pane">
@@ -130,6 +173,7 @@ export default function ChatPane({
           发送
         </button>
       </div>
+      <QuotaMeter quota={quota} />
     </div>
   );
 }

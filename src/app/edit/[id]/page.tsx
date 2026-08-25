@@ -3,7 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Tour from "@/components/Tour";
-import ChatPane from "@/components/editor/ChatPane";
+import ChatPane, { QuotaInfo } from "@/components/editor/ChatPane";
 import PreviewTab from "@/components/editor/tabs/PreviewTab";
 import DesignTab from "@/components/editor/tabs/DesignTab";
 import ConfigTab from "@/components/editor/tabs/ConfigTab";
@@ -40,16 +40,6 @@ function kilo(n: number): string {
  * 配额提示以 token 为主——真正先耗尽的通常是 token 而不是次数，
  * 让作者一眼看到「还剩多少」，次数放在后面做参考。
  */
-interface QuotaInfo {
-  kind: "admin" | "user" | "guest";
-  unlimited: boolean;
-  used: number;
-  limit: number;
-  remaining: number;
-  requests: number;
-  maxRequests: number;
-}
-
 function quotaText(q: QuotaInfo): string {
   if (q.unlimited) return `管理员 · 不限量（累计已用 ${kilo(q.used)} tokens）`;
   if (q.kind === "guest") {
@@ -72,6 +62,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [tab, setTab] = useState<Tab>("preview");
   const [dirty, setDirty] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [loadError, setLoadError] = useState("");
   const [simText, setSimText] = useState("");
   const [previewNonce, setPreviewNonce] = useState(0);
@@ -129,6 +120,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       if (Array.isArray(body.chat)) setChat(body.chat as ChatMsg[]);
       setHasCover(!!body.hasCover);
       setDirty(false);
+      // 额度读数一进来就要有，不必等发完第一条消息
+      try {
+        const q = await fetch(`/api/games/${id}/assistant`, { headers: { "x-edit-key": key } });
+        if (q.ok) setQuota((await q.json()).quota ?? null);
+      } catch {
+        // 额度读数取不到不影响创作，静默即可
+      }
     },
     [id]
   );
@@ -537,6 +535,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }
       if (typeof body.designCard === "string") setDesignCard(body.designCard);
       if (body.quota) {
+        setQuota(body.quota);
         setStatusMsg(quotaText(body.quota));
       }
     } catch (err) {
@@ -649,6 +648,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           onChatInput={setChatInput}
           onSend={() => void sendChat()}
           chatEndRef={chatEndRef}
+          quota={quota}
         />
 
         <SplitHandle pct={split.pct} dragging={split.dragging} onPointerDown={split.onPointerDown} onReset={split.reset} onNudge={split.nudge} />

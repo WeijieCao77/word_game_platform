@@ -250,6 +250,42 @@ body.splitting * {
   min-height: 60px;
 }
 
+/* 输入框底下的额度计数器：额度给得很足，但不能让人心里没数 */
+.quota-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 12px 9px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.quota-bar {
+  display: block;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.quota-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.quota-meter.low {
+  color: var(--defeat);
+}
+.quota-meter.low .quota-bar-fill {
+  background: var(--defeat);
+}
+.quota-note {
+  opacity: 0.75;
+}
+
 .work-pane {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getStore } from "@/lib/store";
 import GameCover from "@/components/GameCover";
+import BrandMark from "@/components/BrandMark";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function AuthorPage({
     <div className="site">
       <header className="site-header">
         <div className="site-title">
-          <Link href="/">字游·WordPlay</Link>
+          <Link className="brand-inline" href="/"><BrandMark size={22} />字游·WordPlay</Link>
         </div>
         <Link className="btn small" href="/new">
           ＋ 开始创作

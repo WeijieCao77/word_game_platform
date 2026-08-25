@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getStore } from "@/lib/store";
 import GameCover from "@/components/GameCover";
 import AuthNav from "@/components/AuthNav";
+import BrandMark from "@/components/BrandMark";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default function HomePage(): React.ReactElement {
       <nav className="topnav">
         <div className="topnav-inner">
           <Link className="brand" href="/">
+            <BrandMark size={26} />
             字游<span className="brand-accent">·</span>WordPlay
           </Link>
           <a className="topnav-link" href="#library">

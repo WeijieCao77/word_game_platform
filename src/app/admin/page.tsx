@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BrandMark from "@/components/BrandMark";
 import { useCallback, useEffect, useState } from "react";
 
 // 平台开发者后台（暗链，不进导航）：全站数据汇总，只对管理员账号开放。
@@ -76,7 +77,7 @@ export default function AdminPage(): React.ReactElement {
     <div className="site">
       <header className="site-header">
         <div className="site-title">
-          <Link href="/">字游 WordPlay</Link> · 开发者后台
+          <Link className="brand-inline" href="/"><BrandMark size={22} />字游 WordPlay</Link> · 开发者后台
         </div>
         <Link className="linklike" href="/mine">
           我的创作

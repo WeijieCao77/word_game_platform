@@ -54,9 +54,30 @@ DATA_DIR=/tmp/verify PORT=3100 npm start
 # 浏览器在 /opt/pw-browsers/chromium-1194/chrome-linux/chrome
 ```
 
+## 这个远程容器会「回退」——先读这一条
+
+在 Claude Code 远程环境里干活时，**容器闲置一段时间会被回收，重建后文件系统回到一个较旧的快照**
+（本项目实测：两次回退都退回同一个 commit，`git reflog` 里当天的提交记录一条都不剩，
+`.git` 目录的创建时间就是会话开始那一刻）。也就是说：
+
+- 只存在于容器里的东西（未推送的提交、未提交的改动）**会整批消失**，且每次都退到同一个旧点
+- 已经 push 到 GitHub 的东西**一点不少**——远端是唯一的安全网
+
+**每次会话开始、以及任何时候发现文件/目录莫名其妙不见了，第一件事是核对远端：**
+
+```bash
+git fetch origin <branch>
+git log --oneline -1 FETCH_HEAD          # 远端到哪了
+git status --short                        # 本地有没有未提交的改动（有就先备份 diff）
+git reset --hard origin/<branch>          # 工作区没有要保留的改动时，直接对齐远端
+```
+
+所以下面这条不是洁癖，是这个环境的生存法则：
+
 ## 工作约定
 
-- **每完成一段就 commit + push**。容器会回收，没推送的工作会丢——这在本项目真实发生过两次。
+- **每完成一段就 commit + push**。容器会回收，没推送的工作会丢——这在本项目真实发生过三次，
+  每次都靠远端完好而零损失。
 - 提交信息用中文写清「做了什么、为什么」，不要写模型名或工具名。
 - **密钥永远不进代码、不进对话**：走 Railway Variables 或 GitHub Actions Secrets。
 - 容器出口屏蔽了 `railway.app` 与 `api.github.com`：Railway 操作走 GitHub Actions workflow，

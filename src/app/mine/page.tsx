@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import GameCover from "@/components/GameCover";
+import BrandMark from "@/components/BrandMark";
 import AuthNav, { useMe } from "@/components/AuthNav";
 
 // 我的创作：扫描本机保存的编辑钥匙，列出这台浏览器创建/认领过的所有游戏——
@@ -155,7 +156,7 @@ export default function MinePage(): React.ReactElement {
     <div className="site">
       <header className="site-header">
         <div className="site-title">
-          <Link href="/">字游 WordPlay</Link>
+          <Link className="brand-inline" href="/"><BrandMark size={22} />字游 WordPlay</Link>
         </div>
         <AuthNav />
         <Link className="btn small" href="/new">

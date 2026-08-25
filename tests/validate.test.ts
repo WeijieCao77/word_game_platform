@@ -90,11 +90,25 @@ describe("结构 + 语义校验", () => {
     expect(r.issues.some((i) => i.severity === "warning" && i.message.includes("可能永远不会触发"))).toBe(true);
   });
 
-  it("无条件且无引用的结局报警告", () => {
+  it("无条件且无引用的结局是错误，不是警告", () => {
+    // 线上 AI 的端到端实测里，它一口气写了四个这样的结局——玩家玩到时间耗尽
+    // 才会发现这游戏根本没有结果。报成错误，校验结果会自动回喂给 AI 当轮修掉。
     const c = clone();
     c.endings.push({ id: "e3", title: "隐藏", kind: "victory" });
     const r = validateGameConfig(c);
-    expect(r.issues.some((i) => i.message.includes("永远不会出现"))).toBe(true);
+    expect(r.ok).toBe(false);
+    const issue = r.issues.find((i) => i.message.includes("永远不会出现"));
+    expect(issue?.severity).toBe("error");
+    // 报错要顺带说清怎么修，别只说「不对」
+    expect(issue?.message).toContain('ending: "e3"');
+  });
+
+  it("被卡片引用的无条件结局不报错——那是正常写法", () => {
+    const c = clone();
+    c.endings.push({ id: "e4", title: "被引用的", kind: "victory" });
+    c.cards[0].ending = "e4";
+    const r = validateGameConfig(c);
+    expect(r.issues.some((i) => i.message.includes("永远不会出现"))).toBe(false);
   });
 
   it("保留字不能作变量 id", () => {

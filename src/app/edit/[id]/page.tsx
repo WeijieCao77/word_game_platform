@@ -549,10 +549,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       try {
         body = JSON.parse(rawText);
       } catch {
+        // 502/503/504 是网关把连接掐了，不是服务端拒绝——那一轮很可能还在跑、
+        // 甚至已经跑完。别让作者以为自己那句话说错了。
+        const gatewayDown = res.status === 502 || res.status === 503 || res.status === 504;
         throw new Error(
           res.ok
             ? `服务返回了无法解析的内容（HTTP ${res.status}）：${rawText.slice(0, 120)}`
-            : `请求失败 HTTP ${res.status}：${rawText.replace(/<[^>]+>/g, " ").trim().slice(0, 160) || "网关未返回具体原因，多半是这一轮生成太大或耗时过长"}`
+            : gatewayDown
+              ? `网关中断了这次请求（HTTP ${res.status}）。这一轮生成得久，连接先断了——服务端那边可能已经改完了，我这就去把最新的配置拉回来看看。`
+              : `请求失败 HTTP ${res.status}：${rawText.replace(/<[^>]+>/g, " ").trim().slice(0, 160) || "网关未返回具体原因，多半是这一轮生成太大或耗时过长"}`
         );
       }
       if (!res.ok) throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
@@ -583,10 +588,46 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           ? err.message
           : String(err);
       setChat((c) => [...c, { role: "system", content: `⚠ ${msg}` }]);
+
+      // 请求断了不等于活没干完。端到端实测里撞见过：网关回了 502
+      // Application failed to respond，可服务端那一轮其实已经把配置写进库了——
+      // 前端只是没收到回信。这种时候最坑的是「AI 说要搭，结果界面什么都没变」，
+      // 作者会以为平台坏了。所以出错之后回头拉一次作品：真变了就把它接上来。
+      try {
+        const before = JSON.stringify(config);
+        const res2 = await fetch(`/api/games/${id}`, { headers: { "x-edit-key": editKey } });
+        if (res2.ok) {
+          const fresh = await res2.json();
+          const changed = JSON.stringify(fresh.config) !== before;
+          if (typeof fresh.designCard === "string") setDesignCard(fresh.designCard);
+          if (fresh.mode === "code") {
+            setMode("code");
+            void reloadFiles();
+            setPreviewNonce((n) => n + 1);
+          }
+          if (changed) {
+            setConfig(fresh.config as GameConfig);
+            setConfigText(JSON.stringify(fresh.config, null, 2));
+            setPreviewNonce((n) => n + 1);
+            setDirty(false);
+            setChat((c) => [
+              ...c,
+              {
+                role: "system",
+                content:
+                  "不过服务端那一轮其实做完了——我把最新的配置拉回来了，预览已经刷新，你先看看改成什么样。" +
+                  "要接着改就直接说，不用重发刚才那句。",
+              },
+            ]);
+          }
+        }
+      } catch {
+        // 连拉都拉不动，那就是真断了，上面那条报错已经说清楚了
+      }
     } finally {
       setChatBusy(false);
     }
-  }, [chat, chatBusy, chatInput, dirty, editKey, id, save]);
+  }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save]);
 
   if (!editKey) {
     return (

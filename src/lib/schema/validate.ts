@@ -460,7 +460,15 @@ class Validator {
       if (e.condition) this.checkExpr(e.condition, `${base}.condition`, {});
       if (e.text) this.checkTemplate(e.text, `${base}.text`, {});
       if (!e.condition && !referenced.has(e.id)) {
-        this.warn(base, `结局 "${e.title}" 既没有触发条件，也没有任何卡片/选项引用它，永远不会出现`);
+        // 这是错误不是警告：结局是玩家玩下去的目标，一个都触发不了的游戏是坏的。
+        // 线上 AI 的端到端实测里，它写了四个结局、四个都没条件也没人引用——
+        // 当成警告的话，写入会通过，玩家要玩到时间耗尽才发现这游戏没有结果。
+        // 报成错误，校验结果会自动回喂给 AI，它当轮就能修。
+        this.error(
+          base,
+          `结局 "${e.title}" 既没有触发条件，也没有任何卡片/选项引用它，永远不会出现。` +
+            `要么给它写 condition，要么让某张卡或某个选项用 ending: "${e.id}" 触发它`
+        );
       }
       if (e.condition) this.checkEndingReachabilityHeuristic(e.condition, base, e.title, written);
     }

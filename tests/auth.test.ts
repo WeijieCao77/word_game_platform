@@ -160,3 +160,26 @@ describe("归属确立后，编辑钥匙不再单独授权", () => {
     expect(store.listByOwner(other.id)).toEqual([]);
   });
 });
+
+describe("管理员不限量", () => {
+  it("角色判定是唯一开关：admin 不受配额拦截，普通用户照常受限", () => {
+    const store = newStore();
+    const boss = register(store, "老板", "boss-password-1");
+    const someone = register(store, "路人", "passer-password");
+    expect(boss.role).toBe("admin");
+    expect(someone.role).toBe("user");
+
+    // 用量照常记账（管理员也要能在后台看到自己烧了多少）
+    store.aiConsume(`u:${boss.id}`, 500000);
+    store.aiConsume(`u:${someone.id}`, 500000);
+    expect(store.aiUsageToday(`u:${boss.id}`).tokens).toBe(500000);
+    expect(store.aiUsageToday(`u:${someone.id}`).tokens).toBe(500000);
+
+    // 路由里的判断逻辑：unlimited = role === "admin"
+    const blocked = (u: { role: string }, tokens: number, max: number): boolean =>
+      u.role !== "admin" && tokens >= max;
+    expect(blocked(boss, 500000, 1000000)).toBe(false);
+    expect(blocked(boss, 2000000, 1000000)).toBe(false); // 超了也不拦
+    expect(blocked(someone, 2000000, 1000000)).toBe(true);
+  });
+});

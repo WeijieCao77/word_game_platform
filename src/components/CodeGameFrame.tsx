@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePlayStats } from "@/components/player/hooks";
 
 /**
  * 自由模式作品的运行外壳。
@@ -32,6 +33,10 @@ export default function CodeGameFrame({
   const [full, setFull] = useState(false);
   const [ready, setReady] = useState(false);
   const saveKey = `wgp_codesave_${gameId}`;
+  // 自由模式的作品也要计游玩、时长与点赞——跟快速模式共用同一套口径，
+  // 不然它们在游戏库的「最热」里永远是零，作者的后台数据也是空的。
+  // 作者自己带着钥匙预览时不计（跟 GamePlayer 的 preview 一个道理）。
+  const { likes, liked, toggleLike } = usePlayStats(editKey ? "preview" : "play", gameId);
 
   const post = useCallback((msg: unknown) => {
     frameRef.current?.contentWindow?.postMessage(msg, "*");
@@ -145,6 +150,11 @@ export default function CodeGameFrame({
         >
           {full ? "退出全屏" : "全屏游玩"}
         </button>
+        {likes !== null && (
+          <button className="linklike" onClick={() => void toggleLike()} title="喜欢这部作品">
+            {liked ? "♥" : "♡"} {likes}
+          </button>
+        )}
       </div>
       <div className="embed-stage">
         {!ready && <div className="embed-loading">正在载入《{title}》…</div>}

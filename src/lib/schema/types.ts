@@ -124,6 +124,37 @@ export interface Effect {
 // ---------------- sim 专用（实体/决策/结算/曲线） ----------------
 
 /**
+ * 淘汰赛对阵表：常规赛打完，前 N 名进季后赛，一轮一轮淘汰到只剩一个。
+ *
+ * 联赛（LeagueDef）只解决「谁排第几」，解决不了「谁淘汰了谁」。而一切赛事题材——
+ * 体育、武道会、选秀、辩论赛、宗门大比——最紧张的部分恰恰在淘汰赛。
+ *
+ * 种子从挂接的联赛积分榜里取；玩家自己的比赛用 outcomes 判定（row 里是对手），
+ * NPC 之间的对局按强度加随机数直接算出来。整张表在触发的那个回合里一次打完，
+ * 每一轮都会写进日志。
+ */
+export interface BracketDef {
+  id: string;
+  name: string;
+  /** 种子从哪个联赛的积分榜取 */
+  league: string;
+  /** 参赛队数：2 / 4 / 8 / 16 */
+  size: number;
+  /** 什么时候开打（表达式，如 "turn == 12"） */
+  condition: string;
+  /** 中间量，可用 row.名称 / row.强度 / round（第几轮，1 起） */
+  compute?: SettlementCompute[];
+  /** 玩家每一轮的结果分支；按序取第一个满足的 */
+  outcomes: SettlementOutcome[];
+  /** 玩家夺冠时额外生效的效果 */
+  championEffects?: Effect[];
+  /** 玩家夺冠的文案 */
+  championText?: string;
+  /** 玩家被淘汰的文案，可用 {round} */
+  eliminatedText?: string;
+}
+
+/**
  * 关系网：两个角色**之间**的状态。
  *
  * 平台原本只有两种状态：全局变量、以及每个角色自己的属性。谁和谁的关系无处安放——
@@ -518,6 +549,8 @@ export interface GameConfig {
   pendings?: PendingDef[];
   /** 关系网：两个角色之间的状态（羁绊/好感/恩怨） */
   relations?: RelationDef[];
+  /** 淘汰赛对阵表：常规赛之后的季后赛 */
+  brackets?: BracketDef[];
 }
 
 // ---------------- 运行时状态 ----------------
@@ -544,6 +577,8 @@ export interface GameState {
   cycle?: number;
   /** sim：本回合剩余行动点（driver.actionPoints 启用时维护） */
   apLeft?: number;
+  /** 打完的淘汰赛：bracketId → { 冠军, 玩家走到第几轮, 每轮对阵 } */
+  brackets?: Record<string, { champion: string; playerRounds: number; rounds: { round: number; pairs: [string, string][]; winners: string[] }[] }>;
   /** 关系网：relationId → "A|B"（两个 id 排序后拼接）→ 关系值。只存碰过的那些对 */
   relations?: Record<string, Record<string, number>>;
   /** 挂起中的待办：报价/申请/谈判，到期自动出结果 */

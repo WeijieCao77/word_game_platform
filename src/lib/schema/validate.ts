@@ -471,6 +471,7 @@ class Validator {
     if ((c.driver.kind === "life" || c.driver.kind === "sim") && !c.text?.timeoutEnding) {
       this.warn("text", "建议配置 timeoutEnding（时间走完的兜底结局），否则使用系统默认文案");
     }
+    this.checkBrackets();
     this.checkRelations();
     this.checkPendings();
     this.auditContent();
@@ -764,6 +765,49 @@ class Validator {
           seen.set(sig, ch.id);
         }
       }
+    }
+  }
+
+  private checkBrackets(): void {
+    const c = this.config;
+    this.checkUnique("brackets", c.brackets ?? [], "对阵表");
+    for (const [i, b] of (c.brackets ?? []).entries()) {
+      const base = `brackets[${i}](${b.id})`;
+      if (!this.isSim) this.warn(base, "淘汰赛对阵表只在 sim 调度器中生效");
+      const league = (c.leagues ?? []).find((l) => l.id === b.league);
+      if (!league) {
+        this.error(`${base}.league`, `对阵表挂接了不存在的联赛 "${b.league}"`);
+        continue;
+      }
+      if (league.teams.length < b.size) {
+        this.error(`${base}.size`, `联赛 "${league.name}" 只有 ${league.teams.length} 支队，撑不起 ${b.size} 强`);
+      }
+      if ((b.size & (b.size - 1)) !== 0) {
+        this.error(`${base}.size`, `参赛队数必须是 2 的幂（2 / 4 / 8 / 16），实际 ${b.size}`);
+      }
+      // row.名称 / row.强度 与 round 由对阵表注入
+      const ctx: ExprContext = { rowKeys: new Set(["名称", "强度"]), locals: new Set(["round", ...(b.compute ?? []).map((cp) => cp.id)]) };
+      this.checkExpr(b.condition, `${base}.condition`, {});
+      for (const cp of b.compute ?? []) this.checkExpr(cp.expr, `${base}.compute(${cp.id})`, ctx);
+      let hasWin = false;
+      let hasFallback = false;
+      for (const [j, o] of b.outcomes.entries()) {
+        const ob = `${base}.outcomes[${j}](${o.id})`;
+        this.checkExpr(o.condition, `${ob}.condition`, ctx);
+        this.checkEffects(o.effects, `${ob}.effects`, ctx);
+        if (o.text) this.checkTemplate(o.text, `${ob}.text`, ctx);
+        if (o.leagueResult === "win") hasWin = true;
+        if (o.condition.trim() === "1") hasFallback = true;
+      }
+      if (!hasWin) {
+        this.error(`${base}.outcomes`, `对阵表 "${b.name}" 没有任何一个分支标了 leagueResult: "win"——玩家永远赢不了一轮`);
+      }
+      if (!hasFallback) {
+        this.warn(`${base}.outcomes`, `对阵表 "${b.name}" 的分支可能全都不满足，最后一个条件写 1 作兜底`);
+      }
+      this.checkEffects(b.championEffects, `${base}.championEffects`, {});
+      if (b.championText) this.checkTemplate(b.championText, `${base}.championText`, {});
+      if (b.eliminatedText) this.checkTemplate(b.eliminatedText, `${base}.eliminatedText`, { locals: new Set(["round"]) });
     }
   }
 

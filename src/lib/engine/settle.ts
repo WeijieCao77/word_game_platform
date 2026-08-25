@@ -9,6 +9,7 @@ import { Bindings, GameScope, applyEffects, clampVar, clockOf, renderText, truth
 import { checkConditionEndings, timeoutEnd } from "./endings";
 import { drawEventCards } from "./cards";
 import { leagueTick } from "./leagues";
+import { runBracket } from "./bracket";
 import { simHeader } from "./state";
 
 /** 结束回合（sim）：结算 → 随机事件 → 曲线 → 结局检查 → 周期滚动 */
@@ -69,6 +70,17 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
     if (!state.counters) state.counters = {};
     state.counters[s.id] = runIdx + 1;
     checkConditionEndings(config, state, scope);
+  }
+
+  // 1.5) 淘汰赛：常规赛之后的季后赛，一次打完整张表
+  if (!state.ended) {
+    for (const b of config.brackets ?? []) {
+      if (state.brackets?.[b.id]) continue; // 一个赛季只打一次
+      if (!truthy(evaluate(b.condition, scope))) continue;
+      runBracket(config, state, scope, rng, b);
+      checkConditionEndings(config, state, scope);
+      if (state.ended) break;
+    }
   }
 
   // 2) 随机事件

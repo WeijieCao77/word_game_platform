@@ -90,6 +90,50 @@ export default function SimSchedule({ config, state }: { config: GameConfig; sta
           </div>
         );
       })}
+      <BracketBoard config={config} state={state} />
     </div>
+  );
+}
+
+/**
+ * 淘汰赛对阵表。
+ * 只在打完之后显示——季后赛的悬念在于「谁淘汰了谁」，一轮一轮列出来就够了，
+ * 不必画成树状图（手机上根本看不清）。
+ */
+function BracketBoard({ config, state }: { config: GameConfig; state: GameState }): React.ReactElement | null {
+  const played = (config.brackets ?? []).filter((b) => state.brackets?.[b.id]);
+  if (played.length === 0) return null;
+  return (
+    <>
+      {played.map((def) => {
+        const run = state.brackets![def.id];
+        const me = (config.leagues ?? []).find((l) => l.id === def.league)?.playerTeam;
+        const roundName = (r: number, total: number): string =>
+          r === total ? "决赛" : r === total - 1 ? "半决赛" : `第 ${r} 轮`;
+        return (
+          <div key={def.id} className="sched-block">
+            <div className="sched-title">
+              {def.name}
+              <span className="tag">{run.champion === me ? "夺冠" : `冠军 ${run.champion}`}</span>
+            </div>
+            {run.rounds.map((rd) => (
+              <div key={rd.round} className="bracket-round">
+                <div className="bracket-round-name">{roundName(rd.round, run.rounds.length)}</div>
+                {rd.pairs.map((pair, i) => {
+                  const w = rd.winners[i];
+                  return (
+                    <div key={i} className={`bracket-pair${pair.includes(me ?? "") ? " mine" : ""}`}>
+                      <span className={pair[0] === w ? "bracket-win" : "bracket-lose"}>{pair[0]}</span>
+                      <span className="bracket-vs">vs</span>
+                      <span className={pair[1] === w ? "bracket-win" : "bracket-lose"}>{pair[1]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </>
   );
 }

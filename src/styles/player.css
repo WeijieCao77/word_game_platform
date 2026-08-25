@@ -187,6 +187,42 @@
   font-size: 15px;
 }
 
+/* 淘汰赛对阵表：一轮一轮列出来，不画树状图（手机上看不清） */
+.bracket-round {
+  margin-top: 8px;
+}
+.bracket-round-name {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.bracket-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.bracket-pair.mine {
+  border-color: var(--accent);
+}
+.bracket-vs {
+  color: var(--muted);
+  font-size: 11px;
+}
+.bracket-win {
+  font-weight: 600;
+}
+.bracket-lose {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border);
+}
+
 /* 关系网：谁和谁处得来、谁和谁处不来 */
 .relation-web {
   margin-top: 14px;

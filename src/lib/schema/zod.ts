@@ -138,6 +138,31 @@ export const ActionDefSchema = z.object({
   text: z.string().max(2000).optional(),
 });
 
+/** 淘汰赛对阵表 */
+export const BracketDefSchema = z.object({
+  id: IdSchema,
+  name: NameSchema,
+  league: IdSchema,
+  size: z.number().int().min(2).max(16),
+  condition: ExprSchema,
+  compute: z.array(z.object({ id: IdSchema, expr: ExprSchema })).max(60).optional(),
+  outcomes: z
+    .array(
+      z.object({
+        id: IdSchema,
+        condition: ExprSchema,
+        effects: z.array(EffectSchema).max(40),
+        text: z.string().max(2000).optional(),
+        leagueResult: z.enum(["win", "loss"]).optional(),
+      })
+    )
+    .min(1)
+    .max(20),
+  championEffects: z.array(EffectSchema).max(40).optional(),
+  championText: z.string().max(2000).optional(),
+  eliminatedText: z.string().max(2000).optional(),
+});
+
 /** 关系网：两个角色之间的状态 */
 export const RelationDefSchema = z.object({
   id: IdSchema,
@@ -335,6 +360,7 @@ export const GameConfigSchema = z.object({
   curves: z.array(CurveDefSchema).max(60).optional(),
   pendings: z.array(PendingDefSchema).max(30).optional(),
   relations: z.array(RelationDefSchema).max(8).optional(),
+  brackets: z.array(BracketDefSchema).max(8).optional(),
 });
 
 export type GameConfigInput = z.input<typeof GameConfigSchema>;

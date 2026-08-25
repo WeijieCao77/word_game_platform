@@ -11,7 +11,10 @@
 | 游戏库首页、卡片外观与翻面 | `src/app/page.tsx` + `src/styles/store.css` |
 | 玩家看到的界面（某一块） | `src/components/player/`（见下表）+ `src/styles/player.css` |
 | 玩法规则：抽卡、选项、结算、行动点、联赛 | `src/lib/engine/`（见下表） |
-| AI 会说什么、什么时候建议某个模块 | `src/lib/ai/prompt.ts` |
+| AI 会说什么、什么时候建议某个模块 | `src/lib/ai/prompt.ts`（常驻核心 + 技能包，`buildSystemPrompt` 决定这次发哪几包） |
+| 加一个 AI 技能包（题材写法/新模块用法） | `src/lib/ai/prompt.ts` 的 `SKILL_PACKS`，并在 `pickSkills` 里定何时自动发 |
+| AI 额度：谁能用多少、用完怎么办 | `src/lib/ai/quota.ts`（口径在 `src/lib/session.ts` 的 `quotaKeyOf`） |
+| 文笔体检（AI 腔机检） | `src/lib/schema/prose.ts` |
 | AI 的工具与重试逻辑 | `src/lib/ai/agent.ts` |
 | 换 AI 供应商/模型 | `src/lib/ai/provider.ts` + 环境变量 `AI_PROVIDER` |
 | 设计卡的模板与解析 | `src/lib/ai/designcard.ts` |
@@ -26,6 +29,8 @@
 | 创作工作台的某个页签 | `src/components/editor/`（见下表）+ `src/styles/editor.css` |
 | 新手引导的步骤与文案 | `src/components/editor/tourSteps.ts`；引导组件本身在 `src/components/Tour.tsx` |
 | 开发者后台 | `src/app/admin/page.tsx` + `src/app/api/admin/stats/route.ts` + `store.adminStats()` |
+| 额度审批（谁申请了、批多少） | `src/app/api/admin/quota/route.ts` + 后台页的「额度申请」区块 |
+| 让线上 AI 自己做一遍游戏（端到端实测） | `.github/workflows/ai-e2e.yml` |
 | 封面预设插画 | `src/components/GameCover.tsx` |
 | 旗舰位与站内嵌入 | `src/app/flagship/page.tsx` + `src/components/FlagshipFrame.tsx` |
 | 全站配色与排版 | `src/styles/base.css` |
@@ -47,6 +52,8 @@
 | `actions.ts` | sim 决策：可用性、目标选择、行动点扣减 |
 | `settle.ts` | sim 回合管线：结算 → 事件 → 曲线 → 结局 → 周期滚动；结算归因快照 |
 | `leagues.ts` | 活联赛：玩家记账、对手镜像、NPC 之间互赛、积分榜 |
+| `bracket.ts` | 淘汰赛对阵表：种子按积分榜排、玩家轮次走 outcomes、NPC 对局按强度算 |
+| `relations.ts` | 关系网：两个角色之间的状态，惰性读写（只存碰过的那一对） |
 | `rng.ts` | 确定性随机流（mulberry32） |
 
 依赖方向是严格 DAG：`rng ← internal ← endings ← cards ← state ← settle ← {choices, input}`，

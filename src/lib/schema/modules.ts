@@ -94,6 +94,25 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     enabled: (c) => (c.leagues?.length ?? 0) > 0,
   },
   {
+    id: "brackets",
+    name: "淘汰赛对阵表",
+    desc: "常规赛之后的季后赛：种子按积分榜排，一轮一轮淘汰到只剩一个",
+    drivers: ["sim"],
+    enabled: (c) => (c.brackets?.length ?? 0) > 0,
+  },
+  {
+    id: "relations",
+    name: "关系网",
+    desc: "谁和谁之间的状态：队内羁绊、恋爱好感、门派恩怨；能参与战力与结局判定",
+    enabled: (c) => (c.relations?.length ?? 0) > 0,
+  },
+  {
+    id: "pendings",
+    name: "待办箱",
+    desc: "发出去要等回音的事：转会报价、赞助洽谈、招聘邀约——结果由对方决定",
+    enabled: (c) => (c.pendings?.length ?? 0) > 0,
+  },
+  {
     id: "tab-labels",
     name: "界面定制",
     desc: "按题材命名游戏页签（宗门「大比日程」而非「赛程」）",

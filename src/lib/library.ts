@@ -80,6 +80,7 @@ export function shareBlockReason(card: CardDef): string | null {
   for (const ast of cardAsts(card)) {
     for (const call of collectRefs(ast).calls) {
       if (call.name === "fired") return "使用了 fired() 引用其他卡片，暂不能入库";
+      if (call.name === "searched") return "使用了 searched() 引用检索词条，依赖本作的检索台，暂不能入库";
       if (["avg", "sum", "count", "max_of", "min_of", "tag"].includes(call.name)) {
         return "使用了实体聚合/标签函数，依赖实体定义，暂不能入库";
       }

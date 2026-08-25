@@ -18,7 +18,7 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
-const RESERVED = new Set(["time", "turn", "cycle", "true", "false", "fired", "self", "target", "row"]);
+const RESERVED = new Set(["time", "turn", "cycle", "true", "false", "fired", "searched", "self", "target", "row"]);
 
 const GAME_FUNCTIONS: Record<string, { min: number; max: number }> = {
   rank: { min: 1, max: 1 },
@@ -26,6 +26,7 @@ const GAME_FUNCTIONS: Record<string, { min: number; max: number }> = {
   randint: { min: 2, max: 2 },
   chance: { min: 1, max: 1 },
   fired: { min: 1, max: 1 },
+  searched: { min: 1, max: 1 },
   tag: { min: 1, max: 1 },
   avg: { min: 2, max: 3 },
   sum: { min: 2, max: 3 },
@@ -306,6 +307,15 @@ class Validator {
           if (a.ending && !this.endingIds.has(a.ending)) {
             this.error(`${ab}.ending`, `输入答案 "${a.id}" 引用了不存在的结局 "${a.ending}"`);
           }
+          // story 调度器没有「下一张卡」的概念：答对了却没写去向，submitInput 会直接
+          // 走兜底结局——玩家想对了反而被结束游戏，而作者完全看不出哪里错了。
+          if (!this.isSim && c.driver.kind === "story" && !a.goto && !a.ending) {
+            this.error(
+              ab,
+              `输入答案 "${a.id}" 既没有 goto 也没有 ending。story 调度器下这会让玩家答对之后` +
+                `直接掉进兜底结局——给它一个 goto（答对后去哪张卡）或 ending（就此收尾）`
+            );
+          }
           for (const kw of a.keywords) {
             const norm = normalizeKeyword(kw);
             if (!norm) this.error(ab, `关键词 "${kw}" 归一化后为空`);
@@ -538,8 +548,10 @@ class Validator {
       return;
     }
     const { idents, calls } = collectRefs(ast);
-    if (calls.some((c) => c.name !== "fired")) return;
-    let touchesDynamic = calls.some((c) => c.name === "fired");
+    // fired()/searched() 都是随玩家行为变化的，条件里有它们就不算「死条件」
+    const DYNAMIC_CALLS = new Set(["fired", "searched"]);
+    if (calls.some((c) => !DYNAMIC_CALLS.has(c.name))) return;
+    let touchesDynamic = calls.some((c) => DYNAMIC_CALLS.has(c.name));
     for (const p of idents) {
       const head = p[0];
       if (head === "turn" || head === "time" || head === "cycle") touchesDynamic = true;
@@ -818,6 +830,16 @@ class Validator {
           this.error(path, `fired() 的参数必须是卡片 id 字符串字面量，如 fired("遇仙")`);
         } else if (!this.cardIds.has(arg.value)) {
           this.error(path, `fired() 引用了不存在的卡片 "${arg.value}"`);
+        }
+      }
+      if (call.name === "searched") {
+        const arg = call.args[0];
+        if (!this.config.search) {
+          this.error(path, "searched() 需要先配置全局检索台（search.entries）");
+        } else if (arg.kind !== "str") {
+          this.error(path, `searched() 的参数必须是检索词条 id 字符串字面量，如 searched("档_当票")`);
+        } else if (!this.config.search.entries.some((e) => e.id === arg.value)) {
+          this.error(path, `searched() 引用了不存在的检索词条 "${arg.value}"`);
         }
       }
       if (call.name === "rank") {

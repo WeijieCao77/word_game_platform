@@ -93,6 +93,12 @@ export class GameScope implements Scope {
         const n = Object.prototype.hasOwnProperty.call(this.state.fired, args[0]) ? this.state.fired[args[0]] : 0;
         return n > 0 ? 1 : 0;
       }
+      case "searched": {
+        // 玩家有没有用检索台查过这个词条。推理类最想要的那句「你没查过就不该知道」
+        // 靠它才做得出来——此前检索只能是加分项，做不成硬性必需。
+        if (typeof args[0] !== "string") throw new ExprError("searched() 需要检索词条 id 字符串");
+        return (this.state.searched?.[args[0]] ?? 0) > 0 ? 1 : 0;
+      }
       case "tag": {
         if (typeof args[0] !== "string") throw new ExprError("tag() 需要标签名字符串");
         const entityId = this.bindings.self ?? this.bindings.target;

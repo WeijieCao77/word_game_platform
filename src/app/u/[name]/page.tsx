@@ -31,13 +31,24 @@ export default async function AuthorPage({
           {games.map((g) => (
             <div className="game-card" key={g.id}>
               <Link className="card-link" href={`/g/${g.id}`}>
-                <GameCover
-                  id={g.id}
-                  title={g.title}
-                  kind={g.kind}
-                  preset={g.coverPreset}
-                  coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
-                />
+                <div className="cover-wrap">
+                  <div className="cover-flip">
+                    <div className="cover-face cover-front">
+                      <GameCover
+                        id={g.id}
+                        title={g.title}
+                        kind={g.kind}
+                        preset={g.coverPreset}
+                        coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
+                      />
+                    </div>
+                    <div className="cover-face cover-back">
+                      <b className="cover-back-title">{g.title}</b>
+                      <p>{g.description || "作者还没写简介。"}</p>
+                      <span className="cover-hover-cta">开始游玩 →</span>
+                    </div>
+                  </div>
+                </div>
                 <div className="game-card-body">
                   <div className="desc">{g.description || "（暂无简介）"}</div>
                   <div className="meta">

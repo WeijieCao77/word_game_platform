@@ -175,31 +175,22 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
     }
   }, []);
 
-  // 进入游玩计一次点击量（每浏览器会话每游戏一次），并拉取点赞数
+  // 进入游玩即计一次点击量（每次进入都算——流量是作者的激励），并拉取点赞数
   useEffect(() => {
     if (mode !== "play" || !gameId) return;
     try {
       setLiked(localStorage.getItem(`wgp_liked_${gameId}`) === "1");
-      const guard = `wgp_played_${gameId}`;
-      if (!sessionStorage.getItem(guard)) {
-        sessionStorage.setItem(guard, "1");
-        void fetch(`/api/games/${gameId}/stats`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ event: "play" }),
-        })
-          .then((r) => r.json())
-          .then((b) => typeof b.likes === "number" && setLikes(b.likes))
-          .catch(() => undefined);
-      } else {
-        void fetch(`/api/games/${gameId}/stats`)
-          .then((r) => r.json())
-          .then((b) => typeof b.likes === "number" && setLikes(b.likes))
-          .catch(() => undefined);
-      }
     } catch {
       // 隐私模式等场景下静默降级
     }
+    void fetch(`/api/games/${gameId}/stats`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: "play" }),
+    })
+      .then((r) => r.json())
+      .then((b) => typeof b.likes === "number" && setLikes(b.likes))
+      .catch(() => undefined);
   }, [mode, gameId]);
 
   // 游玩时长：页面可见时累计，每 60s 上报一次，离开页面用 sendBeacon 补尾——
@@ -278,6 +269,12 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       } catch {
         // 忽略
       }
+      // 再开一局也是一次游玩
+      void fetch(`/api/games/${gameId}/stats`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event: "play" }),
+      }).catch(() => undefined);
     }
     newGame();
   }, [gameId, mode, newGame]);

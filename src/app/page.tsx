@@ -52,12 +52,12 @@ export default function HomePage(): React.ReactElement {
         {flagshipUrl && (
           <>
             <h2 className="section-title">旗舰作品</h2>
-            <a className="flagship-banner" href={flagshipUrl} target="_blank" rel="noreferrer">
+            <Link className="flagship-banner" href="/flagship">
               <GameCover id="val-manager" title="VAL MANAGER · 无畏契约电竞经理" kind="flagship" wide />
               <span className="flagship-desc">
-                真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区 ↗
+                真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区 · 站内直接开玩
               </span>
-            </a>
+            </Link>
           </>
         )}
 
@@ -71,13 +71,24 @@ export default function HomePage(): React.ReactElement {
             {games.map((g) => (
               <div className="game-card" key={g.id}>
                 <Link className="card-link" href={`/g/${g.id}`}>
-                  <GameCover
-                    id={g.id}
-                    title={g.title}
-                    kind={g.kind}
-                    preset={g.coverPreset}
-                    coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
-                  />
+                  <div className="cover-wrap">
+                    <div className="cover-flip">
+                      <div className="cover-face cover-front">
+                        <GameCover
+                          id={g.id}
+                          title={g.title}
+                          kind={g.kind}
+                          preset={g.coverPreset}
+                          coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
+                        />
+                      </div>
+                      <div className="cover-face cover-back">
+                        <b className="cover-back-title">{g.title}</b>
+                        <p>{g.description || "作者还没写简介——点开试试手气。"}</p>
+                        <span className="cover-hover-cta">开始游玩 →</span>
+                      </div>
+                    </div>
+                  </div>
                   <div className="game-card-body">
                     <div className="desc">{g.description || "（暂无简介）"}</div>
                     <div className="meta">

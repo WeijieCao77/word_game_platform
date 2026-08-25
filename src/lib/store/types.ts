@@ -76,6 +76,16 @@ export interface GameStore {
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */
   aiConsume(key: string, tokens: number): { requests: number; tokens: number };
   aiUsageToday(key: string): { requests: number; tokens: number };
+  /** 平台全站汇总（开发者后台专用） */
+  adminStats(): {
+    games: { total: number; published: number; drafts: number };
+    creators: number;
+    totals: { plays: number; likes: number; playSeconds: number };
+    daily: { date: string; plays: number; likes: number; playSeconds: number }[];
+    topGames: { id: string; title: string; author: string; plays: number; likes: number; playSeconds: number; published: boolean }[];
+    ai: { totalRequests: number; totalTokens: number; todayRequests: number; todayTokens: number };
+    library: { cards: number; assets: number };
+  };
   /** 内容库 */
   libraryAdd(entry: import("@/lib/library").LibraryEntry): void;
   libraryList(filter?: { category?: string; tag?: string; q?: string; limit?: number }): import("@/lib/library").LibraryEntry[];

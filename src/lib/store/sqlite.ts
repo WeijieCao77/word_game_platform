@@ -435,6 +435,59 @@ export class SqliteGameStore implements GameStore {
     return row ?? { requests: 0, tokens: 0 };
   }
 
+  adminStats(): ReturnType<GameStore["adminStats"]> {
+    const g = this.db
+      .prepare("SELECT COUNT(*) AS total, SUM(published) AS pub FROM games")
+      .get() as { total: number; pub: number | null };
+    const creators = (
+      this.db.prepare("SELECT COUNT(DISTINCT author) AS n FROM games WHERE author != ''").get() as { n: number }
+    ).n;
+    const totals = this.db
+      .prepare("SELECT COALESCE(SUM(plays),0) AS plays, COALESCE(SUM(likes),0) AS likes, COALESCE(SUM(play_seconds),0) AS ps FROM games")
+      .get() as { plays: number; likes: number; ps: number };
+    const daily = (
+      this.db
+        .prepare(
+          `SELECT date, SUM(plays) AS plays, SUM(likes) AS likes, SUM(play_seconds) AS ps
+           FROM game_stats_daily GROUP BY date ORDER BY date DESC LIMIT 14`
+        )
+        .all() as { date: string; plays: number; likes: number; ps: number }[]
+    ).map((r) => ({ date: r.date, plays: r.plays, likes: r.likes, playSeconds: r.ps }));
+    const topGames = (
+      this.db
+        .prepare(
+          `SELECT id, config, author, published, plays, likes, play_seconds AS ps
+           FROM games ORDER BY plays DESC, likes DESC LIMIT 10`
+        )
+        .all() as { id: string; config: string; author: string; published: number; plays: number; likes: number; ps: number }[]
+    ).map((r) => {
+      let title = r.id;
+      try {
+        title = (JSON.parse(r.config) as GameConfig).meta?.title ?? r.id;
+      } catch {
+        // 摘要失败不致命
+      }
+      return { id: r.id, title, author: r.author, plays: r.plays, likes: r.likes, playSeconds: r.ps, published: r.published === 1 };
+    });
+    const aiTotal = this.db
+      .prepare("SELECT COALESCE(SUM(requests),0) AS r, COALESCE(SUM(tokens),0) AS t FROM ai_usage")
+      .get() as { r: number; t: number };
+    const aiToday = this.db
+      .prepare("SELECT COALESCE(SUM(requests),0) AS r, COALESCE(SUM(tokens),0) AS t FROM ai_usage WHERE date = ?")
+      .get(today()) as { r: number; t: number };
+    const libCards = (this.db.prepare("SELECT COUNT(*) AS n FROM library_cards").get() as { n: number }).n;
+    const libAssets = (this.db.prepare("SELECT COUNT(*) AS n FROM library_assets").get() as { n: number }).n;
+    return {
+      games: { total: g.total, published: g.pub ?? 0, drafts: g.total - (g.pub ?? 0) },
+      creators,
+      totals: { plays: totals.plays, likes: totals.likes, playSeconds: totals.ps },
+      daily,
+      topGames,
+      ai: { totalRequests: aiTotal.r, totalTokens: aiTotal.t, todayRequests: aiToday.r, todayTokens: aiToday.t },
+      library: { cards: libCards, assets: libAssets },
+    };
+  }
+
   libraryAdd(entry: LibraryEntry): void {
     this.db
       .prepare(

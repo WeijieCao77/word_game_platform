@@ -1390,3 +1390,193 @@ textarea {
   opacity: 0.92;
   white-space: pre-wrap;
 }
+
+/* 卡片翻面：正面封面（标题）+ 卡身标签与两行简介；悬停翻到背面看完整简介 */
+.cover-wrap {
+  position: relative;
+  perspective: 1000px;
+}
+.cover-flip {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.game-card:hover .cover-flip,
+.game-card:focus-within .cover-flip {
+  transform: rotateY(180deg);
+}
+.cover-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+.cover-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  background: linear-gradient(160deg, #121a26 0%, #080c12 100%);
+  border-bottom: 1px solid var(--border);
+  color: #e8eef4;
+  padding: 11px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cover-back-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.cover-back p {
+  flex: 1;
+  min-height: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(232, 238, 244, 0.86);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover-flip {
+    transition: none;
+  }
+}
+.cover-hover-cta {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cta, #66c04b);
+}
+
+/* 开发者后台 */
+.admin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.admin-tile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.admin-tile b {
+  font-size: 26px;
+}
+.admin-tile span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.admin-daily {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.admin-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.admin-day b {
+  color: var(--fg);
+}
+.admin-bar {
+  width: 26px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--accent, #58b2f0), rgba(88, 178, 240, 0.35));
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 站内嵌入外壳（旗舰作品等独立部署的游戏，直接在平台里玩） */
+.embed-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+.embed-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.embed-back {
+  color: var(--accent);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.embed-title {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.embed-spacer {
+  flex: 1;
+}
+.embed-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.embed-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #0b0f16;
+}
+.embed-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.embed-fallback {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.92);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .embed-bar .tag,
+  .embed-title {
+    display: none;
+  }
+}

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { validateGameConfig } from "@/lib/schema";
 import { simulate } from "@/lib/simulate";
+import { initState, choose, notebookItems } from "@/lib/engine";
 
 function load(name: string): unknown {
   return JSON.parse(readFileSync(path.join(__dirname, "..", "templates", name), "utf8"));
@@ -126,6 +127,21 @@ describe("官方示例：他不是自己掉下去的（story 社会派推理，�
     expect(report.unreachedEndings).toEqual([]);
     expect(report.unfiredCards).toEqual([]);
   });
+
+  it("采访本开局是空的，读完序章那封信才入本", () => {
+    // 以前这三条（死者、信封、案发那晚）没有解锁条件，开局就摆在本子上，
+    // 玩家重开一局看见三条线索，第一反应是「上一局的存档没清干净」。
+    const config = validateGameConfig(raw).config!;
+    let state = initState(config, 1);
+    expect(notebookItems(config, state)).toHaveLength(0);
+
+    state = choose(config, state, "摸信封口");
+    const after = notebookItems(config, state).map((n) => n.id);
+    expect(after).toContain("nb_程小满");
+    expect(after).toContain("nb_信封");
+    expect(after).toContain("nb_时间线_那一夜");
+  });
+
 });
 
 describe("官方示例：整栋实验楼都听见我心跳超频了（story 男频恋爱）", () => {

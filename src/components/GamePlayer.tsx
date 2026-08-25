@@ -114,6 +114,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   }, [config, state]);
 
   const [kwText, setKwText] = useState("");
+  const [simTab, setSimTab] = useState<"overview" | "actions" | "roster" | "schedule" | "log">("overview");
   const inputGate = useMemo(() => {
     if (!state) return null;
     try {
@@ -368,47 +369,24 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
           ))}
         </div>
 
-        {upcoming.length > 0 && !state.ended && !state.pendingCard && (
-          <div className="upcoming">
-            {upcoming.map((u, i) => (
-              <div key={i} className="upcoming-item">
-                <span className="upcoming-label">本{config.driver.kind === "sim" ? config.driver.time.turnLabel : "回合"}对阵 · {u.settlement}</span>
-                <span className="upcoming-detail">
-                  {Object.entries(u.row).map(([k, v]) => (
-                    <span key={k}>
-                      {typeof v === "string" ? <b>{v}</b> : `${k} ${v}`}{" "}
-                    </span>
-                  ))}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {isSim && <Roster config={config} state={state} />}
-
-        <div className="gamelog">
-          {state.log.map((entry, i) => (
-            <div key={i} className={`log-${entry.kind}`}>
-              {entry.text}
+        {(() => {
+          const upcomingPanel = upcoming.length > 0 && !state.ended && !state.pendingCard && (
+            <div className="upcoming">
+              {upcoming.map((u, i) => (
+                <div key={i} className="upcoming-item">
+                  <span className="upcoming-label">本{config.driver.kind === "sim" ? config.driver.time.turnLabel : "回合"}对阵 · {u.settlement}</span>
+                  <span className="upcoming-detail">
+                    {Object.entries(u.row).map(([k, v]) => (
+                      <span key={k}>
+                        {typeof v === "string" ? <b>{v}</b> : `${k} ${v}`}{" "}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-          <div ref={logEndRef} />
-        </div>
-
-        <div className="controls">
-          {state.ended ? (
-            <div className={`ending-banner ${state.ended.kind}`}>
-              <div className="ending-kind">{KIND_LABEL[state.ended.kind]}</div>
-              <h2>{state.ended.title}</h2>
-              {state.ended.text && <p>{state.ended.text}</p>}
-              <p style={{ marginTop: 12 }}>
-                <button className="continue-btn" onClick={restart}>
-                  再开一局
-                </button>
-              </p>
-            </div>
-          ) : choices.length > 0 || inputGate ? (
+          );
+          const choiceControls = (choices.length > 0 || inputGate) && (
             <>
               {choices.map((c) => (
                 <button key={c.id} className="choice-btn" onClick={() => act(() => choose(config, state, c.id))}>
@@ -439,7 +417,30 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                 </form>
               )}
             </>
-          ) : isSim ? (
+          );
+          const endingBanner = state.ended && (
+            <div className={`ending-banner ${state.ended.kind}`}>
+              <div className="ending-kind">{KIND_LABEL[state.ended.kind]}</div>
+              <h2>{state.ended.title}</h2>
+              {state.ended.text && <p>{state.ended.text}</p>}
+              <p style={{ marginTop: 12 }}>
+                <button className="continue-btn" onClick={restart}>
+                  再开一局
+                </button>
+              </p>
+            </div>
+          );
+          const fullLog = (
+            <div className="gamelog">
+              {state.log.map((entry, i) => (
+                <div key={i} className={`log-${entry.kind}`}>
+                  {entry.text}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          );
+          const actionPanel = (
             <>
               <div className="action-grid">
                 {actions.map((a) =>
@@ -480,16 +481,98 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                 结束本{simTime?.turnLabel ?? "回合"} ▸
               </button>
             </>
-          ) : config.driver.kind === "life" ? (
-            <button className="continue-btn" onClick={() => act(() => step(config, state))}>
-              {continueLabel}
-            </button>
-          ) : (
-            <button className="continue-btn" onClick={restart}>
-              重新开始
-            </button>
-          )}
-        </div>
+          );
+
+          if (!isSim) {
+            // life / story：阅读流保持原样
+            return (
+              <>
+                {upcomingPanel}
+                {fullLog}
+                <div className="controls">
+                  {state.ended
+                    ? endingBanner
+                    : choices.length > 0 || inputGate
+                      ? choiceControls
+                      : config.driver.kind === "life" ? (
+                          <button className="continue-btn" onClick={() => act(() => step(config, state))}>
+                            {continueLabel}
+                          </button>
+                        ) : (
+                          <button className="continue-btn" onClick={restart}>
+                            重新开始
+                          </button>
+                        )}
+                </div>
+              </>
+            );
+          }
+
+          // sim：多页签小游戏界面（像正经经营游戏一样切页操作）
+          const recentLog = state.log.slice(-8);
+          const pendingEvent = !state.ended && state.pendingCard;
+          const lastCardText = [...state.log].reverse().find((l) => l.kind === "card")?.text;
+          const SIM_TABS: ["overview" | "actions" | "roster" | "schedule" | "log", string][] = [
+            ["overview", "总览"],
+            ["actions", "行动"],
+            ["roster", "阵容"],
+            ["schedule", "赛程"],
+            ["log", "日志"],
+          ];
+          return (
+            <>
+              {state.ended && <div className="controls">{endingBanner}</div>}
+              {pendingEvent && (
+                <div className="sim-event">
+                  <div className="sim-event-title">⚡ 事件</div>
+                  {lastCardText && <div className="sim-event-text">{lastCardText}</div>}
+                  <div className="controls">{choiceControls}</div>
+                </div>
+              )}
+              <div className="sim-nav">
+                {SIM_TABS.map(([t, label]) => (
+                  <button key={t} className={simTab === t ? "active" : ""} onClick={() => setSimTab(t)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {simTab === "overview" && (
+                <div className="sim-panel">
+                  {upcomingPanel}
+                  <div className="gamelog sim-recent">
+                    {recentLog.map((entry, i) => (
+                      <div key={i} className={`log-${entry.kind}`}>
+                        {entry.text}
+                      </div>
+                    ))}
+                  </div>
+                  {!state.ended && !pendingEvent && (
+                    <div className="controls" style={{ display: "flex", gap: 10 }}>
+                      <button className="btn small" onClick={() => setSimTab("actions")}>
+                        去安排本{simTime?.turnLabel ?? "回合"} →
+                      </button>
+                      <button className="btn small secondary" onClick={() => act(() => endTurn(config, state))}>
+                        直接结束本{simTime?.turnLabel ?? "回合"} ▸
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {simTab === "actions" && <div className="sim-panel">{!state.ended && !pendingEvent ? actionPanel : <div className="pane-note">先处理上方事件。</div>}</div>}
+              {simTab === "roster" && (
+                <div className="sim-panel">
+                  <Roster config={config} state={state} />
+                </div>
+              )}
+              {simTab === "schedule" && (
+                <div className="sim-panel">
+                  <SimSchedule config={config} state={state} />
+                </div>
+              )}
+              {simTab === "log" && <div className="sim-panel">{fullLog}</div>}
+            </>
+          );
+        })()}
 
         <div className="player-footer">
           {mode === "play" ? (
@@ -516,6 +599,56 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** sim 赛程页：每个带 data 的结算展示完整赛程表，标出已赛/下一场 */
+function SimSchedule({ config, state }: { config: GameConfig; state: GameState }): React.ReactElement {
+  const withData = (config.settlements ?? []).filter((st) => (st.data?.length ?? 0) > 0);
+  if (withData.length === 0) return <div className="pane-note">这个游戏没有固定赛程。</div>;
+  return (
+    <div className="sched">
+      {withData.map((st) => {
+        const rows = st.data!;
+        const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
+        const runIdx = state.counters?.[st.id] ?? 0;
+        const nextIdx = runIdx % rows.length;
+        const lap = Math.floor(runIdx / rows.length);
+        return (
+          <div key={st.id} className="sched-block">
+            <div className="sched-title">{st.name}</div>
+            <div className="roster-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    {cols.map((c) => (
+                      <th key={c}>{c}</th>
+                    ))}
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    const done = lap > 0 || i < nextIdx;
+                    const isNext = i === nextIdx;
+                    return (
+                      <tr key={i} className={isNext ? "sched-next" : done ? "sched-done" : ""}>
+                        <td>{i + 1}</td>
+                        {cols.map((c) => (
+                          <td key={c}>{r[c] === undefined ? "—" : String(r[c])}</td>
+                        ))}
+                        <td>{isNext ? "▶ 下一场" : done ? "已赛" : ""}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

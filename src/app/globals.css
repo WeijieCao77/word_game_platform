@@ -1185,3 +1185,70 @@ textarea {
   height: 100%;
   overflow: auto;
 }
+
+/* sim 多页签小游戏界面 */
+.sim-nav {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 0;
+  border-bottom: 2px solid var(--border);
+}
+.sim-nav button {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.65;
+  font-size: 14.5px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-family: inherit;
+}
+.sim-nav button:hover {
+  opacity: 0.9;
+}
+.sim-nav button.active {
+  opacity: 1;
+  border-bottom-color: var(--accent, #6bd68b);
+}
+.sim-panel {
+  padding-top: 14px;
+  min-height: 240px;
+}
+.sim-recent {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.sim-event {
+  margin-top: 14px;
+  border: 1px solid var(--accent, #6bd68b);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.sim-event-title {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+.sim-event-text {
+  margin-bottom: 8px;
+  line-height: 1.7;
+}
+.sched-block {
+  margin-bottom: 18px;
+}
+.sched-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.sched-next td {
+  font-weight: 700;
+  color: var(--accent, #2f7d43);
+}
+.sched-done td {
+  opacity: 0.45;
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { verifyPassword } from "@/lib/auth";
-import { clearLoginFails, ipOf, loginBlocked, noteLoginFail, startSession } from "@/lib/session";
+import { applyAdminAllowlist, clearLoginFails, ipOf, loginBlocked, noteLoginFail, startSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "用户名或密码不正确" }, { status: 401 });
   }
   clearLoginFails(ip);
-  const res = NextResponse.json({ user: { username: user.username, role: user.role } });
+  const role = applyAdminAllowlist(user.username, user.id, user.role);
+  const res = NextResponse.json({ user: { username: user.username, role } });
   startSession(res, user.id);
   return res;
 }

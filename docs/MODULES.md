@@ -20,6 +20,9 @@
 | 模拟器的随机策略、早终局检测 | `src/lib/simulate.ts` |
 | 表达式语言（加函数、改上限） | `src/lib/expr/` |
 | 数据库表、统计口径、后台聚合 | `src/lib/store/sqlite.ts`（接口在 `types.ts`） |
+| 密码哈希、会话令牌、用户名口令规则 | `src/lib/auth.ts` |
+| 「当前是谁」、编辑权、登录限频、AI 配额口径 | `src/lib/session.ts` |
+| 登录注册界面、顶栏账号状态 | `src/app/login/page.tsx` + `src/components/AuthNav.tsx` |
 | 创作工作台的某个页签 | `src/components/editor/`（见下表）+ `src/styles/editor.css` |
 | 新手引导的步骤与文案 | `src/components/editor/tourSteps.ts`；引导组件本身在 `src/components/Tour.tsx` |
 | 开发者后台 | `src/app/admin/page.tsx` + `src/app/api/admin/stats/route.ts` + `store.adminStats()` |
@@ -124,11 +127,15 @@
 | `/mine` | 我的创作（本机编辑钥匙 + 钥匙串导出导入） |
 | `/u/:name` | 作者页 |
 | `/flagship` | 旗舰作品站内嵌入外壳 |
-| `/admin` | 开发者后台（暗链，凭 `ADMIN_KEY`） |
+| `/login` | 登录 / 注册（注册时自动认领本机游客作品） |
+| `/admin` | 开发者后台（暗链，凭管理员账号） |
 
 API 在 `src/app/api/` 下，与页面同构：`games`（CRUD/发布/统计/素材/封面/AI 对话）、
-`library`（内容库与公共素材库）、`users`、`admin/stats`、`health`。
-写操作凭 `x-edit-key` 请求头。
+`library`（内容库与公共素材库）、`auth`（注册/登录/登出/我是谁/认领/我的作品）、
+`users`、`admin/stats`、`health`。
+
+写操作的鉴权只有一处判断——`canEditGame`（`src/lib/session.ts`）：**编辑钥匙对得上，
+或者已登录且是这部作品的归属人**。加新的写接口时用它，不要再直接调 `checkEditKey`。
 
 ## 八、样式 `src/styles/`
 

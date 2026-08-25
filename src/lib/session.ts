@@ -65,6 +65,20 @@ export function clearLoginFails(ip: string): void {
   fails.delete(ip);
 }
 
+/**
+ * 管理员兜底：可选环境变量 ADMIN_USERS（逗号分隔用户名）里的账号，登录时自动提升为管理员。
+ * 正常情况用不到——平台第一个注册者就是管理员；这是「管理员位被别人抢注了」时的自救通道。
+ */
+export function applyAdminAllowlist(username: string, userId: string, role: "user" | "admin"): "user" | "admin" {
+  const list = (process.env.ADMIN_USERS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (role === "admin" || !list.includes(username)) return role;
+  getStore().userSetRole(userId, "admin");
+  return "admin";
+}
+
 export function ipOf(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }

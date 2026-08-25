@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "meta": {
-    "title": "电竞经理 Lite",
-    "description": "执掌真实 VCT 战队 All Gamers，从国内联赛一路打到世界之巅。阵容与对手全部来自 2026 VCT 真实数据（vlr.gg / Liquipedia）。",
+    "title": "无畏契约经理",
+    "description": "执掌真实 VCT 战队 All Gamers，从 VCT CN 一路打到世界之巅。阵容与对手来自 2026 VCT 真实数据（vlr.gg / Liquipedia）。每周只有 3 个行动点：练谁、签谁、接哪单商务——全是取舍。",
     "author": "官方示例",
-    "intro": "你正式接手 All Gamers（AG）。\n首发五人：f4ngeer、Shr1mp、K1ra、iamgrq、Bai——这是他们真实的名字，数值也来自他们真实的比赛数据。\n赛季一：VCT CN 联赛。活下来，打出成绩，你才有资格带队走向洲际与世界。\n每周：安排训练、转会、轮换与商务，然后打比赛。三个赛季，向上爬。"
+    "intro": "你正式接手 All Gamers（AG）。\n首发五人：f4ngeer、Shr1mp、K1ra、iamgrq、Bai——真实的名字，数值也来自他们真实的比赛数据。\n赛季一：VCT CN。积分榜上 11 支队伍每周都在真打——你在赢的时候，对手也在赢。常规赛进前四才摸得到季后赛，冠军要在季后赛里拼出来。\n每周只有 3 个行动点：特训、转会、商务、团建，件件要花精力。转会窗只开到每季第 4 周，想补强就得早做打算。\n三个赛季：VCT CN → 洲际邀请赛 → 世界巡回赛。向上爬。"
   },
   "theme": {
     "preset": "dark",
@@ -18,13 +18,14 @@
       "turnsPerCycle": 10,
       "maxCycles": 3
     },
-    "drawsPerTurn": 1
+    "drawsPerTurn": 1,
+    "actionPoints": 3
   },
   "vars": [
     {
       "id": "资金",
       "name": "资金",
-      "initial": 45,
+      "initial": 30,
       "min": 0,
       "max": 999
     },
@@ -40,7 +41,8 @@
       "name": "士气",
       "initial": 65,
       "min": 0,
-      "max": 100
+      "max": 100,
+      "resetEachCycle": true
     },
     {
       "id": "积分",
@@ -129,8 +131,7 @@
           "id": "身价",
           "name": "身价",
           "min": 0,
-          "max": 99,
-          "visible": false
+          "max": 99
         }
       ]
     }
@@ -145,7 +146,7 @@
         "意识": 87,
         "体能": 92,
         "年龄": 18,
-        "潜力": 93,
+        "潜力": 97,
         "身价": 37
       },
       "tags": [
@@ -242,7 +243,7 @@
         "体能": 84,
         "年龄": 23,
         "潜力": 98,
-        "身价": 43
+        "身价": 48
       },
       "tags": [
         "市场"
@@ -258,7 +259,7 @@
         "体能": 79,
         "年龄": 24,
         "潜力": 96,
-        "身价": 42
+        "身价": 44
       },
       "tags": [
         "市场"
@@ -298,6 +299,8 @@
         "condition": "!tag(\"市场\") && !tag(\"伤病\")"
       },
       "condition": "资金 >= 3",
+      "usesPerTurn": 2,
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -326,6 +329,8 @@
         "condition": "!tag(\"市场\") && !tag(\"伤病\")"
       },
       "condition": "资金 >= 3",
+      "usesPerTurn": 2,
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -350,6 +355,7 @@
       "name": "特训·战术合练",
       "description": "花 2 万全队合练版本战术，提升版本理解（计入战力；版本随赛季更迭，跨季清零）",
       "condition": "资金 >= 2 && 版本理解 < 12",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -373,6 +379,8 @@
         "condition": "!tag(\"市场\")"
       },
       "condition": "资金 >= 2",
+      "usesPerTurn": 2,
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -388,13 +396,64 @@
       "text": "理疗调理：{target.name} 体能 → {target.体能}"
     },
     {
+      "id": "轮换休整",
+      "name": "轮换·下放",
+      "description": "把主力转入替补席休整（不占行动点；首发多于 5 人时才可下放——正赛必须五人齐装）",
+      "target": {
+        "entityType": "选手",
+        "condition": "tag(\"主力\")"
+      },
+      "usesPerTurn": 2,
+      "cost": 0,
+      "effects": [
+        {
+          "ref": "target",
+          "op": "remove_tag",
+          "tag": "主力"
+        },
+        {
+          "ref": "target",
+          "op": "add_tag",
+          "tag": "替补"
+        }
+      ],
+      "text": "{target.name} 转入替补席休整",
+      "condition": "count(\"选手\", \"主力\") >= 6"
+    },
+    {
+      "id": "提拔首发",
+      "name": "轮换·提拔",
+      "description": "把替补提上首发（不占行动点；计入战力）",
+      "target": {
+        "entityType": "选手",
+        "condition": "tag(\"替补\")"
+      },
+      "usesPerTurn": 2,
+      "cost": 0,
+      "effects": [
+        {
+          "ref": "target",
+          "op": "remove_tag",
+          "tag": "替补"
+        },
+        {
+          "ref": "target",
+          "op": "add_tag",
+          "tag": "主力"
+        }
+      ],
+      "text": "{target.name} 进入首发名单"
+    },
+    {
       "id": "签下新援",
       "name": "转会·签人",
-      "description": "按身价从转会市场签人（名字旁不显示身价？看日志报价）",
+      "description": "转会窗（每季前 4 周）内按身价签下市场上的选手——谈合同、办注册，一签就是大半周（2 行动点）",
       "target": {
         "entityType": "选手",
         "condition": "tag(\"市场\") && self.身价 <= 资金"
       },
+      "condition": "turn <= 4",
+      "cost": 2,
       "effects": [
         {
           "ref": "资金",
@@ -428,6 +487,7 @@
         "condition": "(tag(\"主力\") || tag(\"替补\")) && !tag(\"市场\")"
       },
       "condition": "turn <= 4 && count(\"选手\", \"主力\") + count(\"选手\", \"替补\") + count(\"选手\", \"伤病\") >= 6",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -466,6 +526,7 @@
         "condition": "tag(\"伤病\")"
       },
       "condition": "资金 >= 6",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -491,56 +552,11 @@
       "text": "{target.name} 伤愈归队，暂列替补席"
     },
     {
-      "id": "轮换休整",
-      "name": "轮换·下放",
-      "description": "把主力转入替补席休整（不计战力、不耗体能）",
-      "target": {
-        "entityType": "选手",
-        "condition": "tag(\"主力\")"
-      },
-      "usesPerTurn": 2,
-      "effects": [
-        {
-          "ref": "target",
-          "op": "remove_tag",
-          "tag": "主力"
-        },
-        {
-          "ref": "target",
-          "op": "add_tag",
-          "tag": "替补"
-        }
-      ],
-      "text": "{target.name} 转入替补席休整"
-    },
-    {
-      "id": "提拔首发",
-      "name": "轮换·提拔",
-      "description": "把替补提上首发（计入战力）",
-      "target": {
-        "entityType": "选手",
-        "condition": "tag(\"替补\")"
-      },
-      "usesPerTurn": 2,
-      "effects": [
-        {
-          "ref": "target",
-          "op": "remove_tag",
-          "tag": "替补"
-        },
-        {
-          "ref": "target",
-          "op": "add_tag",
-          "tag": "主力"
-        }
-      ],
-      "text": "{target.name} 进入首发名单"
-    },
-    {
       "id": "商业活动",
       "name": "商务·接活动",
-      "description": "接一次性商务赚快钱，占用训练时间",
-      "condition": "声望 >= 25",
+      "description": "接一次性商务赚快钱——拍摄占用训练时间，队员会有怨气",
+      "condition": "声望 >= 15",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -560,6 +576,7 @@
       "name": "商务·拉赞助",
       "description": "花 2 万递交赞助提案（成功率吃声望与冠军履历），签约后每周固定进账，最高 3 级",
       "condition": "赞助等级 < 3 && 资金 >= 2",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -584,6 +601,7 @@
       "name": "后勤·团建",
       "description": "花 5 万团建，回复士气",
       "condition": "资金 >= 5",
+      "cost": 1,
       "effects": [
         {
           "ref": "资金",
@@ -607,64 +625,69 @@
       "condition": "cycle == 1",
       "data": [
         {
-          "名称": "Wolves Esports",
-          "强度": 77
-        },
-        {
-          "名称": "FunPlus Phoenix",
-          "强度": 77
-        },
-        {
           "名称": "Titan Esports Club",
-          "强度": 77
+          "强度": 69
         },
         {
           "名称": "Nova Esports",
-          "强度": 79
-        },
-        {
-          "名称": "Bilibili Gaming",
-          "强度": 79
+          "强度": 71
         },
         {
           "名称": "Trace Esports",
-          "强度": 79
+          "强度": 70
+        },
+        {
+          "名称": "FunPlus Phoenix",
+          "强度": 72
+        },
+        {
+          "名称": "Wolves Esports",
+          "强度": 73
         },
         {
           "名称": "Xi Lai Gaming",
-          "强度": 80
+          "强度": 75
+        },
+        {
+          "名称": "Bilibili Gaming",
+          "强度": 74
         },
         {
           "名称": "Dragon Ranger Gaming",
-          "强度": 81
+          "强度": 76
         },
         {
           "名称": "EDward Gaming",
-          "强度": 82
+          "强度": 78
         },
         {
           "名称": "TYLOO",
-          "强度": 86
+          "强度": 81
         }
       ],
       "compute": [
         {
-          "id": "我方",
-          "expr": "战力 + randint(-8, 8)"
+          "id": "我方战力",
+          "expr": "round(战力)"
         },
         {
-          "id": "敌方",
+          "id": "我方发挥",
+          "expr": "我方战力 + randint(-8, 8)"
+        },
+        {
+          "id": "对手发挥",
           "expr": "row.强度 + randint(-8, 8)"
         },
         {
           "id": "净胜",
-          "expr": "round(我方 - 敌方)"
+          "expr": "round(我方发挥 - 对手发挥)"
         }
       ],
       "outcomes": [
         {
           "id": "横扫",
           "condition": "净胜 >= 8",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -692,6 +715,7 @@
         {
           "id": "险胜",
           "condition": "净胜 > 0",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -706,7 +730,7 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "1"
+              "value": "2"
             },
             {
               "ref": "士气",
@@ -719,6 +743,7 @@
         {
           "id": "惜败",
           "condition": "净胜 > -8",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -728,12 +753,12 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-2"
+              "value": "-1"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             }
           ],
           "text": "VCT CN vs {row.名称}：1:2 {净胜 > -4 ? \"决胜图最后一轮 1v2 没顶住，差的就是一口气\" : \"关键局连丢残局，复盘室的灯亮到半夜\"}（积分 {积分}）"
@@ -741,6 +766,7 @@
         {
           "id": "溃败",
           "condition": "1",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -750,12 +776,12 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-8"
+              "value": "-6"
             }
           ],
           "text": "VCT CN vs {row.名称}：0:2 {净胜 <= -14 ? \"两张图合计没上双，弹幕从「加油」刷成了「下课」\" : \"完败，赛后采访教练只憋出一句「回去练」\"}（积分 {积分}）"
@@ -770,63 +796,68 @@
       "data": [
         {
           "名称": "Cloud9",
-          "强度": 81
+          "强度": 76
         },
         {
           "名称": "Envy",
-          "强度": 81
+          "强度": 77
         },
         {
           "名称": "MIBR",
-          "强度": 82
-        },
-        {
-          "名称": "FURIA",
-          "强度": 82
-        },
-        {
-          "名称": "FUT Esports",
-          "强度": 82
+          "强度": 78
         },
         {
           "名称": "Global Esports",
-          "强度": 82
+          "强度": 79
+        },
+        {
+          "名称": "FURIA",
+          "强度": 78
+        },
+        {
+          "名称": "FUT Esports",
+          "强度": 79
         },
         {
           "名称": "Team Heretics",
-          "强度": 83
-        },
-        {
-          "名称": "NRG Esports",
-          "强度": 84
+          "强度": 80
         },
         {
           "名称": "100 Thieves",
-          "强度": 84
+          "强度": 81
+        },
+        {
+          "名称": "NRG Esports",
+          "强度": 81
         },
         {
           "名称": "Nongshim RedForce",
-          "强度": 85
+          "强度": 83
         }
       ],
       "compute": [
         {
-          "id": "我方",
-          "expr": "战力 + randint(-8, 8)"
+          "id": "我方战力",
+          "expr": "round(战力)"
         },
         {
-          "id": "敌方",
+          "id": "我方发挥",
+          "expr": "我方战力 + randint(-8, 8)"
+        },
+        {
+          "id": "对手发挥",
           "expr": "row.强度 + randint(-8, 8)"
         },
         {
           "id": "净胜",
-          "expr": "round(我方 - 敌方)"
+          "expr": "round(我方发挥 - 对手发挥)"
         }
       ],
       "outcomes": [
         {
           "id": "横扫",
           "condition": "净胜 >= 8",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -854,6 +885,7 @@
         {
           "id": "险胜",
           "condition": "净胜 > 0",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -868,7 +900,7 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "1"
+              "value": "2"
             },
             {
               "ref": "士气",
@@ -881,6 +913,7 @@
         {
           "id": "惜败",
           "condition": "净胜 > -8",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -890,12 +923,12 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-2"
+              "value": "-1"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             }
           ],
           "text": "洲际邀请赛 vs {row.名称}：1:2 {净胜 > -4 ? \"经济局翻盘功亏一篑，就差最后一个残局\" : \"版本理解被对面上了一课，教练组连夜重写战术库\"}（积分 {积分}）"
@@ -903,6 +936,7 @@
         {
           "id": "溃败",
           "condition": "1",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -912,12 +946,12 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-8"
+              "value": "-6"
             }
           ],
           "text": "洲际邀请赛 vs {row.名称}：0:2 {净胜 <= -14 ? \"被打出赛区差距，混采区没人敢抬头走过\" : \"完败，回酒店的大巴上没有一个人说话\"}（积分 {积分}）"
@@ -932,63 +966,68 @@
       "data": [
         {
           "名称": "NRG Esports",
-          "强度": 84
-        },
-        {
-          "名称": "G2 Esports",
-          "强度": 85
-        },
-        {
-          "名称": "Team Liquid",
-          "强度": 85
-        },
-        {
-          "名称": "T1",
-          "强度": 85
+          "强度": 82
         },
         {
           "名称": "Nongshim RedForce",
-          "强度": 85
+          "强度": 83
+        },
+        {
+          "名称": "Team Liquid",
+          "强度": 83
+        },
+        {
+          "名称": "G2 Esports",
+          "强度": 83
+        },
+        {
+          "名称": "T1",
+          "强度": 84
         },
         {
           "名称": "Team Vitality",
-          "强度": 87
+          "强度": 85
         },
         {
           "名称": "FNATIC",
-          "强度": 87
+          "强度": 85
         },
         {
           "名称": "Karmine Corp",
-          "强度": 87
+          "强度": 86
         },
         {
           "名称": "Leviatán",
-          "强度": 89
+          "强度": 86
         },
         {
           "名称": "Paper Rex",
-          "强度": 89
+          "强度": 88
         }
       ],
       "compute": [
         {
-          "id": "我方",
-          "expr": "战力 + randint(-8, 8)"
+          "id": "我方战力",
+          "expr": "round(战力)"
         },
         {
-          "id": "敌方",
+          "id": "我方发挥",
+          "expr": "我方战力 + randint(-8, 8)"
+        },
+        {
+          "id": "对手发挥",
           "expr": "row.强度 + randint(-8, 8)"
         },
         {
           "id": "净胜",
-          "expr": "round(我方 - 敌方)"
+          "expr": "round(我方发挥 - 对手发挥)"
         }
       ],
       "outcomes": [
         {
           "id": "横扫",
           "condition": "净胜 >= 8",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -1016,6 +1055,7 @@
         {
           "id": "险胜",
           "condition": "净胜 > 0",
+          "leagueResult": "win",
           "effects": [
             {
               "ref": "积分",
@@ -1030,7 +1070,7 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "1"
+              "value": "2"
             },
             {
               "ref": "士气",
@@ -1043,6 +1083,7 @@
         {
           "id": "惜败",
           "condition": "净胜 > -8",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -1052,12 +1093,12 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-2"
+              "value": "-1"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             }
           ],
           "text": "世界巡回赛 vs {row.名称}：1:2 {净胜 > -4 ? \"世界级强队的细节压制，输得心服口服却也只差半步\" : \"地图 BP 就落了下风，复盘室的白板写满红字\"}（积分 {积分}）"
@@ -1065,6 +1106,7 @@
         {
           "id": "溃败",
           "condition": "1",
+          "leagueResult": "loss",
           "effects": [
             {
               "ref": "资金",
@@ -1074,15 +1116,34 @@
             {
               "ref": "声望",
               "op": "add",
-              "value": "-4"
+              "value": "-3"
             },
             {
               "ref": "士气",
               "op": "add",
-              "value": "-8"
+              "value": "-6"
             }
           ],
           "text": "世界巡回赛 vs {row.名称}：0:2 {净胜 <= -14 ? \"技术暂停也止不住崩盘，弹幕心疼地刷「回家练枪」\" : \"完败离场，队员把帽檐压得很低\"}（积分 {积分}）"
+        }
+      ]
+    },
+    {
+      "id": "低谷调整",
+      "name": "心态调整",
+      "every": 1,
+      "condition": "士气 < 40",
+      "outcomes": [
+        {
+          "id": "缓过来",
+          "condition": "1",
+          "effects": [
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "3"
+            }
+          ]
         }
       ]
     },
@@ -1111,10 +1172,32 @@
       "name": "赛季总结",
       "every": 1,
       "condition": "turn == 10",
+      "compute": [
+        {
+          "id": "常规赛名次",
+          "expr": "cycle == 1 ? rank(\"CN联赛\") : cycle == 2 ? rank(\"洲际赛\") : rank(\"世界赛\")"
+        },
+        {
+          "id": "季后赛名额",
+          "expr": "常规赛名次 <= 4 ? 1 : 0"
+        },
+        {
+          "id": "冠军级战力线",
+          "expr": "cycle == 1 ? 78 : cycle == 2 ? 81 : 85"
+        },
+        {
+          "id": "夺冠概率",
+          "expr": "季后赛名额 == 1 ? clamp(64 - (常规赛名次 - 1) * 6 + round((战力 - 冠军级战力线) * 2), 10, 80) : 0"
+        },
+        {
+          "id": "夺冠判定",
+          "expr": "季后赛名额 == 1 ? chance(夺冠概率 / 100) : 0"
+        }
+      ],
       "outcomes": [
         {
           "id": "夺冠",
-          "condition": "积分 >= 21",
+          "condition": "夺冠判定 == 1",
           "effects": [
             {
               "ref": "冠军数",
@@ -1137,24 +1220,73 @@
               "value": "10"
             }
           ],
-          "text": "🏆 以 {积分} 分登顶！{cycle == 1 ? \"VCT CN 冠军奖杯入柜，洲际赛的门票攥在了手里\" : cycle == 2 ? \"洲际金杯到手，外网开始学着拼读你们的队名\" : \"世界冠军！彩带落下的那一刻，你把奖杯先递给了替补席\"}"
+          "text": "🏆 常规赛第 {常规赛名次} 名杀进季后赛，又把胜势捏到了最后一张地图——{cycle == 1 ? \"VCT CN 冠军！奖杯入柜，洲际赛的门票攥在了手里\" : cycle == 2 ? \"洲际金杯到手，外网开始学着拼读你们的队名\" : \"世界冠军！彩带落下的那一刻，你把奖杯先递给了替补席\"}（冠军 {冠军数} 座）"
         },
         {
-          "id": "季后赛",
-          "condition": "积分 >= 12",
+          "id": "季后赛止步",
+          "condition": "季后赛名额 == 1",
           "effects": [
             {
               "ref": "声望",
               "op": "add",
-              "value": "5"
+              "value": "6"
             },
             {
               "ref": "资金",
               "op": "add",
               "value": "12"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "2"
             }
           ],
-          "text": "以 {积分} 分闯进季后赛。{cycle == 1 ? \"没摸到奖杯，但赞助商的电话多起来了\" : cycle == 2 ? \"洲际四强止步，回国航班上队员已经在拉下阶段对手的录像\" : \"世界赛八强收官，有遗憾，但队徽被更多人记住了\"}"
+          "text": "常规赛第 {常规赛名次} 名晋级季后赛（夺冠概率 {夺冠概率}%），可惜{cycle == 1 ? \"决胜图倒在赛点上——但银牌也让赞助商的电话多了起来\" : cycle == 2 ? \"半决赛被翻盘，回国航班上队员已经在拉下阶段对手的录像\" : \"淘汰赛憾负，但队徽被更多人记住了\"}"
+        },
+        {
+          "id": "中游收官",
+          "condition": "常规赛名次 <= 9",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "4"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "-2"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-3"
+            }
+          ],
+          "text": "常规赛第 {常规赛名次} 名收官，离季后赛线差了一步。{cycle >= 2 ? \"更高强度的赛区给所有人上了一课\" : \"复盘会上教练圈出了整整一页问题\"}——这个休赛期没有假期。"
+        },
+        {
+          "id": "保级边缘",
+          "condition": "常规赛名次 <= 10",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "3"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "-4"
+            },
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "-4"
+            }
+          ],
+          "text": "常规赛第 {常规赛名次} 名，在积分榜下游挣扎了一整季。{cycle >= 2 ? \"这个舞台的强度给所有人上了一课\" : \"复盘会开了三个小时，问题列了整面白板\"}——好在，还不是最后一名。"
         },
         {
           "id": "垫底",
@@ -1166,9 +1298,14 @@
               "value": "1"
             },
             {
+              "ref": "资金",
+              "op": "add",
+              "value": "2"
+            },
+            {
               "ref": "声望",
               "op": "add",
-              "value": "-8"
+              "value": "-6"
             },
             {
               "ref": "士气",
@@ -1176,9 +1313,173 @@
               "value": "-6"
             }
           ],
-          "text": "以 {积分} 分惨淡收官。{cycle >= 2 ? \"更高强度的赛区给所有人上了一课——管理层的耐心正在耗尽\" : \"管理层脸色铁青——再来一次这样的赛季，队伍就没了\"}"
+          "text": "常规赛第 {常规赛名次} 名——积分榜垫底。{垫底次数 >= 2 ? \"管理层的耐心已经耗尽\" : \"管理层脸色铁青——再垫底一个赛季，队伍就没了\"}"
         }
       ]
+    }
+  ],
+  "leagues": [
+    {
+      "id": "CN联赛",
+      "name": "VCT CN 联赛",
+      "teams": [
+        {
+          "name": "All Gamers",
+          "strength": 79
+        },
+        {
+          "name": "Titan Esports Club",
+          "strength": 69
+        },
+        {
+          "name": "Nova Esports",
+          "strength": 71
+        },
+        {
+          "name": "Trace Esports",
+          "strength": 70
+        },
+        {
+          "name": "FunPlus Phoenix",
+          "strength": 72
+        },
+        {
+          "name": "Wolves Esports",
+          "strength": 73
+        },
+        {
+          "name": "Xi Lai Gaming",
+          "strength": 75
+        },
+        {
+          "name": "Bilibili Gaming",
+          "strength": 74
+        },
+        {
+          "name": "Dragon Ranger Gaming",
+          "strength": 76
+        },
+        {
+          "name": "EDward Gaming",
+          "strength": 78
+        },
+        {
+          "name": "TYLOO",
+          "strength": 81
+        }
+      ],
+      "playerTeam": "All Gamers",
+      "settlement": "联赛S1",
+      "opponentKey": "名称",
+      "playoffs": 4
+    },
+    {
+      "id": "洲际赛",
+      "name": "洲际邀请赛",
+      "teams": [
+        {
+          "name": "All Gamers",
+          "strength": 80
+        },
+        {
+          "name": "Cloud9",
+          "strength": 76
+        },
+        {
+          "name": "Envy",
+          "strength": 77
+        },
+        {
+          "name": "MIBR",
+          "strength": 78
+        },
+        {
+          "name": "Global Esports",
+          "strength": 79
+        },
+        {
+          "name": "FURIA",
+          "strength": 78
+        },
+        {
+          "name": "FUT Esports",
+          "strength": 79
+        },
+        {
+          "name": "Team Heretics",
+          "strength": 80
+        },
+        {
+          "name": "100 Thieves",
+          "strength": 81
+        },
+        {
+          "name": "NRG Esports",
+          "strength": 81
+        },
+        {
+          "name": "Nongshim RedForce",
+          "strength": 83
+        }
+      ],
+      "playerTeam": "All Gamers",
+      "settlement": "洲际S2",
+      "opponentKey": "名称",
+      "playoffs": 4
+    },
+    {
+      "id": "世界赛",
+      "name": "世界巡回赛",
+      "teams": [
+        {
+          "name": "All Gamers",
+          "strength": 84
+        },
+        {
+          "name": "NRG Esports",
+          "strength": 82
+        },
+        {
+          "name": "Nongshim RedForce",
+          "strength": 83
+        },
+        {
+          "name": "Team Liquid",
+          "strength": 83
+        },
+        {
+          "name": "G2 Esports",
+          "strength": 83
+        },
+        {
+          "name": "T1",
+          "strength": 84
+        },
+        {
+          "name": "Team Vitality",
+          "strength": 85
+        },
+        {
+          "name": "FNATIC",
+          "strength": 85
+        },
+        {
+          "name": "Karmine Corp",
+          "strength": 86
+        },
+        {
+          "name": "Leviatán",
+          "strength": 86
+        },
+        {
+          "name": "Paper Rex",
+          "strength": 88
+        }
+      ],
+      "playerTeam": "All Gamers",
+      "settlement": "世界S3",
+      "opponentKey": "名称",
+      "playoffs": 4
     }
   ],
   "curves": [
@@ -1214,7 +1515,7 @@
       "name": "老将衰退",
       "entityType": "选手",
       "phase": "cycle",
-      "condition": "self.年龄 >= 27",
+      "condition": "self.年龄 >= 26",
       "effects": [
         {
           "ref": "self.枪法",
@@ -1248,6 +1549,20 @@
         }
       ],
       "text": "休赛期特训营：{self.name} 肉眼可见地变强了"
+    },
+    {
+      "id": "休赛期恢复",
+      "name": "休赛期恢复",
+      "entityType": "选手",
+      "phase": "cycle",
+      "condition": "!tag(\"市场\")",
+      "effects": [
+        {
+          "ref": "self.体能",
+          "op": "add",
+          "value": "randint(8, 14)"
+        }
+      ]
     }
   ],
   "cards": [
@@ -1256,7 +1571,7 @@
       "weight": 5,
       "scope": {
         "entityType": "选手",
-        "condition": "tag(\"主力\") && self.体能 < 40"
+        "condition": "tag(\"主力\") && self.体能 < 45"
       },
       "text": "重伤离场：{self.name} 手腕劳损恶化（体能 {self.体能}），队医强制他退出首发。安排医疗康复，或者提拔替补顶上。",
       "textVariants": [
@@ -1534,6 +1849,49 @@
       ]
     },
     {
+      "id": "董事会问询",
+      "weight": 4,
+      "cooldown": 4,
+      "condition": "声望 <= 20",
+      "text": "季度董事会上，投资人把一份舆情报告拍在桌上：商业价值评分一路走低。「再这样下去，明年的预算就不用谈了。」",
+      "textVariants": [
+        "赞助商大会上，你们的展位被挪到了最角落。市场部同事私下提醒：管理层已经在讨论「品牌止损方案」。",
+        "投资人深夜来电，语气罕见地平静：「我不懂战术，我只看数据——声望再往下掉，这个项目就该收了。」"
+      ],
+      "choices": [
+        {
+          "id": "公关攻势",
+          "label": "砸钱做形象公关（-6 万）",
+          "condition": "资金 >= 6",
+          "effects": [
+            {
+              "ref": "资金",
+              "op": "add",
+              "value": "-6"
+            },
+            {
+              "ref": "声望",
+              "op": "add",
+              "value": "6"
+            }
+          ],
+          "text": "纪录片、探队 vlog、公益露脸三连发，风评肉眼可见地回暖。"
+        },
+        {
+          "id": "成绩说话",
+          "label": "把钱省下来，用成绩说话",
+          "effects": [
+            {
+              "ref": "士气",
+              "op": "add",
+              "value": "3"
+            }
+          ],
+          "text": "你在全队面前把话挑明：「下一场，打给他们看。」训练房的键盘声密了起来。"
+        }
+      ]
+    },
+    {
       "id": "更衣室低气压",
       "weight": 3,
       "condition": "士气 < 45",
@@ -1547,7 +1905,7 @@
         {
           "ref": "士气",
           "op": "add",
-          "value": "-3"
+          "value": "-2"
         }
       ]
     },
@@ -1834,7 +2192,7 @@
       "kind": "defeat",
       "condition": "垫底次数 >= 2",
       "priority": 18,
-      "text": "连续两个赛季垫底，投资人撤资，选手挂牌。官宣解散的那晚，粉丝在超话里刷了一整夜的「谢谢」。"
+      "text": "两个赛季在垫底区收场，投资人撤资，选手挂牌。官宣解散的那晚，粉丝在超话里刷了一整夜的「谢谢」。"
     },
     {
       "id": "声名扫地",
@@ -1846,6 +2204,13 @@
     }
   ],
   "text": {
+    "tabLabels": {
+      "overview": "作战室",
+      "actions": "运营指令",
+      "roster": "选手名单",
+      "schedule": "赛程·积分榜",
+      "log": "战队纪要"
+    },
     "cycleEnd": "—— 第 {cycle} 赛季落幕（本季 {积分} 分 / 冠军 {冠军数} 座）——",
     "timeoutEnding": {
       "title": "生涯落幕",

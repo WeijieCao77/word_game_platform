@@ -250,18 +250,20 @@ describe("只加不用的变量：只对玩家看得见的报警", () => {
       { id: "计数", name: "计数", initial: 0, ...(visible === undefined ? {} : { visible }) },
       { id: "真门槛", name: "真门槛", initial: 0 },
     ],
-    cards: [
-      {
-        id: "a",
-        text: "……",
-        choices: Array.from({ length: 12 }, (_, i) => ({
-          id: `c${i}`,
-          label: `选项 ${i}`,
-          effects: [{ ref: "计数", op: "add" as const, value: "1" }, { ref: "真门槛", op: "add" as const, value: String(i) }],
-          goto: "a",
-        })),
-      },
-    ],
+    // 一张卡最多 8 个选项（schema 限制），所以摊成两张互相跳转的卡凑够 12 次写入
+    cards: ["a", "b"].map((id, k) => ({
+      id,
+      text: "……",
+      choices: Array.from({ length: 6 }, (_, i) => ({
+        id: `${id}c${i}`,
+        label: `选项 ${id}${i}`,
+        effects: [
+          { ref: "计数", op: "add" as const, value: "1" },
+          { ref: "真门槛", op: "add" as const, value: String(i + k) },
+        ],
+        goto: id === "a" ? "b" : "a",
+      })),
+    })),
     endings: [{ id: "完", title: "完", kind: "neutral" as const, condition: "真门槛 >= 10" }],
   });
 

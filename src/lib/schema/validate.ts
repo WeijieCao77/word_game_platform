@@ -666,6 +666,69 @@ class Validator {
       }
     }
 
+    this.auditChoices();
+    this.auditPromises();
+  }
+
+  /**
+   * 承诺体检：开场白里写着有某个玩法，游戏里却没做出来。
+   * 这是 AI 生成的作品最伤人的一类问题——玩家冲着简介里那句话点进来，玩完发现根本没有。
+   * 只查两条能被机械验证的承诺：可分配的点数、结局数量。
+   */
+  private auditPromises(): void {
+    const c = this.config;
+    // 玩家在开始游玩前后真的会读到的文字（简介、开场白、开局那张卡）
+    const pitch = [c.meta.description ?? "", c.meta.intro ?? ""].join("\n");
+    const allText = [pitch, ...c.cards.map((k) => k.text ?? "")].join("\n");
+
+    // 1) 说了能加点，就得真有地方花掉这些点。
+    //    实现签名：同一张卡上有两个以上选项各自扣减同一个变量（不管是 goto 自环反复加，
+    //    还是一次性选一个天赋），都算兑现了。
+    const promisesAlloc =
+      /(自由分配|亲手分配|自行分配|随意分配|可以分配|由你分配|点数分配|加点)/.test(allText) ||
+      /分配\s*[0-9〇一二三四五六七八九十]+\s*点/.test(allText);
+    if (promisesAlloc) {
+      const spends = (card: (typeof c.cards)[number]): boolean => {
+        const byVar = new Map<string, number>();
+        for (const ch of card.choices ?? []) {
+          for (const e of ch.effects ?? []) {
+            if (e.op !== "add" || e.ref.includes(".")) continue;
+            const n = Number(e.value);
+            if (Number.isFinite(n) && n < 0) byVar.set(e.ref, (byVar.get(e.ref) ?? 0) + 1);
+          }
+        }
+        return [...byVar.values()].some((n) => n >= 2);
+      };
+      if (!c.cards.some(spends)) {
+        this.warn(
+          "meta.intro",
+          "文案里写了玩家可以分配点数/加点，但整局没有任何一处让玩家花掉这些点——" +
+            "玩家冲着这句话点进来，开局就发现说好的加点不存在。" +
+            "做法见官方示例《修仙人生重开》的「天赋分配」卡：一张卡上摆几个「+1」选项，" +
+            "每个选项给对应属性 add 1、给点数 add -1，并 goto 回这张卡自己；" +
+            "选项条件写「点数 >= 1」，点数扣光后选项自动消失，游戏继续往下走。" +
+            "如果不打算做这个玩法，就把文案里的这句话删掉"
+        );
+      }
+    }
+
+    // 2) 说了有几种结局，就得真有那么多个。差一两个是宣传口径，差一半就是骗人。
+    const m = /([0-9]+|十几|十余|数十)\s*(?:种|个|条)\s*(?:不同的?)?结局/.exec(allText);
+    if (m) {
+      const claimed = /^[0-9]+$/.test(m[1]) ? Number(m[1]) : m[1] === "数十" ? 20 : 12;
+      const actual = c.endings.length;
+      // 差一两个是宣传口径，实际数不到吹的一半才算骗人
+      if (claimed >= 3 && actual * 2 < claimed) {
+        this.warn(
+          "meta.intro",
+          `文案里说有 ${m[1]} 种结局，实际只写了 ${actual} 个——把结局补齐，或者把文案改成实数`
+        );
+      }
+    }
+  }
+
+  private auditChoices(): void {
+    const c = this.config;
     // 假选择：同一张卡里两个选项做的事完全相同
     for (const card of c.cards) {
       const seen = new Map<string, string>();

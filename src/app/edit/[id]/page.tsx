@@ -2,61 +2,32 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import GamePlayer from "@/components/GamePlayer";
-import GameCover, { COVER_PRESET_LIST } from "@/components/GameCover";
-import Tour, { TourStep } from "@/components/Tour";
+import Tour from "@/components/Tour";
+import ChatPane from "@/components/editor/ChatPane";
+import PreviewTab from "@/components/editor/tabs/PreviewTab";
+import DesignTab from "@/components/editor/tabs/DesignTab";
+import ConfigTab from "@/components/editor/tabs/ConfigTab";
+import CheckTab from "@/components/editor/tabs/CheckTab";
+import CoverTab from "@/components/editor/tabs/CoverTab";
+import AssetsSection from "@/components/editor/tabs/AssetsSection";
+import LibraryTab from "@/components/editor/tabs/LibraryTab";
+import { buildTourSteps } from "@/components/editor/tourSteps";
+import { compressAsset, compressCover, withAssetSection } from "@/components/editor/assets";
+import { AssetItem, ChatMsg, LibAssetItem, Tab } from "@/components/editor/types";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { parseCardStatus } from "@/lib/ai/designcard";
-import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries, shareBlockReason } from "@/lib/library";
+import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries } from "@/lib/library";
 
 // 创作工作台：左边是 AI 驻场策划（主入口），右边是设计卡/配置/校验/预览。
 // 预览用的就是玩家页的 GamePlayer 组件——编辑器与播放器同源。
-
-type Tab = "preview" | "design" | "config" | "check" | "library" | "cover";
+//
+// 这个文件只做编排：编辑钥匙、加载/保存/发布、AI 对话请求、页签状态，
+// 再把数据与回调分发给 src/components/editor/ 下的各块界面。
+// 改某块界面长什么样 → 去 editor/ 对应文件（左边对话区 ChatPane，右边六个页签在 tabs/）。
 
 /** 新手引导看过一次就不再自动弹（顶栏「引导」可随时重看） */
 const TOUR_KEY = "wgp_tour_edit_v1";
-
-interface ChatMsg {
-  role: "user" | "assistant" | "system";
-  content: string;
-}
-
-// ---- 创作流程可视化：阶段条 + 职能徽章 ----
-
-const ROLE_CLASS: Record<string, string> = { 主策: "lead", 剧情: "story", 人设: "chara", 数值: "num" };
-
-/** 流程状态 → 阶段条展示（当前步 + 活跃职能 + 一句话说明） */
-const STAGE_VIEW: Record<string, { step: number; roles: string[]; hint: string }> = {
-  需求对齐中: { step: 0, roles: ["主策", "剧情", "人设"], hint: "创意策划阶段：聊清题材、角色与玩法方向" },
-  方案待确认: { step: 1, roles: ["主策"], hint: "方案已就绪，等你拍板——同意后团队开始搭建" },
-  已确认: { step: 2, roles: ["数值", "主策"], hint: "搭建阶段：生成配置、校验、模拟配平" },
-  调优中: { step: 3, roles: ["数值", "剧情"], hint: "调优阶段：直接提修改意见，团队改完用模拟验证" },
-};
-const STAGE_STEPS = ["创意对齐", "方案确认", "搭建", "调优"];
-
-/** 把 AI 消息按【职能】署名拆段，渲染成带徽章的段落 */
-function AssistantMsg({ content }: { content: string }): React.ReactElement {
-  const parts = content.split(/(?=【(?:主策|剧情|人设|数值)】)/g).filter((p) => p.trim());
-  if (parts.length <= 1 && !/^【/.test(content.trim())) {
-    return <div className="chat-msg assistant">{content}</div>;
-  }
-  return (
-    <div className="chat-msg assistant">
-      {parts.map((p, i) => {
-        const m = p.match(/^【(主策|剧情|人设|数值)】\s*/);
-        if (!m) return <div key={i}>{p}</div>;
-        return (
-          <div key={i} className="role-seg">
-            <span className={`role-chip ${ROLE_CLASS[m[1]]}`}>{m[1]}</span>
-            {p.slice(m[0].length)}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }): React.ReactElement {
   const { id } = use(params);
@@ -77,10 +48,10 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chatBusy, setChatBusy] = useState(false);
   const [chatSeconds, setChatSeconds] = useState(0);
   const [hasCover, setHasCover] = useState(false);
-  const [assets, setAssets] = useState<{ name: string; contentType: string; size: number }[] | null>(null);
+  const [assets, setAssets] = useState<AssetItem[] | null>(null);
   const [assetName, setAssetName] = useState("");
   const [assetShare, setAssetShare] = useState(false);
-  const [libAssets, setLibAssets] = useState<{ id: string; name: string; size: number; author: string }[] | null>(null);
+  const [libAssets, setLibAssets] = useState<LibAssetItem[] | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverVersion, setCoverVersion] = useState(0);
   const [libEntries, setLibEntries] = useState<LibraryEntry[] | null>(null);
@@ -215,23 +186,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setCoverBusy(true);
       try {
         // 浏览器端裁剪压缩到 640×360 JPEG：上传永远不超限，服务端零图片依赖
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error("图片读取失败"));
-          img.src = url;
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = 640;
-        canvas.height = 360;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("浏览器不支持 canvas");
-        const scale = Math.max(640 / img.width, 360 / img.height);
-        ctx.drawImage(img, (640 - img.width * scale) / 2, (360 - img.height * scale) / 2, img.width * scale, img.height * scale);
-        URL.revokeObjectURL(url);
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-        if (!blob) throw new Error("图片编码失败");
+        const blob = await compressCover(file);
         const res = await fetch(`/api/games/${id}/cover`, {
           method: "PUT",
           headers: { "content-type": "image/jpeg", "x-edit-key": editKey },
@@ -270,21 +225,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   /** 设计卡「素材清单」自动维护：作者可查，AI 工作室也因此知道有哪些图可用 */
   const syncAssetSection = useCallback(
     (names: string[]): void => {
-      const marker = "## 素材清单（自动维护）";
-      const body =
-        names.length === 0
-          ? "（还没有上传素材）"
-          : names.map((n) => `- ${n} —— 卡片 image 字段填 "${n}" 即可展示`).join("\n");
-      const section = `${marker}\n${body}\n`;
       setDesignCard((prev) => {
-        const idx = prev.indexOf(marker);
-        let next: string;
-        if (idx >= 0) {
-          const after = prev.indexOf("\n## ", idx + marker.length);
-          next = after >= 0 ? prev.slice(0, idx) + section + prev.slice(after + 1) : prev.slice(0, idx) + section;
-        } else {
-          next = prev.trimEnd() + "\n\n" + section;
-        }
+        const next = withAssetSection(prev, names);
         void fetch(`/api/games/${id}`, {
           method: "PUT",
           headers: { "content-type": "application/json", "x-edit-key": editKey ?? "" },
@@ -313,23 +255,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }
       setCoverBusy(true);
       try {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error("图片读取失败"));
-          img.src = url;
-        });
-        const scale = Math.min(1, 900 / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx2 = canvas.getContext("2d");
-        if (!ctx2) throw new Error("浏览器不支持 canvas");
-        ctx2.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-        if (!blob) throw new Error("图片编码失败");
+        const blob = await compressAsset(file);
         const res = await fetch(
           `/api/games/${id}/assets/${encodeURIComponent(name)}${assetShare ? "?share=1" : ""}`,
           { method: "PUT", headers: { "content-type": "image/jpeg", "x-edit-key": editKey }, body: blob }
@@ -367,6 +293,12 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     [assets, editKey, id, syncAssetSection]
   );
 
+  const browseLibAssets = useCallback((): void => {
+    void fetch("/api/library/assets")
+      .then((r) => r.json())
+      .then((b) => setLibAssets(b.assets ?? []));
+  }, []);
+
   const importLibAsset = useCallback(
     async (libId: string, name: string): Promise<void> => {
       if (!editKey) return;
@@ -402,69 +334,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     [assets, libCategory, libEntries, libQ, loadAssets, loadLibrary]
   );
 
-  const tourSteps = useMemo<TourStep[]>(
-    () => [
-      {
-        title: "欢迎来到你的游戏工作室",
-        body: "这里有一支常驻的 AI 团队：主策、剧情、人设、数值。你是老板——出想法、提方向、拍板，专业的活儿他们补全。花 1 分钟认认门，随时可以点右上角「引导」重看。",
-      },
-      {
-        target: ".chat-pane",
-        title: "左边：和团队聊",
-        body: "整个创作过程就是在这儿聊出来的。说题材、说感觉、说你想要的结局，团队会反问、给方案、再动手搭建。不用懂代码，也不用学任何编辑器。",
-      },
-      {
-        target: ".chat-stagebar",
-        title: "你现在走到哪一步",
-        body: "创意对齐 → 方案确认 → 搭建 → 调优。条上高亮的就是当前阶段，右边写着此刻是哪几个职能在服务你——知道在跟谁说话，也知道下一步该聊什么。",
-      },
-      {
-        target: ".chat-input",
-        title: "想到什么就说什么",
-        body: "一句话也行：「做个民国侦探，三个嫌疑人，结局至少五个」。想改也直接说：「中期太平了，加一场翻车」。Ctrl+Enter 发送。",
-      },
-      {
-        target: '[data-tour="tab-preview"]',
-        title: "预览试玩：随时开一局",
-        body: "右边是你的工作区，六个页签。第一个「预览试玩」就是玩家看到的样子——改完立刻能玩，别只看设定，多玩几局最能发现问题。",
-        onEnter: () => openTab("preview"),
-      },
-      {
-        target: '[data-tour="tab-design"]',
-        title: "设计卡：聊定的共识都在这",
-        body: "题材基调、人物、玩法循环、数值、结局清单——团队边聊边记在这里。它是这款游戏的说明书，也是你检查「是不是我要的东西」的地方。",
-        onEnter: () => openTab("design"),
-      },
-      {
-        target: '[data-tour="tab-check"]',
-        title: "校验：上线前的体检",
-        body: "自动检查断头路、玩不到的结局、开局即死、数值越界这些坑，还能一键跑几百局模拟看结局分布。有错误时发布会被拦住——这是保证「你的游戏是完整的」的底线。旁边的「配置」页签是游戏的原始数据，想手动调也可以。",
-        onEnter: () => openTab("check"),
-      },
-      {
-        target: '[data-tour="tab-library"]',
-        title: "内容库：别人的好点子可以搬",
-        body: "官方与其他作者共享出来的桥段、事件、结局，按你的题材推荐给你，看中就装进自己的游戏——不用从零写每一段文字。",
-        onEnter: () => openTab("library"),
-      },
-      {
-        target: '[data-tour="tab-cover"]',
-        title: "封面·素材：上传你的图",
-        body: "封面可以自己传，也可以挑官方主题图。游戏里的立绘、场景图也在这上传，团队会建议放在哪一段最合适。愿意的话还能共享到公共素材库，帮别的作者一把。",
-        onEnter: () => openTab("cover"),
-      },
-      {
-        target: ".editor-topbar",
-        title: "保存、发布、导出",
-        body: "改动随时「保存」；觉得可以见人了就「发布」，拿到一条链接，谁点开都能直接玩、不用注册。「导出」把整份配置下载走——作品是你的，平台不锁人。",
-      },
-      {
-        title: "就这些，开工吧",
-        body: "记住一句话：你只管出想法，剩下的交给团队。卡住了就在左边直接问——「这段该怎么写」也是个好问题。",
-      },
-    ],
-    [openTab]
-  );
+  const tourSteps = useMemo(() => buildTourSteps(openTab), [openTab]);
 
   const configLoaded = config !== null;
   // 第一次进工作台自动开引导；看完或跳过后不再打扰
@@ -527,6 +397,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [configText]);
 
+  const revertConfigText = useCallback((): void => {
+    setConfigText(JSON.stringify(config, null, 2));
+  }, [config]);
+
+  const editDesignCard = useCallback((value: string): void => {
+    setDesignCard(value);
+    setDirty(true);
+  }, []);
+
   const runSim = useCallback((): void => {
     if (!config) return;
     const check = validateGameConfig(config);
@@ -537,6 +416,54 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     const report = simulate(check.config!, 200, Date.now() % 100000);
     setSimText(summarizeReport(report));
   }, [config]);
+
+  // ---- 内容库：筛选/搜索、插入到本作、把本作卡片分享出去 ----
+
+  const changeLibCategory = useCallback(
+    (category: string): void => {
+      setLibCategory(category);
+      void loadLibrary(category, libQ);
+    },
+    [libQ, loadLibrary]
+  );
+
+  const searchLibrary = useCallback((): void => {
+    void loadLibrary(libCategory, libQ);
+  }, [libCategory, libQ, loadLibrary]);
+
+  const insertCard = useCallback(
+    (entry: LibraryEntry): void => {
+      if (!config) return;
+      const before = config.vars.length;
+      const { config: next, cardId } = insertLibraryCard(config, entry);
+      setConfig(next);
+      setConfigText(JSON.stringify(next, null, 2));
+      setDirty(true);
+      setPreviewNonce((n) => n + 1);
+      const added = next.vars.length - before;
+      setStatusMsg(`已插入「${cardId}」${added > 0 ? `，并补齐 ${added} 个变量` : ""}（未保存）`);
+    },
+    [config]
+  );
+
+  const shareCard = useCallback((): void => {
+    void (async () => {
+      if (dirty) await save();
+      const res = await fetch("/api/library", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-edit-key": editKey ?? "" },
+        body: JSON.stringify({
+          gameId: id,
+          cardId: shareCardId,
+          category: shareCategory,
+          tags: shareTags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
+        }),
+      });
+      const body = await res.json();
+      setStatusMsg(res.ok ? "已分享到内容库 ✓" : body.error ?? "分享失败");
+      if (res.ok) void loadLibrary(libCategory, libQ);
+    })();
+  }, [dirty, editKey, id, libCategory, libQ, loadLibrary, save, shareCardId, shareCategory, shareTags]);
 
   const sendChat = useCallback(async (): Promise<void> => {
     const text = chatInput.trim();
@@ -663,71 +590,16 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       <div className="editor-main">
-        <div className="chat-pane">
-          {(() => {
-            const view = STAGE_VIEW[cardStatus] ?? STAGE_VIEW["需求对齐中"];
-            return (
-              <div className="chat-stagebar" title="创作流程：创意对齐 → 方案确认 → 搭建 → 调优">
-                <div className="stage-steps">
-                  {STAGE_STEPS.map((s, i) => (
-                    <span key={s} className={`stage-step ${i === view.step ? "active" : i < view.step ? "done" : ""}`}>
-                      {i < view.step ? "✓ " : ""}
-                      {s}
-                    </span>
-                  ))}
-                </div>
-                <div className="stage-hint">
-                  <span>正在服务：</span>
-                  {view.roles.map((r) => (
-                    <span key={r} className={`role-chip ${ROLE_CLASS[r]}`}>
-                      {r}
-                    </span>
-                  ))}
-                  <span className="stage-hint-text">{view.hint}</span>
-                </div>
-              </div>
-            );
-          })()}
-          <div className="chat-log">
-            {chat.length === 0 && (
-              <div className="chat-msg assistant">
-                这里是你的驻场游戏工作室——【主策】【剧情】【人设】【数值】四个职能为你服务，
-                你是老板：出想法、提方向、拍板就行，专业的事我们补全。
-                {"\n\n"}流程：先聊需求（题材基调、角色、玩法循环、结局）→ 我们给完整方案 →
-                你点头后才动手搭建 → 一起试玩调优。聊定的共识都记在「设计卡」页签里。
-                {"\n\n"}跟我们说说你想做什么——一个题材、一部小说的感觉、或者一个模糊的念头都行。
-              </div>
-            )}
-            {chat.map((m, i) =>
-              m.role === "assistant" ? (
-                <AssistantMsg key={i} content={m.content} />
-              ) : (
-                <div key={i} className={`chat-msg ${m.role}`}>
-                  {m.content}
-                </div>
-              )
-            )}
-            {chatBusy && (
-              <div className="chat-msg system">
-                AI 策划工作中… {chatSeconds}s{chatSeconds > 15 ? "（生成/修改配置通常要 30~120 秒，它可能正在跑校验和模拟）" : ""}
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-          <div className="chat-input">
-            <textarea
-              value={chatInput}
-              placeholder="例：把这个游戏改成宗门经营题材，加一条叛徒线（Ctrl+Enter 发送）"
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void sendChat();
-              }}
-            />
-            <button className="btn" disabled={chatBusy} onClick={() => void sendChat()}>
-              发送
-            </button>
-          </div>
-        </div>
+        <ChatPane
+          cardStatus={cardStatus}
+          chat={chat}
+          chatBusy={chatBusy}
+          chatSeconds={chatSeconds}
+          chatInput={chatInput}
+          onChatInput={setChatInput}
+          onSend={() => void sendChat()}
+          chatEndRef={chatEndRef}
+        />
 
         <div className="work-pane">
           <div className="tabs">
@@ -747,346 +619,67 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
             ))}
           </div>
           <div className="tab-body">
-            {tab === "preview" &&
-              (errorCount === 0 ? (
-                <div className="preview-frame">
-                  <GamePlayer key={previewNonce} config={config} gameId={id} mode="preview" />
-                </div>
-              ) : (
-                <div className="pane-note">配置存在 {errorCount} 个错误，修复后即可预览（见「校验」页）。</div>
-              ))}
-            {tab === "design" && (
-              <textarea
-                className="config-editor"
-                value={designCard}
-                placeholder={
-                  "《游戏设计卡》——你和 AI 策划共同维护的设计共识。\n" +
-                  "建议包含：题材与基调 / 核心变量 / 调度方式 / 卡池规划 / 结局设计。\n" +
-                  "跟 AI 对话时它会读取并更新这里。"
-                }
-                onChange={(e) => {
-                  setDesignCard(e.target.value);
-                  setDirty(true);
-                }}
+            {tab === "preview" && (
+              <PreviewTab config={config} gameId={id} errorCount={errorCount} previewNonce={previewNonce} />
+            )}
+            {tab === "design" && <DesignTab designCard={designCard} onChange={editDesignCard} />}
+            {tab === "config" && (
+              <ConfigTab
+                configText={configText}
+                onConfigText={setConfigText}
+                onApply={applyConfigText}
+                onRevert={revertConfigText}
               />
             )}
-            {tab === "config" && (
-              <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                <div className="pane-note" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span>底层配置（JSON）。改完点「应用」生效，再「保存」入库。</span>
-                  <button className="btn small secondary" onClick={applyConfigText}>
-                    应用
-                  </button>
-                  <button
-                    className="btn small secondary"
-                    onClick={() => setConfigText(JSON.stringify(config, null, 2))}
-                  >
-                    还原为当前
-                  </button>
-                </div>
-                <textarea
-                  className="config-editor"
-                  style={{ flex: 1 }}
-                  value={configText}
-                  onChange={(e) => setConfigText(e.target.value)}
-                  spellCheck={false}
-                />
-              </div>
-            )}
             {tab === "check" && (
-              <div>
-                <div className="pane-note" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span>
-                    {errorCount > 0
-                      ? `发现 ${errorCount} 个错误、${issues.length - errorCount} 个警告`
-                      : issues.length > 0
-                        ? `无错误，${issues.length} 个警告`
-                        : "校验通过，没有发现问题 ✓"}
-                  </span>
-                  <button className="btn small secondary" onClick={runSim}>
-                    模拟 200 局
-                  </button>
-                </div>
-                <div className="issues">
-                  {issues.map((issue, i) => (
-                    <div key={i} className={`issue ${issue.severity}`}>
-                      <div className="path">{issue.path}</div>
-                      {issue.message}
-                    </div>
-                  ))}
-                </div>
-                {simText && <div className="sim-report">{simText}</div>}
-              </div>
+              <CheckTab issues={issues} errorCount={errorCount} simText={simText} onRunSim={runSim} />
             )}
             {tab === "cover" && (
-              <div>
-                <div className="pane-note">
-                  封面显示在游戏库、作者页与「我的创作」。上传自定义图片（自动裁剪为 16:9 并压缩），
-                  或从素材库选一套主题样式；两者都没有时使用默认渐变。
-                </div>
-                <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start", padding: "10px 0" }}>
-                  <div style={{ width: 300 }}>
-                    <GameCover
-                      key={coverVersion}
-                      id={id}
-                      title={config.meta.title}
-                      kind={config.driver.kind}
-                      preset={config.meta.coverPreset}
-                      coverUrl={hasCover ? `/api/games/${id}/cover?v=e${coverVersion}` : undefined}
-                    />
-                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                      <label className="btn small secondary" style={{ cursor: "pointer" }}>
-                        {coverBusy ? "处理中…" : "上传图片"}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          style={{ display: "none" }}
-                          disabled={coverBusy}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            e.target.value = "";
-                            if (f) void uploadCover(f);
-                          }}
-                        />
-                      </label>
-                      {hasCover && (
-                        <button className="btn small secondary" disabled={coverBusy} onClick={() => void removeCover()}>
-                          移除自定义封面
-                        </button>
-                      )}
-                      {config.meta.coverPreset && (
-                        <button className="btn small secondary" onClick={() => setPreset(undefined)}>
-                          清除预设
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 320 }}>
-                    <div className="pane-note" style={{ paddingTop: 0 }}>封面样式库（点击选用）</div>
-                    <div className="preset-grid">
-                      {COVER_PRESET_LIST.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          className={`preset-tile ${config.meta.coverPreset === p.id ? "selected" : ""}`}
-                          onClick={() => setPreset(p.id)}
-                          title={p.label}
-                        >
-                          <GameCover id={`preset-${p.id}`} title={p.label.split("·")[1]?.trim() ?? p.label} kind="unknown" preset={p.id} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pane-note" style={{ borderTop: "1px solid var(--border)", marginTop: 6 }}>
-                  <b>游戏内图片素材</b>（角色立绘、场景、宗门图……作者自己上传，卡片的 image 字段按名称引用；
-                  上传后清单会自动记进设计卡，AI 工作室会建议放图位）
-                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <input
-                      type="text"
-                      value={assetName}
-                      placeholder="素材名（如 女主立绘）"
-                      maxLength={40}
-                      style={{ padding: "5px 10px", width: 180 }}
-                      onChange={(e) => setAssetName(e.target.value)}
-                    />
-                    <label className="btn small secondary" style={{ cursor: "pointer" }}>
-                      {coverBusy ? "处理中…" : "选择图片上传"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        style={{ display: "none" }}
-                        disabled={coverBusy}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          e.target.value = "";
-                          if (f) void uploadAsset(f);
-                        }}
-                      />
-                    </label>
-                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 5 }}>
-                      <input type="checkbox" checked={assetShare} onChange={(e) => setAssetShare(e.target.checked)} />
-                      同时分享到公共素材库（其他创作者可复用）
-                    </label>
-                  </div>
-                  <div className="asset-grid">
-                    {assets === null && <span className="pane-note">加载中…</span>}
-                    {assets?.length === 0 && <span className="pane-note">还没有素材。</span>}
-                    {assets?.map((a) => (
-                      <div key={a.name} className="asset-tile">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/games/${id}/assets/${encodeURIComponent(a.name)}?v=${a.size}`} alt={a.name} loading="lazy" />
-                        <div className="asset-meta">
-                          <span title={`卡片 image 字段填 "${a.name}"`}>{a.name}</span>
-                          <button className="linklike danger" onClick={() => void deleteAsset(a.name)}>
-                            删除
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: 10 }}>
-                    <button
-                      className="btn small secondary"
-                      onClick={() => {
-                        void fetch("/api/library/assets")
-                          .then((r) => r.json())
-                          .then((b) => setLibAssets(b.assets ?? []));
-                      }}
-                    >
-                      浏览公共素材库
-                    </button>
-                    {libAssets && (
-                      <div className="asset-grid">
-                        {libAssets.length === 0 && <span className="pane-note">公共素材库还是空的。</span>}
-                        {libAssets.map((a) => (
-                          <div key={a.id} className="asset-tile">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={`/api/library/assets/${encodeURIComponent(a.id)}`} alt={a.name} loading="lazy" />
-                            <div className="asset-meta">
-                              <span>
-                                {a.name} <em style={{ opacity: 0.6 }}>by {a.author}</em>
-                              </span>
-                              <button className="linklike" onClick={() => void importLibAsset(a.id, a.name)}>
-                                导入
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <CoverTab
+                gameId={id}
+                config={config}
+                hasCover={hasCover}
+                coverBusy={coverBusy}
+                coverVersion={coverVersion}
+                onUploadCover={(f) => void uploadCover(f)}
+                onRemoveCover={() => void removeCover()}
+                onSetPreset={setPreset}
+              >
+                <AssetsSection
+                  gameId={id}
+                  assets={assets}
+                  assetName={assetName}
+                  assetShare={assetShare}
+                  busy={coverBusy}
+                  libAssets={libAssets}
+                  onAssetName={setAssetName}
+                  onAssetShare={setAssetShare}
+                  onUploadAsset={(f) => void uploadAsset(f)}
+                  onDeleteAsset={(name) => void deleteAsset(name)}
+                  onBrowseLibAssets={browseLibAssets}
+                  onImportLibAsset={(libId, name) => void importLibAsset(libId, name)}
+                />
+              </CoverTab>
             )}
             {tab === "library" && (
-              <div>
-                <div className="pane-note" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <select
-                    value={libCategory}
-                    onChange={(e) => {
-                      setLibCategory(e.target.value);
-                      void loadLibrary(e.target.value, libQ);
-                    }}
-                  >
-                    <option value="">全部分类</option>
-                    {LIBRARY_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={libQ}
-                    placeholder="搜索标题/文案/标签"
-                    style={{ flex: 1, minWidth: 120, padding: "4px 8px" }}
-                    onChange={(e) => setLibQ(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void loadLibrary(libCategory, libQ);
-                    }}
-                  />
-                  <button className="btn small secondary" onClick={() => void loadLibrary(libCategory, libQ)}>
-                    搜索
-                  </button>
-                </div>
-                <div className="issues">
-                  {libEntries === null && <div className="pane-note">加载中…</div>}
-                  {libEntries?.length === 0 && <div className="pane-note">没有匹配的内容。</div>}
-                  {rankedLib?.map(({ entry, recommended }) => (
-                    <div key={entry.id} className="lib-card">
-                      <div className="lib-head">
-                        <b>{entry.name}</b>
-                        {recommended && (
-                          <span className="tag" style={{ color: "var(--accent, #7cd67c)" }} title="标签/变量与当前作品题材贴合，排在前面">
-                            贴合本作
-                          </span>
-                        )}
-                        <span className="tag">{entry.category}</span>
-                        {entry.tags.map((t) => (
-                          <span key={t} className="tag">
-                            {t}
-                          </span>
-                        ))}
-                        <span className="lib-src">
-                          {entry.source === "official" ? "官方" : entry.source === "ai" ? "AI" : entry.author}
-                        </span>
-                        <button
-                          className="btn small"
-                          onClick={() => {
-                            if (!config) return;
-                            const before = config.vars.length;
-                            const { config: next, cardId } = insertLibraryCard(config, entry);
-                            setConfig(next);
-                            setConfigText(JSON.stringify(next, null, 2));
-                            setDirty(true);
-                            setPreviewNonce((n) => n + 1);
-                            const added = next.vars.length - before;
-                            setStatusMsg(`已插入「${cardId}」${added > 0 ? `，并补齐 ${added} 个变量` : ""}（未保存）`);
-                          }}
-                        >
-                          插入
-                        </button>
-                      </div>
-                      <div className="lib-preview">{entry.card.text.slice(0, 100)}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="pane-note" style={{ borderTop: "1px solid var(--border)", marginTop: 8 }}>
-                  <b>分享本游戏的卡片到内容库</b>（仅限不依赖其他卡片/实体的独立卡）
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <select value={shareCardId} onChange={(e) => setShareCardId(e.target.value)}>
-                      <option value="">选择卡片…</option>
-                      {config.cards
-                        .filter((c) => !shareBlockReason(c))
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.title || c.id}
-                          </option>
-                        ))}
-                    </select>
-                    <select value={shareCategory} onChange={(e) => setShareCategory(e.target.value)}>
-                      {LIBRARY_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={shareTags}
-                      placeholder="标签，逗号分隔（如 修仙,抉择）"
-                      style={{ padding: "4px 8px" }}
-                      onChange={(e) => setShareTags(e.target.value)}
-                    />
-                    <button
-                      className="btn small secondary"
-                      disabled={!shareCardId}
-                      onClick={() => {
-                        void (async () => {
-                          if (dirty) await save();
-                          const res = await fetch("/api/library", {
-                            method: "POST",
-                            headers: { "content-type": "application/json", "x-edit-key": editKey ?? "" },
-                            body: JSON.stringify({
-                              gameId: id,
-                              cardId: shareCardId,
-                              category: shareCategory,
-                              tags: shareTags.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
-                            }),
-                          });
-                          const body = await res.json();
-                          setStatusMsg(res.ok ? "已分享到内容库 ✓" : body.error ?? "分享失败");
-                          if (res.ok) void loadLibrary(libCategory, libQ);
-                        })();
-                      }}
-                    >
-                      分享
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <LibraryTab
+                config={config}
+                libCategory={libCategory}
+                libQ={libQ}
+                libEntries={libEntries}
+                rankedLib={rankedLib}
+                onCategoryChange={changeLibCategory}
+                onQChange={setLibQ}
+                onSearch={searchLibrary}
+                onInsert={insertCard}
+                shareCardId={shareCardId}
+                shareCategory={shareCategory}
+                shareTags={shareTags}
+                onShareCardId={setShareCardId}
+                onShareCategory={setShareCategory}
+                onShareTags={setShareTags}
+                onShare={shareCard}
+              />
             )}
           </div>
         </div>

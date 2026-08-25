@@ -26,6 +26,8 @@ interface MineEntry {
   plays?: number;
   avgPlaySeconds?: number;
   missing?: boolean;
+  /** 已绑定别人的账号：本机虽有钥匙也不能再编辑 */
+  lockedByOther?: boolean;
 }
 
 function fmtDuration(s?: number): string {
@@ -52,15 +54,38 @@ export default function MinePage(): React.ReactElement {
   const [importText, setImportText] = useState("");
   const [notice, setNotice] = useState("");
 
+  const [lockedCount, setLockedCount] = useState(0);
+
   const refresh = useCallback(async (): Promise<void> => {
     const keys = localKeys();
-    const results = await Promise.all(
+
+    // 本机编辑钥匙持有的作品
+    const byKey = await Promise.all(
       keys.map(async ({ id, key }): Promise<MineEntry> => {
         try {
           const res = await fetch(`/api/games/${id}`, { headers: { "x-edit-key": key } });
-          if (!res.ok) return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            // 403 + owned：钥匙没问题，是这部作品已经绑定到别的账号了
+            if (res.status === 403 && err.owned) {
+              return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", lockedByOther: true };
+            }
+            return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
+          }
           const body = await res.json();
-          if (!body.canEdit) return { id, key, title: id, kind: "unknown", published: false, updatedAt: "", missing: true };
+          // 作品已绑定账号、而当前不是归属人：钥匙不再授权，从列表里拿掉
+          if (!body.canEdit) {
+            return {
+              id,
+              key,
+              title: body.config?.meta?.title ?? id,
+              kind: "unknown",
+              published: false,
+              updatedAt: "",
+              missing: !body.owned,
+              lockedByOther: !!body.owned,
+            };
+          }
           let stats: { likes?: number; plays?: number; avgPlaySeconds?: number } = {};
           try {
             stats = await (await fetch(`/api/games/${id}/stats`, { headers: { "x-edit-key": key } })).json();
@@ -85,13 +110,46 @@ export default function MinePage(): React.ReactElement {
         }
       })
     );
+
+    // 账号名下的作品（换设备登录也能看到，本机没钥匙也算）
+    let byAccount: MineEntry[] = [];
+    try {
+      const res = await fetch("/api/auth/games");
+      if (res.ok) {
+        const body = (await res.json()) as { games?: { id: string; title: string; kind: string; updatedAt: string; hasCover?: boolean; coverPreset?: string; likes?: number; plays?: number }[] };
+        byAccount = (body.games ?? []).map((g) => ({
+          id: g.id,
+          key: "",
+          title: g.title,
+          kind: g.kind ?? "unknown",
+          published: false,
+          updatedAt: g.updatedAt ?? "",
+          hasCover: g.hasCover,
+          coverPreset: g.coverPreset,
+          likes: g.likes,
+          plays: g.plays,
+        }));
+      }
+    } catch {
+      // 未登录或网络问题：只显示本机钥匙的部分
+    }
+
+    const usable = byKey.filter((e) => !e.lockedByOther);
+    setLockedCount(byKey.filter((e) => e.lockedByOther).length);
+
+    // 合并去重：本机钥匙的条目信息更全（含发布状态与统计），优先保留
+    const merged = new Map<string, MineEntry>();
+    for (const e of byAccount) merged.set(e.id, e);
+    for (const e of usable) merged.set(e.id, { ...merged.get(e.id), ...e });
+
+    const results = [...merged.values()];
     results.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
     setEntries(results);
   }, []);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, me?.username]);
 
   const exportKeyring = useCallback((): void => {
     const data = { platform: "wordplay", exportedAt: new Date().toISOString(), games: localKeys() };
@@ -219,11 +277,21 @@ export default function MinePage(): React.ReactElement {
         )}
       </div>
       {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
+      {lockedCount > 0 && (
+        <div className="notice" style={{ marginBottom: 16 }}>
+          这台浏览器上还有 {lockedCount} 部作品已经绑定到别的账号——作品一旦收进账号，
+          编辑钥匙就不再单独生效了。登录那个账号才能看到和编辑它们。
+        </div>
+      )}
       {entries === null ? (
         <p style={{ color: "var(--muted)" }}>加载中…</p>
       ) : entries.length === 0 ? (
         <p style={{ color: "var(--muted)" }}>
-          这台浏览器上还没有任何作品的编辑钥匙。<Link href="/new">去创建一个</Link>，或在下方导入钥匙串。
+          {lockedCount > 0 ? (
+            <>当前账号名下还没有作品。<Link href="/new">去创建一个</Link>，或登录上面提到的那个账号。</>
+          ) : (
+            <>这台浏览器上还没有任何作品的编辑钥匙。<Link href="/new">去创建一个</Link>，或在下方导入钥匙串。</>
+          )}
         </p>
       ) : (
         <div className="game-grid">

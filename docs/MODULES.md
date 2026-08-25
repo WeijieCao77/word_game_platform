@@ -134,8 +134,9 @@ API 在 `src/app/api/` 下，与页面同构：`games`（CRUD/发布/统计/素�
 `library`（内容库与公共素材库）、`auth`（注册/登录/登出/我是谁/认领/我的作品）、
 `users`、`admin/stats`、`health`。
 
-写操作的鉴权只有一处判断——`canEditGame`（`src/lib/session.ts`）：**编辑钥匙对得上，
-或者已登录且是这部作品的归属人**。加新的写接口时用它，不要再直接调 `checkEditKey`。
+写操作的鉴权只有一处判断——`canEditGame`（`src/lib/session.ts`）：
+**作品无主时钥匙即身份；作品一旦归属账号，就只认账号**（钥匙不再单独授权）。
+加新的写接口时用它，不要再直接调 `checkEditKey`。
 
 ## 八、样式 `src/styles/`
 

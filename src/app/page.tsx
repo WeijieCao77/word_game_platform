@@ -21,6 +21,8 @@ function descClass(desc: string): string {
 export default function HomePage(): React.ReactElement {
   const games = getStore().listPublished();
   const flagshipUrl = process.env.FLAGSHIP_URL;
+  // 旗舰作品的署名：默认「官方出品」，部署时可用 FLAGSHIP_AUTHOR 改成任何名字
+  const flagshipAuthor = process.env.FLAGSHIP_AUTHOR || "官方出品";
   return (
     <>
       <nav className="topnav">
@@ -71,11 +73,21 @@ export default function HomePage(): React.ReactElement {
                 <div className="flagship-face flagship-front">
                   <GameCover id="val-manager" title="VAL MANAGER · 无畏契约电竞经理" kind="flagship" wide />
                   <span className="flagship-desc">
-                    真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区 · 站内直接开玩
+                    <span className="flagship-meta">
+                      <span className="tag">经营模拟</span>
+                      <span className="flagship-author">作者：{flagshipAuthor}</span>
+                      <span className="flagship-sep">·</span>
+                      <span>站内直接开玩</span>
+                    </span>
+                    真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区。
                   </span>
                 </div>
                 <div className="flagship-face flagship-back">
                   <b className="flagship-back-title">VAL MANAGER · 无畏契约电竞经理</b>
+                  <span className="flagship-back-by">
+                    <span className="tag">经营模拟</span>
+                    作者：{flagshipAuthor}
+                  </span>
                   <p>
                     执掌一支真实战队打完整个赛季：引援与续约、日常训练与体能管理、赛前战术准备、
                     赛场上的临场调整——每一个决定都会写进战绩。选手与战力取自 vlr.gg 的真实 VCT 数据，

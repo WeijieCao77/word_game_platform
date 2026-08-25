@@ -455,3 +455,33 @@
     transition: none;
   }
 }
+
+/* 旗舰位的署名行（与游戏卡片的 meta 行同一套读法：品类 · 作者 · 入口） */
+.flagship-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.flagship-author {
+  color: #fff;
+  font-weight: 600;
+}
+.flagship-sep {
+  opacity: 0.5;
+}
+.flagship-back-by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+  font-size: 12.5px;
+  color: rgba(232, 238, 244, 0.7);
+}
+@media (max-width: 720px) {
+  .flagship-meta {
+    display: none;
+  }
+}

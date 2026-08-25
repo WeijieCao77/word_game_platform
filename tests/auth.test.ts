@@ -135,3 +135,28 @@ describe("作品归属与认领", () => {
     expect(stats.accounts).toEqual({ total: 2, admins: 1 });
   });
 });
+
+describe("归属确立后，编辑钥匙不再单独授权", () => {
+  it("作品收进账号后：钥匙仍在别人手里，但已经不能作为编辑凭据", () => {
+    const store = newStore();
+    const owner = register(store, "作者", "owner-password-1");
+    const g = store.create({ config: MINI_CONFIG });
+    // 认领前：钥匙有效、无归属
+    expect(store.checkEditKey(g.id, g.editKey)).toBe(true);
+    expect(store.gameOwner(g.id)).toBeNull();
+
+    store.claimGames(owner.id, [{ id: g.id, editKey: g.editKey }]);
+
+    // 认领后：钥匙本身还对得上（数据没变），但归属已确立——
+    // 上层 canEditGame 的规则是「有主就只认账号」，这里锁住这个前提数据
+    expect(store.checkEditKey(g.id, g.editKey)).toBe(true);
+    expect(store.gameOwner(g.id)).toBe(owner.id);
+    expect(store.listByOwner(owner.id).map((x) => x.id)).toEqual([g.id]);
+
+    // 另一个账号既不是归属人，也无法通过再次认领抢走
+    const other = register(store, "别人", "other-password-1");
+    expect(store.claimGames(other.id, [{ id: g.id, editKey: g.editKey }])).toBe(0);
+    expect(store.gameOwner(g.id)).toBe(owner.id);
+    expect(store.listByOwner(other.id)).toEqual([]);
+  });
+});

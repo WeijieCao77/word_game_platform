@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
-import { canEditGame } from "@/lib/session";
+import { canEditGame, ownershipOf } from "@/lib/session";
 import { GameConfigSchema, validateGameConfig } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,16 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   if (!record) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
   const editKey = req.headers.get("x-edit-key") ?? "";
   const canEdit = canEditGame(req, id);
+  const ownership = ownershipOf(req, id);
   if (!record.published && !canEdit) {
+    // 手里的钥匙没错，但作品已经绑定到某个账号——明说，别让人以为钥匙丢了。
+    // 依然不返回任何作品内容。
+    if (ownership.owned && store.checkEditKey(id, editKey)) {
+      return NextResponse.json(
+        { error: "这部作品已绑定账号，登录归属账号后才能编辑", owned: true },
+        { status: 403 }
+      );
+    }
     return NextResponse.json({ error: "游戏未发布" }, { status: 404 });
   }
   return NextResponse.json({
@@ -23,6 +32,9 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     author: record.author,
     published: record.published,
     canEdit,
+    // 已绑定账号的作品，钥匙不再单独授权——前端据此提示「请登录归属账号」
+    owned: ownership.owned,
+    isOwner: ownership.isOwner,
     designCard: canEdit ? record.designCard : undefined,
     chat: canEdit ? record.chat : undefined,
     hasCover: record.hasCover,

@@ -84,14 +84,30 @@ export function ipOf(req: NextRequest): string {
 }
 
 /**
- * 编辑权：编辑钥匙对得上，或者已登录且是这部作品的归属人。
- * 两条路并存——游客靠钥匙，注册用户靠账号，换设备也不丢。
+ * 编辑权。两种身份，但不是「或」的关系——归属一旦确立，钥匙就不再单独授权：
+ *
+ *   作品无主  → 编辑钥匙即身份（游客模式）
+ *   作品有主  → 只认账号：必须登录且是归属人。哪怕手里握着正确的编辑钥匙也不行。
+ *
+ * 这条边界很重要：同一台浏览器上换个账号登录，或者别人拿到过钥匙，
+ * 都不能再动一部已经绑定账号的作品。
  */
 export function canEditGame(req: NextRequest, gameId: string): boolean {
   const store = getStore();
-  if (store.checkEditKey(gameId, req.headers.get("x-edit-key") ?? "")) return true;
+  const owner = store.gameOwner(gameId);
+  if (owner) {
+    const user = currentUser(req);
+    return !!user && user.id === owner;
+  }
+  return store.checkEditKey(gameId, req.headers.get("x-edit-key") ?? "");
+}
+
+/** 这部作品是否已经绑定账号，以及当前访问者是不是归属人（给「我的创作」判断怎么显示） */
+export function ownershipOf(req: NextRequest, gameId: string): { owned: boolean; isOwner: boolean } {
+  const owner = getStore().gameOwner(gameId);
+  if (!owner) return { owned: false, isOwner: false };
   const user = currentUser(req);
-  return !!user && store.gameOwner(gameId) === user.id;
+  return { owned: true, isOwner: !!user && user.id === owner };
 }
 
 /** AI 配额的计数口径：登录用账号，游客用编辑钥匙 */

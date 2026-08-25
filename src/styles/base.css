@@ -1,0 +1,238 @@
+/* 全站地基：重置、主题变量、排版、顶部导航、通用按钮与布局、表单与提示。
+   改配色或全站字号 → 只看这里。 */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ---------- 站点主题（游戏商店风：深色底、亮封面） ---------- */
+
+:root {
+  --bg: #171d25;
+  --bg-deep: #12161d;
+  --panel: #1e2732;
+  --card: #223042;
+  --card-hover: #2a3b52;
+  --border: #2e3b4b;
+  --fg: #e2e8ee;
+  --muted: #8b98a5;
+  --accent: #58b2f0;
+  --cta: #66c04b;
+  --cta-deep: #3f8f2d;
+  --victory: #6fcf7c;
+  --defeat: #ef6b64;
+  --neutral: #9aa4b2;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, var(--bg-deep) 0%, var(--bg) 340px);
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: #8ccdf7;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* ---------- 顶部导航 ---------- */
+
+.topnav {
+  background: rgba(13, 17, 23, 0.92);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(6px);
+}
+
+.topnav-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.brand {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--fg);
+}
+.brand:hover {
+  color: var(--fg);
+}
+.brand .brand-accent {
+  color: var(--accent);
+}
+
+.topnav-link {
+  color: var(--muted);
+  font-size: 14px;
+}
+.topnav-link:hover {
+  color: var(--fg);
+}
+
+.topnav-spacer {
+  flex: 1;
+}
+
+/* ---------- 布局与按钮 ---------- */
+
+.store {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 72px;
+}
+
+.site {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 26px;
+  flex-wrap: wrap;
+}
+
+.site-title {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+.site-title a {
+  color: var(--fg);
+}
+
+.btn {
+  display: inline-block;
+  border: none;
+  background: linear-gradient(90deg, var(--cta) 0%, var(--cta-deep) 100%);
+  color: #fff;
+  padding: 10px 22px;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.btn:hover {
+  filter: brightness(1.12);
+  color: #fff;
+}
+.btn.secondary {
+  background: var(--card);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
+.btn.secondary:hover {
+  background: var(--card-hover);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn.small {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+/* ---------- 表单与提示 ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+}
+.form label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.form input[type="text"],
+.form select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+}
+.form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  color: var(--fg);
+  transition: border-color 0.12s, background 0.12s;
+}
+.tile:hover {
+  background: var(--card-hover);
+}
+.tile.selected {
+  border-color: var(--cta);
+  box-shadow: 0 0 0 1px var(--cta);
+}
+.tile b {
+  display: block;
+  margin-bottom: 4px;
+}
+.tile span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notice {
+  background: rgba(239, 107, 100, 0.1);
+  border: 1px solid rgba(239, 107, 100, 0.4);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #f1a49f;
+}

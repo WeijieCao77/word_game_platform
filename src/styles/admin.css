@@ -1,0 +1,56 @@
+/* 开发者后台 /admin 的指标瓦片、日柱状图与排行表。 */
+
+/* 开发者后台 */
+.admin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.admin-tile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.admin-tile b {
+  font-size: 26px;
+}
+.admin-tile span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.admin-daily {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.admin-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.admin-day b {
+  color: var(--fg);
+}
+.admin-bar {
+  width: 26px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--accent, #58b2f0), rgba(88, 178, 240, 0.35));
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}

@@ -12,7 +12,7 @@ const baseLife = (endingCondition: string): GameConfig => ({
   cards: [
     { id: "日常", weight: 1, text: "平平无奇的一年。", effects: [{ ref: "声望", op: "add", value: "-6" }] },
   ],
-  endings: [{ id: "崩盘", title: "崩盘", kind: "bad", condition: endingCondition }],
+  endings: [{ id: "崩盘", title: "崩盘", kind: "defeat", condition: endingCondition }],
   text: { timeoutEnding: { title: "寿终正寝" } },
 });
 

@@ -127,3 +127,22 @@ describe("官方示例：他不是自己掉下去的（story 社会派推理，�
     expect(report.unfiredCards).toEqual([]);
   });
 });
+
+describe("官方示例：整栋实验楼都听见我心跳超频了（story 男频恋爱）", () => {
+  const raw = load("romance-m-demo.json");
+
+  it("通过结构 + 语义校验，无错误无警告", () => {
+    const r = validateGameConfig(raw);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.filter((i) => i.severity === "warning")).toEqual([]);
+  });
+
+  it("模拟 600 局：无错误，全结局可达，全卡片触发", { timeout: 120000 }, () => {
+    const r = validateGameConfig(raw);
+    const report = simulate(r.config!, 600, 88);
+    expect(report.errors).toEqual([]);
+    expect(report.endings["__unfinished__"]).toBeUndefined();
+    expect(report.unreachedEndings).toEqual([]);
+    expect(report.unfiredCards).toEqual([]);
+  });
+});

@@ -48,6 +48,7 @@ interface GameRow {
   has_cover?: number;
   likes?: number;
   plays?: number;
+  mode?: string;
 }
 
 /** 对话记录条数上限：超出后丢最旧的（防单行无限膨胀） */
@@ -499,6 +500,9 @@ export class SqliteGameStore implements GameStore {
       description,
       author: row.author,
       kind,
+      // 自由模式的作品 driver 只是个占位，kind 说明不了它——
+      // 游戏库要按这个决定打什么标签、点进去去哪儿
+      mode: row.mode === "code" ? "code" : "engine",
       updatedAt: row.updated_at,
       hasCover: row.has_cover === 1,
       coverPreset,
@@ -508,7 +512,7 @@ export class SqliteGameStore implements GameStore {
   }
 
   private static readonly SUMMARY_COLS =
-    "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, likes, plays, (cover IS NOT NULL) AS has_cover";
+    "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, likes, plays, mode, (cover IS NOT NULL) AS has_cover";
 
   listPublished(limit = 100, sort: "new" | "hot" | "liked" = "new"): GameSummary[] {
     // 热度用「游玩次数为主、点赞为辅」，避免只有几个赞的新作直接盖过被玩了几百次的

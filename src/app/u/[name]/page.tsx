@@ -41,7 +41,7 @@ export default async function AuthorPage({
         <div className="game-grid">
           {games.map((g) => (
             <div className="game-card" key={g.id}>
-              <Link className="card-link" href={`/g/${g.id}`}>
+              <Link className="card-link" href={g.mode === "code" ? `/p/${g.id}` : `/g/${g.id}`}>
                 <div className="card-flip">
                   <div className="card-face card-front">
                     <GameCover

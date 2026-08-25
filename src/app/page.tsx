@@ -190,7 +190,7 @@ export default async function HomePage({
           <div className="game-grid">
             {games.map((g) => (
               <div className="game-card" key={g.id}>
-                <Link className="card-link" href={`/g/${g.id}`}>
+                <Link className="card-link" href={g.mode === "code" ? `/p/${g.id}` : `/g/${g.id}`}>
                   <div className="card-flip">
                     <div className="card-face card-front">
                       <GameCover
@@ -204,6 +204,8 @@ export default async function HomePage({
                         <div className="desc">{g.description || "（暂无简介）"}</div>
                         <div className="meta">
                           <span className="tag">{KIND_CN[g.kind]}</span>
+                        {g.mode === "code" && <span className="tag">自由模式</span>}
+                          {g.mode === "code" && <span className="tag">自由模式</span>}
                           {g.genre && <span className="tag genre-tag">{g.genre}</span>}
                           <span>{g.author}</span>
                           <span className="stat-chip" title="点赞">♡ {g.likes}</span>

@@ -46,6 +46,8 @@ export interface GameSummary {
   description: string;
   author: string;
   kind: "story" | "life" | "sim" | "unknown";
+  /** 作品形态：engine=配置喂通用引擎；code=自由模式，自带一套页面 */
+  mode: GameMode;
   updatedAt: string;
   /** 是否有作者上传的自定义封面（有则 /api/games/:id/cover 可取） */
   hasCover: boolean;

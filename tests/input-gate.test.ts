@@ -240,3 +240,38 @@ describe("检索不该做成选项", () => {
     }
   });
 });
+
+describe("只加不用的变量：只对玩家看得见的报警", () => {
+  const make = (visible: boolean | undefined) => ({
+    schemaVersion: 1 as const,
+    meta: { title: "计数器" },
+    driver: { kind: "story" as const, startCard: "a" },
+    vars: [
+      { id: "计数", name: "计数", initial: 0, ...(visible === undefined ? {} : { visible }) },
+      { id: "真门槛", name: "真门槛", initial: 0 },
+    ],
+    cards: [
+      {
+        id: "a",
+        text: "……",
+        choices: Array.from({ length: 12 }, (_, i) => ({
+          id: `c${i}`,
+          label: `选项 ${i}`,
+          effects: [{ ref: "计数", op: "add" as const, value: "1" }, { ref: "真门槛", op: "add" as const, value: String(i) }],
+          goto: "a",
+        })),
+      },
+    ],
+    endings: [{ id: "完", title: "完", kind: "neutral" as const, condition: "真门槛 >= 10" }],
+  });
+
+  it("可见变量只加不用 → 警告（玩家被状态栏误导）", () => {
+    const r = validateGameConfig(make(undefined));
+    expect(r.issues.some((i) => i.message.includes("盯着状态栏上这个数字"))).toBe(true);
+  });
+
+  it("设了 visible: false 就不再打扰", () => {
+    const r = validateGameConfig(make(false));
+    expect(r.issues.some((i) => i.message.includes("盯着状态栏上这个数字"))).toBe(false);
+  });
+});

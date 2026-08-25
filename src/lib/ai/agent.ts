@@ -65,6 +65,26 @@ const TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "read_config",
+      description:
+        "按需读取当前配置某个分节的完整内容。配置很大时上下文里只有目录（id + 一句话），" +
+        "要改某几张卡之前先用它把原文取出来，不要凭目录猜。一次最多取 12 条。",
+      parameters: {
+        type: "object",
+        properties: {
+          section: {
+            type: "string",
+            enum: ["cards", "entities", "entityTypes", "actions", "settlements", "endings", "vars", "curves", "leagues", "search", "notebook", "meta", "text", "driver"],
+          },
+          ids: { type: "array", description: "要取的条目 id；不填则取整节（可能被截断）", items: { type: "string" } },
+        },
+        required: ["section"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "validate",
       description: "对当前配置跑结构+语义校验，返回问题清单",
       parameters: { type: "object", properties: {} },
@@ -116,6 +136,47 @@ function issuesToText(issues: ValidationIssue[]): string {
   return issues.map((i) => `[${i.severity === "error" ? "错误" : "警告"}] ${i.path}: ${i.message}`).join("\n");
 }
 
+/** 超过这个字符数就不再把整份配置塞进上下文，改发结构摘要 + 按需读取 */
+const CONFIG_INLINE_LIMIT = 16000;
+
+function firstLine(text: string | undefined, n = 26): string {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+/**
+ * 大配置的结构摘要。
+ *
+ * 上下文不能随作品规模线性增长——90 个选手的配置有十几万字符，每轮都发一遍
+ * 既撑爆上下文也烧光额度。所以大游戏只发「目录」：有哪些卡、哪些变量、哪些结局，
+ * 每条给个 id 和一句话；AI 要看某几张卡的全文时用 read_config 工具按需取。
+ */
+function summarizeConfig(config: GameConfig): string {
+  const L: string[] = [];
+  const d = config.driver;
+  L.push(`driver: ${d.kind}` + (d.kind === "life" ? `（${d.time.label} ${d.time.start}~${d.time.max}）` : d.kind === "sim" ? `（${d.time.turnLabel}，${d.time.maxCycles} 个${d.time.cycleLabel ?? "周期"}）` : `（起始卡 ${d.startCard}）`));
+  L.push(`vars(${config.vars.length}): ` + config.vars.map((v) => `${v.id}=${v.initial}${v.visible === false ? "(隐藏)" : ""}`).join(" / "));
+  L.push(
+    `cards(${config.cards.length}): ` +
+      config.cards
+        .map((c) => {
+          const flags = [c.priority !== undefined ? `P${c.priority}` : "", c.once ? "once" : "", c.weight ? `w${c.weight}` : "", (c.choices?.length ?? 0) > 0 ? `${c.choices!.length}选` : "", c.textVariants?.length ? `${c.textVariants.length}变体` : "", c.goto ? `→${c.goto}` : ""].filter(Boolean).join(",");
+          return `${c.id}[${flags}] "${firstLine(c.text)}"`;
+        })
+        .join(" / ")
+  );
+  L.push(`endings(${config.endings.length}): ` + config.endings.map((e) => `${e.id}(${e.kind})${e.condition ? ` if ${e.condition}` : ""}`).join(" / "));
+  if (config.actions?.length) L.push(`actions(${config.actions.length}): ` + config.actions.map((a) => `${a.id}(${a.cost ?? 1}点)`).join(" / "));
+  if (config.settlements?.length) L.push(`settlements(${config.settlements.length}): ` + config.settlements.map((st) => `${st.id}(${st.data?.length ?? 0} 行数据, ${st.outcomes.length} 个 outcome)`).join(" / "));
+  if (config.entityTypes?.length) L.push(`entityTypes: ` + config.entityTypes.map((t) => `${t.id}[${t.attributes.map((a) => a.id).join(",")}]`).join(" / "));
+  if (config.entities?.length) L.push(`entities(${config.entities.length}): ` + config.entities.map((e) => `${e.id}(${e.type})`).join(" / "));
+  if (config.curves?.length) L.push(`curves(${config.curves.length}): ` + config.curves.map((c) => c.id).join(" / "));
+  if (config.leagues?.length) L.push(`leagues(${config.leagues.length}): ` + config.leagues.map((l) => l.id).join(" / "));
+  if (config.search) L.push(`search: ${config.search.entries.length} 个词条（${config.search.entries.map((e) => e.keywords[0]).join("、")}）`);
+  if (config.notebook) L.push(`notebook: ${config.notebook.items.length} 条`);
+  return L.join("\n");
+}
+
 export async function runAssistant(
   ctx: AgentContext,
   history: { role: "user" | "assistant"; content: string }[]
@@ -126,9 +187,16 @@ export async function runAssistant(
   let designChanged = ctx.designCard !== designCard;
   let totalTokens = 0;
 
+  const configJson = JSON.stringify(config);
+  const configBlock =
+    configJson.length <= CONFIG_INLINE_LIMIT
+      ? `【当前游戏配置】\n${configJson}`
+      : `【当前游戏配置·目录】（配置已有 ${Math.round(configJson.length / 1000)}k 字符，太大不再整份贴出来。\n` +
+        `要看某几张卡/某个结算的完整内容，用 read_config 工具按 id 取；\n` +
+        `要改内容用 patch_config 分批写，不要求你重发整份配置。）\n${summarizeConfig(config)}`;
   const contextMsg =
     `【当前设计卡】\n${designCard}\n\n` +
-    `【当前游戏配置】\n${JSON.stringify(config)}\n\n` +
+    `${configBlock}\n\n` +
     `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
 
   const messages: ChatMessage[] = [
@@ -228,6 +296,22 @@ export async function runAssistant(
             ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
                 `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
             : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
+        }
+        case "read_config": {
+          const section = String(args.section ?? "");
+          const bag = (config as unknown as Record<string, unknown>)[section];
+          if (bag === undefined) return `配置里没有「${section}」这一节。`;
+          const ids = Array.isArray(args.ids) ? args.ids.map(String) : null;
+          let payload: unknown = bag;
+          if (Array.isArray(bag)) {
+            const list = bag as Record<string, unknown>[];
+            payload = ids ? list.filter((it) => ids.includes(String(it?.id))).slice(0, 12) : list.slice(0, 12);
+          }
+          const out = JSON.stringify(payload);
+          const MAX = 24000;
+          return out.length > MAX
+            ? `${out.slice(0, MAX)}\n…（内容过长已截断，请用 ids 指定要看的条目）`
+            : out;
         }
         case "search_library": {
           if (!ctx.searchLibrary) return "内容库当前不可用。";

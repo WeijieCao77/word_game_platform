@@ -647,11 +647,14 @@ class Validator {
     for (const v of c.vars) {
       const w = writes.get(v.id) ?? 0;
       const isRead = reads.has(v.id);
-      if (w >= 10 && !isRead) {
+      // 只对「玩家看得见」的变量报警：状态栏上跳动却不影响任何事，是对玩家的误导。
+      // 隐藏变量只加不读顶多是冗余，作者可能留着当内部计数，不值得打扰。
+      if (w >= 10 && !isRead && v.visible !== false) {
         this.warn(
           `vars(${v.id})`,
           `「${v.name}」被 ${w} 处效果修改，却没有任何条件或文案读它——` +
-            `玩家看着这个数字变化，它却不影响任何事。给它挂个门槛，或者把它藏起来（visible: false）`
+            `玩家盯着状态栏上这个数字往上涨，它却不影响任何事。` +
+            `给它挂个门槛（让它真的决定点什么），或者设 visible: false 收起来`
         );
       }
       if (w === 0 && isRead) {

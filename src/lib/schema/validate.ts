@@ -458,6 +458,7 @@ class Validator {
     if ((c.driver.kind === "life" || c.driver.kind === "sim") && !c.text?.timeoutEnding) {
       this.warn("text", "建议配置 timeoutEnding（时间走完的兜底结局），否则使用系统默认文案");
     }
+    this.auditContent();
   }
 
   private checkStoryReachability(start: string): void {
@@ -547,6 +548,139 @@ class Validator {
     }
     if ((idents.length > 0 || calls.length > 0) && !touchesDynamic) {
       this.warn(path, `结局 "${title}" 的条件引用的变量从未被任何效果修改，可能永远不会触发`);
+    }
+  }
+
+  /**
+   * 内容体检（三条最常见的「看起来能玩、其实是假的」）：
+   *   1) 变量只加不用——玩家看着数字涨，它却不参与任何判断
+   *   2) 条件引用了没人赋值的变量——整条推理链是死的
+   *   3) 同一张卡里几个选项做的事完全一样——假选择
+   * 这三条都只报警告：作者可能是有意为之（比如纯展示用的计数器）。
+   */
+  private auditContent(): void {
+    const c = this.config;
+    const writes = new Map<string, number>();
+    const reads = new Set<string>();
+
+    const noteWrite = (ref: string): void => {
+      if (ref.includes(".")) return;
+      if (this.varIds.has(ref)) writes.set(ref, (writes.get(ref) ?? 0) + 1);
+    };
+    const noteExpr = (expr: string | undefined): void => {
+      if (!expr) return;
+      try {
+        for (const path of collectRefs(parseExpr(expr)).idents) {
+          const head = path[0];
+          if (this.varIds.has(head)) reads.add(head);
+        }
+      } catch {
+        // 表达式本身的错误在别处已经报过
+      }
+    };
+    const noteEffects = (effects: Effect[] | undefined): void => {
+      for (const e of effects ?? []) {
+        if (e.op === "add_tag" || e.op === "remove_tag") continue;
+        noteWrite(e.ref);
+        if (typeof e.value === "string") noteExpr(e.value);
+      }
+    };
+    // 文案插值里的表达式也算「读」
+    const noteText = (text: string | undefined): void => {
+      if (!text) return;
+      for (const m of text.matchAll(/\{([^}]+)\}/g)) noteExpr(m[1]);
+    };
+
+    for (const card of c.cards) {
+      noteExpr(card.condition);
+      noteEffects(card.effects);
+      noteText(card.text);
+      for (const tv of card.textVariants ?? []) noteText(tv);
+      for (const ch of card.choices ?? []) {
+        noteExpr(ch.condition);
+        noteEffects(ch.effects);
+        noteText(ch.text);
+      }
+      for (const a of card.input?.answers ?? []) {
+        noteEffects(a.effects);
+        noteText(a.text);
+      }
+      noteText(card.input?.fallbackText);
+    }
+    for (const e of c.endings) {
+      noteExpr(e.condition);
+      noteText(e.text);
+    }
+    for (const a of c.actions ?? []) {
+      noteExpr(a.condition);
+      noteExpr(a.target?.condition);
+      noteEffects(a.effects);
+      noteText(a.text);
+    }
+    for (const st of c.settlements ?? []) {
+      noteExpr(st.condition);
+      for (const cp of st.compute ?? []) noteExpr(cp.expr);
+      for (const o of st.outcomes) {
+        noteExpr(o.condition);
+        noteEffects(o.effects);
+        noteText(o.text);
+      }
+    }
+    for (const cv of c.curves ?? []) {
+      noteExpr(cv.condition);
+      noteEffects(cv.effects);
+    }
+    for (const en of c.search?.entries ?? []) {
+      noteExpr(en.condition);
+      noteEffects(en.effects);
+      noteText(en.text);
+    }
+    for (const it of c.notebook?.items ?? []) {
+      noteExpr(it.condition);
+      noteText(it.text);
+    }
+    for (const d of c.derived ?? []) noteExpr(d.expr);
+    noteText(c.text?.turnHeader);
+    noteText(c.text?.cycleEnd);
+    noteText(c.text?.timeoutEnding?.text);
+
+    for (const v of c.vars) {
+      const w = writes.get(v.id) ?? 0;
+      const isRead = reads.has(v.id);
+      if (w >= 10 && !isRead) {
+        this.warn(
+          `vars(${v.id})`,
+          `「${v.name}」被 ${w} 处效果修改，却没有任何条件或文案读它——` +
+            `玩家看着这个数字变化，它却不影响任何事。给它挂个门槛，或者把它藏起来（visible: false）`
+        );
+      }
+      if (w === 0 && isRead) {
+        this.warn(
+          `vars(${v.id})`,
+          `「${v.name}」没有任何地方给它赋值，引用它的条件永远只看到初始值 ${v.initial}——` +
+            `如果这里本该有一条线索链，它现在是断的`
+        );
+      }
+    }
+
+    // 假选择：同一张卡里两个选项做的事完全相同
+    for (const card of c.cards) {
+      const seen = new Map<string, string>();
+      for (const ch of card.choices ?? []) {
+        if (ch.condition) continue; // 条件互斥的同效选项是合理写法
+        const sig = JSON.stringify([ch.effects ?? [], ch.goto ?? null, ch.ending ?? null]);
+        if (sig === JSON.stringify([[], null, null])) continue; // 纯文本选项另说
+        const prev = seen.get(sig);
+        if (prev) {
+          this.warn(
+            `cards(${card.id}).choices(${ch.id})`,
+            `这个选项和「${prev}」的效果、去向完全一样——玩家选哪个都没区别。` +
+              `让它们各自导向不同的线索或不同的代价`
+          );
+        } else {
+          seen.set(sig, ch.id);
+        }
+      }
     }
   }
 

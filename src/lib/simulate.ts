@@ -35,6 +35,12 @@ export interface SimulationReport {
   finalVarMeans: Record<string, number>;
   /** 模拟中发生的运行时错误（表达式求值等），去重后最多 10 条 */
   errors: string[];
+  /** 内容体检：一局里一字不差重复的叙事段落占比（>0.2 就该配 textVariants 了） */
+  verbatimRepeatRatio: number;
+  /** 内容体检：局均触发 ≥3 次却没有 textVariants 的卡片（玩家要把同一段读好几遍） */
+  hotCards: { id: string; perRun: number }[];
+  /** 内容体检：落进兜底结局（timeoutEnding / 未具名收尾）的局占比 */
+  implicitEndingRatio: number;
 }
 
 const MAX_STEPS_PER_RUN = 2000;
@@ -48,6 +54,11 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
   let maxTurns = 0;
   const varSums: Record<string, number> = {};
   const seedGen = createRng(baseSeed);
+  // 内容体检累加器：重复段落、热卡、兜底结局
+  let totalLines = 0;
+  let repeatedLines = 0;
+  const cardHits = new Map<string, number>();
+  let implicitEnds = 0;
 
   // 期望局长：life = 时间轴长度；sim = 周期数×每周期回合数；story 无固定长度不检测
   let expectedLength = 0;
@@ -137,6 +148,16 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
       errors.add(err instanceof Error ? err.message : String(err));
       continue;
     }
+    // 这一局里，玩家实际读到的叙事段落有多少是一字不差重复的
+    const seenLines = new Set<string>();
+    for (const entry of state.log) {
+      if (entry.kind === "header" || !entry.text) continue;
+      totalLines += 1;
+      if (seenLines.has(entry.text)) repeatedLines += 1;
+      else seenLines.add(entry.text);
+    }
+    for (const [id, n] of Object.entries(state.fired)) cardHits.set(id, (cardHits.get(id) ?? 0) + n);
+    if (state.ended && (state.ended.endingId === "__implicit__" || !state.ended.endingId)) implicitEnds += 1;
     for (const id of Object.keys(state.fired)) firedCards.add(id);
     const endedId = state.ended?.endingId ?? "__unfinished__";
     const title = state.ended?.title ?? "（未在步数上限内结束）";
@@ -173,6 +194,13 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     finalVarMeans: Object.fromEntries(
       Object.entries(varSums).map(([k, v]) => [k, completed ? Math.round((v / completed) * 10) / 10 : 0])
     ),
+    verbatimRepeatRatio: totalLines ? Math.round((repeatedLines / totalLines) * 1000) / 1000 : 0,
+    hotCards: [...cardHits.entries()]
+      .map(([id, n]) => ({ id, perRun: completed ? Math.round((n / completed) * 10) / 10 : 0 }))
+      .filter((c) => c.perRun >= 3 && !(config.cards.find((k) => k.id === c.id)?.textVariants?.length))
+      .sort((a, b) => b.perRun - a.perRun)
+      .slice(0, 8),
+    implicitEndingRatio: completed ? Math.round((implicitEnds / completed) * 1000) / 1000 : 0,
     errors: [...errors].slice(0, 10),
   };
 }
@@ -188,6 +216,25 @@ export function summarizeReport(r: SimulationReport): string {
   if (r.earlyThreshold > 0 && r.earlyEndRate > 0.03) {
     lines.push(
       `⚠ 开局即死：${Math.round(r.earlyEndRate * 100)}% 的局在前 ${r.earlyThreshold} 回合内就出结局——玩家还没进入状态就被判负，必须修：负面结局改成「连续多次不达标」判定（计数变量），或提高门槛/推迟生效回合，并在触发前给预警事件。`
+    );
+  }
+  if (r.verbatimRepeatRatio > 0.2) {
+    lines.push(
+      `⚠ 内容重复：一局里 ${Math.round(r.verbatimRepeatRatio * 100)}% 的段落是一字不差读过的——` +
+        `玩家会觉得"就这么点东西翻来覆去"。给高频卡配 textVariants（同一处境换几种写法），或者把枢纽卡拆开`
+    );
+  }
+  if (r.hotCards.length) {
+    lines.push(
+      `⚠ 这几张卡玩家一局要读好几遍且没有变体：` +
+        r.hotCards.map((c) => `${c.id}（${c.perRun} 次/局）`).join("、") +
+        `——优先给它们加 textVariants`
+    );
+  }
+  if (r.implicitEndingRatio > 0.2) {
+    lines.push(
+      `⚠ 兜底结局占 ${Math.round(r.implicitEndingRatio * 100)}%：大多数玩家拿到的是同一段泛泛的结语。` +
+        `补几个条件结局，把"打得还行但没夺冠""亏光了但留住了人"这类中间状态写出来`
     );
   }
   if (r.unreachedEndings.length) lines.push(`⚠ 从未触发的结局：${r.unreachedEndings.join("、")}`);

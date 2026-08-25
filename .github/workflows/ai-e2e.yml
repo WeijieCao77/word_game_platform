@@ -22,6 +22,10 @@ on:
         description: "后续几轮说什么，用 ||| 分隔；用完了就重复最后一句"
         required: false
         default: "方案可以，按这个开搭。|||继续，把选手名单和赛程补完。|||跑一下校验和模拟，把问题修掉。"
+      template:
+        description: "作品形态：blank-story/blank-life/blank-sim 是快速模式，blank-code 是自由模式（AI 自己写页面）"
+        required: false
+        default: "blank-story"
 
 jobs:
   e2e:
@@ -38,11 +42,13 @@ jobs:
 
       - name: 建一个空作品
         id: create
+        env:
+          TEMPLATE: ${{ inputs.template }}
         run: |
           set -e
           BODY=$(curl -sS -X POST "$BASE/api/games" \
             -H 'content-type: application/json' \
-            -d '{"config":{"schemaVersion":1,"meta":{"title":"AI 端到端实测"},"driver":{"kind":"story","startCard":"a"},"vars":[],"cards":[{"id":"a","text":"（还没开始）"}],"endings":[]}}')
+            -d "{\"title\":\"AI 端到端实测\",\"template\":\"${TEMPLATE:-blank-story}\"}")
           ID=$(echo "$BODY" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
           KEY=$(echo "$BODY" | sed -n 's/.*"editKey":"\([^"]*\)".*/\1/p')
           if [ -z "$ID" ] || [ -z "$KEY" ]; then
@@ -147,11 +153,55 @@ jobs:
           print("设计卡字数：", len(card))
           PY
 
-      - name: 过一遍平台自己的验收门槛
+      - name: 过一遍平台自己的验收门槛（快速模式）
         # 三级校验零错误零警告 + 600 局模拟全结局可达 + 开局即死 0。
         # 这道门槛官方示例都要过——AI 自己做的东西也用同一把尺子量。
+        # 自由模式不走通用引擎，这套尺子量不了它，跳过。
+        if: inputs.template != 'blank-code'
         continue-on-error: true
         run: TEMPLATE=__e2e.json npx vitest run tests/adhoc-template.test.ts
+
+      - name: 看看 AI 写了什么文件（自由模式）
+        # 自由模式没有模拟器可跑，能机检的是这几条硬边界：
+        # 有没有入口、有没有碰沙箱里用不了的东西、存档桥用没用对。
+        if: inputs.template == 'blank-code'
+        continue-on-error: true
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          set -e
+          curl -sS "$BASE/api/games/$GID/files" -H "x-edit-key: $GKEY" > /tmp/files.json
+          python3 - <<'PY'
+          import json, os, urllib.request
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          files = json.load(open("/tmp/files.json")).get("files") or []
+          print("=== AI 写出来的文件 ===")
+          for f in files:
+              print(f"  {f['path']}  {f['size']} 字符")
+          if not files:
+              print("::warning::AI 一个文件都没写——自由模式等于什么都没做")
+              raise SystemExit(0)
+          if not any(f["path"] == "index.html" for f in files):
+              print("::warning::没有 index.html，这部作品打不开")
+
+          def read(path):
+              r = urllib.request.Request(f"{BASE}/api/games/{GID}/files?path={path}",
+                                         headers={"x-edit-key": GKEY})
+              with urllib.request.urlopen(r) as resp:
+                  return json.loads(resp.read().decode()).get("content") or ""
+
+          whole = "".join(read(f["path"]) for f in files)
+          # 注释里提到这些词是在解释「为什么不能用」，不算违规；这里只做粗筛，报警告不拦
+          for banned in ("localStorage", "sessionStorage", "document.cookie",
+                         "indexedDB", "fetch(", "XMLHttpRequest", "WebSocket"):
+              if banned in whole:
+                  print(f"::warning::代码里出现了 {banned} —— 沙箱里用不了，游戏可能直接白屏")
+          for need in ("wgp:ready", "wgp:save", "wgp:load"):
+              if need not in whole:
+                  print(f"::warning::没用 {need} —— 存档桥没接上")
+          print(f"总字符数：{len(whole)}")
+          PY
 
       - name: 留个地址
         if: always()

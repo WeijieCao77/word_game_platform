@@ -1,7 +1,7 @@
 import { GameConfig, GameConfigSchema, validateGameConfig, ValidationIssue } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
-import { SYSTEM_PROMPT } from "./prompt";
+import { SKILL_PACKS, buildSystemPrompt } from "./prompt";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 import { LibraryEntry } from "@/lib/library";
 
@@ -59,6 +59,21 @@ const TOOLS: ToolDef[] = [
           items: { type: "array", description: "该分节的条目数组", items: { type: "object" } },
         },
         required: ["section", "items"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_skill",
+      description:
+        "取一份技能包的全文。系统提示里只常驻核心规则与一行索引，写法细节要用它取——不要凭印象猜。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "技能包名，见系统提示末尾的「还能取用的技能包」" },
+        },
+        required: ["name"],
       },
     },
   },
@@ -200,7 +215,7 @@ export async function runAssistant(
     `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
 
   const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt(config) },
     { role: "system", content: contextMsg },
     ...history.map((m): ChatMessage => ({ role: m.role, content: m.content })),
   ];
@@ -314,6 +329,14 @@ export async function runAssistant(
             ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
                 `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
             : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
+        }
+        case "read_skill": {
+          const key = String(args.name ?? "");
+          const pack = SKILL_PACKS[key];
+          if (!pack) {
+            return `没有叫「${key}」的技能包。可用：${Object.keys(SKILL_PACKS).join(" / ")}`;
+          }
+          return pack.body;
         }
         case "read_config": {
           const section = String(args.section ?? "");

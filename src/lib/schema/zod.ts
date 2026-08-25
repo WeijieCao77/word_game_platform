@@ -221,6 +221,22 @@ export const GameTextSchema = z.object({
   timeoutEnding: z.object({ title: NameSchema, text: z.string().max(4000).optional() }).optional(),
 });
 
+export const SearchEntryDefSchema = z.object({
+  id: IdSchema,
+  keywords: z.array(z.string().min(1).max(40)).min(1).max(20),
+  condition: ExprSchema.optional(),
+  text: z.string().min(1).max(4000),
+  image: z.string().max(300).optional(),
+  effects: z.array(EffectSchema).max(20).optional(),
+});
+
+export const SearchDefSchema = z.object({
+  label: z.string().min(1).max(12).optional(),
+  prompt: z.string().max(200).optional(),
+  fallbackText: z.string().max(2000).optional(),
+  entries: z.array(SearchEntryDefSchema).min(1).max(200),
+});
+
 export const GameConfigSchema = z.object({
   schemaVersion: z.literal(1),
   meta: GameMetaSchema,
@@ -230,6 +246,7 @@ export const GameConfigSchema = z.object({
   cards: z.array(CardDefSchema).min(1).max(500),
   endings: EndingDefSchema.array().min(1).max(50),
   text: GameTextSchema.optional(),
+  search: SearchDefSchema.optional(),
   entityTypes: z.array(EntityTypeDefSchema).max(10).optional(),
   entities: z.array(EntityInstanceSchema).max(200).optional(),
   derived: z.array(DerivedDefSchema).max(50).optional(),

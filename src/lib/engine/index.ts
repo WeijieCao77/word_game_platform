@@ -7,6 +7,7 @@ export {
   pendingChoices,
   pendingInput,
   submitInput,
+  searchKeyword,
   performAction,
   endTurn,
   availableActions,

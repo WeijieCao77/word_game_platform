@@ -10,6 +10,7 @@ import {
   pendingChoices,
   pendingInput,
   submitInput,
+  searchKeyword,
   performAction,
   endTurn,
   availableActions,
@@ -114,6 +115,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
   }, [config, state]);
 
   const [kwText, setKwText] = useState("");
+  const [globalKw, setGlobalKw] = useState("");
   const [simTab, setSimTab] = useState<"overview" | "actions" | "roster" | "schedule" | "log">("overview");
   const inputGate = useMemo(() => {
     if (!state) return null;
@@ -368,6 +370,31 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
             </span>
           ))}
         </div>
+
+        {config.search && config.search.entries.length > 0 && state && !state.ended && (
+          <form
+            className="kw-gate kw-global"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const t = globalKw.trim();
+              if (!t) return;
+              setGlobalKw("");
+              act(() => searchKeyword(config, state, t));
+            }}
+          >
+            <span className="kw-global-icon" aria-hidden>🔎</span>
+            <input
+              type="text"
+              value={globalKw}
+              placeholder={config.search.prompt ?? "输入你想到的关键词——人名、地名、事件……"}
+              maxLength={40}
+              onChange={(e) => setGlobalKw(e.target.value)}
+            />
+            <button className="btn small" type="submit" disabled={!globalKw.trim()}>
+              {config.search.label ?? "检索"}
+            </button>
+          </form>
+        )}
 
         {(() => {
           const upcomingPanel = upcoming.length > 0 && !state.ended && !state.pendingCard && (

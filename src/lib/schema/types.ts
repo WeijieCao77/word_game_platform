@@ -244,6 +244,36 @@ export interface CardInputDef {
   fallbackText?: string;
 }
 
+/** 全局检索台词条：一份可被玩家随时查到的「档案」 */
+export interface SearchEntryDef {
+  id: string;
+  /** 可命中的关键词（归一化匹配，同输入门） */
+  keywords: string[];
+  /** 解锁条件：不满足时查询视为无果（如需先拿到某线索才能查出深层档案） */
+  condition?: string;
+  /** 档案内容，支持 {表达式} 插值 */
+  text: string;
+  /** 配图（素材名或 https 外链） */
+  image?: string;
+  /** 首次查到时的效果（只生效一次；重复查询只重看档案） */
+  effects?: Effect[];
+}
+
+/**
+ * 全局检索台（鲁特里一家死了 / MISSING 式）：常驻检索框，玩家随时输入关键词查档案。
+ * 与卡片级 input 的分工：检索台是随时可查的百科/数据库，解锁线索变量全局生效；
+ * 卡片 input 用于剧情关键时刻的一次性输入。
+ */
+export interface SearchDef {
+  /** 检索框按钮/页签名，默认「检索」 */
+  label?: string;
+  /** 输入框提示语 */
+  prompt?: string;
+  /** 查无结果的反馈，默认「没有查到相关结果。」 */
+  fallbackText?: string;
+  entries: SearchEntryDef[];
+}
+
 /**
  * 内容卡：平台的原子内容单位。
  * - life 调度器：weight>0 的卡进入随机抽取池；priority 卡在条件满足时强制触发
@@ -325,6 +355,8 @@ export interface GameConfig {
   cards: CardDef[];
   endings: EndingDef[];
   text?: GameText;
+  /** 全局检索台（可选）：调查/解谜类的常驻检索框 */
+  search?: SearchDef;
   // ---- sim 模块（driver.kind === "sim" 时使用）----
   entityTypes?: EntityTypeDef[];
   entities?: EntityInstance[];
@@ -358,6 +390,8 @@ export interface GameState {
   cycle?: number;
   /** sim：本回合剩余行动点（driver.actionPoints 启用时维护） */
   apLeft?: number;
+  /** 全局检索台：各词条被查到的次数（效果只在首次生效） */
+  searched?: Record<string, number>;
   /** sim：实体状态 */
   entities?: Record<string, EntityState>;
   /** sim：本回合各决策已用次数 */

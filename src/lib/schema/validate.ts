@@ -317,6 +317,27 @@ class Validator {
       }
     }
 
+    // 全局检索台
+    if (c.search) {
+      this.checkUnique("search.entries", c.search.entries, "检索词条");
+      const kwSeen = new Set<string>();
+      for (const [i, e] of c.search.entries.entries()) {
+        const base = `search.entries[${i}](${e.id})`;
+        if (e.condition) this.checkExpr(e.condition, `${base}.condition`, {});
+        this.checkTemplate(e.text, `${base}.text`, {});
+        this.checkEffects(e.effects, `${base}.effects`, {});
+        for (const kw of e.keywords) {
+          const norm = normalizeKeyword(kw);
+          if (!norm) this.error(base, `关键词 "${kw}" 归一化后为空`);
+          else if (kwSeen.has(norm) && !e.condition) {
+            this.warn(base, `关键词 "${kw}" 与前面的词条重复，永远轮不到词条 "${e.id}"`);
+          }
+          kwSeen.add(norm);
+        }
+      }
+      if (c.search.fallbackText) this.checkTemplate(c.search.fallbackText, "search.fallbackText", {});
+    }
+
     // 调度器
     if (c.driver.kind === "story") {
       if (!this.cardIds.has(c.driver.startCard)) {

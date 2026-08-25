@@ -779,6 +779,52 @@ export function submitInput(config: GameConfig, input: GameState, textRaw: strin
   return state;
 }
 
+/**
+ * 全局检索台：随时输入关键词查档案（有 pendingCard 时也可用——查到的线索
+ * 立即生效，待选卡的条件选项会随之刷新）。效果只在词条首次命中时生效。
+ */
+export function searchKeyword(config: GameConfig, input: GameState, textRaw: string): GameState {
+  if (!config.search || config.search.entries.length === 0) throw new Error("这个游戏没有检索台");
+  if (input.ended) return input;
+  const typed = normalizeKeyword(textRaw);
+  if (!typed) return input;
+  const state = structuredClone(input);
+  const rng = createRng(state.rngState);
+  const baseScope = new GameScope(config, state, rng);
+  const bindings: Bindings = state.pendingEntity ? { self: state.pendingEntity } : {};
+  const scope = baseScope.withBindings(bindings);
+  const shown = textRaw.trim().slice(0, 40);
+  const hit = config.search.entries.find(
+    (e) =>
+      (!e.condition || truthy(evaluate(e.condition, scope))) &&
+      e.keywords.some((k) => normalizeKeyword(k) === typed)
+  );
+  state.log.push({ kind: "choice", text: `🔎 检索「${shown}」`, turn: state.turn });
+  if (!hit) {
+    state.log.push({
+      kind: "card",
+      text: renderText(config.search.fallbackText ?? "没有查到相关结果。", scope),
+      turn: state.turn,
+    });
+    state.rngState = rng.state();
+    return state;
+  }
+  const seen = state.searched?.[hit.id] ?? 0;
+  if (seen === 0) applyEffects(config, state, scope, hit.effects, bindings);
+  if (!state.searched) state.searched = {};
+  state.searched[hit.id] = seen + 1;
+  state.log.push({
+    kind: "card",
+    text: renderText(hit.text, scope),
+    turn: state.turn,
+    ...(hit.image ? { image: hit.image } : {}),
+  });
+  // 检索解锁的线索可能直接满足结局条件（如「找齐全部真相」）
+  if (!state.pendingCard) checkConditionEndings(config, state, baseScope);
+  state.rngState = rng.state();
+  return state;
+}
+
 /** 在待选卡上做出选择（三种调度器共用） */
 export function choose(config: GameConfig, input: GameState, choiceId: string): GameState {
   if (input.ended) return input;

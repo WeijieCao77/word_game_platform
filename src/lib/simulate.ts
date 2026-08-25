@@ -6,6 +6,7 @@ import {
   pendingChoices,
   pendingInput,
   submitInput,
+  searchKeyword,
   performAction,
   endTurn,
   availableActions,
@@ -67,7 +68,16 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
     try {
       state = initState(config, seed);
       let guard = 0;
+      const searchEntries = config.search?.entries ?? [];
       while (!state.ended && guard++ < MAX_STEPS_PER_RUN) {
+        // 全局检索台：随机策略以一定概率查词（覆盖检索解锁的线索与结局路径）
+        if (searchEntries.length > 0 && pickRng.next() < 0.35) {
+          const e = searchEntries[pickRng.int(0, searchEntries.length - 1)];
+          state = searchKeyword(config, state, e.keywords[pickRng.int(0, e.keywords.length - 1)]);
+          if (state.ended) break;
+          // 这一轮花在查资料上（玩家先检索再决策），下一轮再处理选项/推进
+          continue;
+        }
         if (state.pendingCard) {
           const options = pendingChoices(config, state);
           const gate = pendingInput(config, state);

@@ -136,14 +136,60 @@
 .editor-main {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(320px, 5fr) minmax(380px, 7fr);
+  /* 中间那根分隔条可拖动：--chat-w 由 SplitHandle 写入并记在浏览器里 */
+  grid-template-columns: var(--chat-w, 42%) 5px minmax(320px, 1fr);
   min-height: 0;
+}
+
+/* 分隔条：细线本体 + 更宽的隐形热区，好抓也不占版面 */
+.split-handle {
+  position: relative;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.12s;
+  touch-action: none;
+}
+.split-handle::before {
+  content: "";
+  position: absolute;
+  inset: 0 -5px;
+}
+.split-handle:hover,
+.split-handle:focus-visible,
+.split-handle.dragging {
+  background: var(--accent);
+  outline: none;
+}
+.split-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 34px;
+  margin: -17px 0 0 -1.5px;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: 0.55;
+}
+.split-handle:hover .split-grip,
+.split-handle.dragging .split-grip {
+  background: #fff;
+  opacity: 0.9;
+}
+/* 拖动时全局压掉文字选中与光标闪烁 */
+body.splitting,
+body.splitting * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 @media (max-width: 900px) {
   .editor-main {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
+  }
+  .split-handle {
+    display: none;
   }
 }
 

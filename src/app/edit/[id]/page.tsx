@@ -11,6 +11,7 @@ import CheckTab from "@/components/editor/tabs/CheckTab";
 import CoverTab from "@/components/editor/tabs/CoverTab";
 import AssetsSection from "@/components/editor/tabs/AssetsSection";
 import LibraryTab from "@/components/editor/tabs/LibraryTab";
+import SplitHandle, { useSplit } from "@/components/editor/SplitHandle";
 import { buildTourSteps } from "@/components/editor/tourSteps";
 import { compressAsset, compressCover, withAssetSection } from "@/components/editor/assets";
 import { AssetItem, ChatMsg, LibAssetItem, Tab } from "@/components/editor/types";
@@ -61,6 +62,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [shareCategory, setShareCategory] = useState<string>(LIBRARY_CATEGORIES[0]);
   const [shareTags, setShareTags] = useState("");
   const [tourOpen, setTourOpen] = useState(false);
+  const split = useSplit();
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const loadLibrary = useCallback(async (category: string, q: string): Promise<void> => {
@@ -589,7 +591,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         )}
       </div>
 
-      <div className="editor-main">
+      <div className="editor-main" style={{ "--chat-w": `${split.pct}%` } as React.CSSProperties}>
         <ChatPane
           cardStatus={cardStatus}
           chat={chat}
@@ -600,6 +602,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           onSend={() => void sendChat()}
           chatEndRef={chatEndRef}
         />
+
+        <SplitHandle pct={split.pct} dragging={split.dragging} onPointerDown={split.onPointerDown} onReset={split.reset} onNudge={split.nudge} />
 
         <div className="work-pane">
           <div className="tabs">

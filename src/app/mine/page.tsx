@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import GameCover from "@/components/GameCover";
+import AuthNav, { useMe } from "@/components/AuthNav";
 
 // 我的创作：扫描本机保存的编辑钥匙，列出这台浏览器创建/认领过的所有游戏——
 // 草稿也能找回来，不再依赖记住 /edit/:id 链接。
-// 当前版本没有账号系统，钥匙即身份：提供钥匙串备份/导入以支持换设备与清缓存自救。
+// 两种身份并存：游客靠本机编辑钥匙（钥匙串可备份/导入），注册用户靠账号——
+// 登录后作品跟着账号走，换设备直接找回。本机的无主作品可以一键收进账号。
 
 const KIND_CN: Record<string, string> = { life: "随机成长", story: "分支叙事", sim: "经营模拟", unknown: "文字游戏" };
 
@@ -43,6 +45,8 @@ function localKeys(): { id: string; key: string }[] {
 }
 
 export default function MinePage(): React.ReactElement {
+  const { me, refresh: refreshMe } = useMe();
+  const [claiming, setClaiming] = useState(false);
   const [entries, setEntries] = useState<MineEntry[] | null>(null);
   const [importText, setImportText] = useState("");
   const [notice, setNotice] = useState("");
@@ -153,14 +157,66 @@ export default function MinePage(): React.ReactElement {
         <div className="site-title">
           <Link href="/">字游 WordPlay</Link>
         </div>
+        <AuthNav />
         <Link className="btn small" href="/new">
           ＋ 开始创作
         </Link>
       </header>
       <h1 style={{ fontSize: 24, marginBottom: 6 }}>我的创作</h1>
-      <p style={{ color: "var(--muted)", marginBottom: 20 }}>
-        这台浏览器上有编辑钥匙的所有游戏——包括没发布的草稿。编辑钥匙保存在浏览器里，建议定期备份钥匙串。
+      <p style={{ color: "var(--muted)", marginBottom: 16 }}>
+        这台浏览器上有编辑钥匙的所有游戏——包括没发布的草稿。
       </p>
+
+      <div className="account-bar">
+        {me ? (
+          <>
+            <span>
+              已登录 <b>{me.username}</b>
+              {me.role === "admin" && <span className="tag admin-tag">管理员</span>}
+              ——新作品会自动记在账号名下，换设备登录即可找回。
+            </span>
+            <button
+              className="btn small secondary"
+              disabled={claiming || !entries || entries.length === 0}
+              onClick={() => {
+                setClaiming(true);
+                const keys = localKeys().map((k) => ({ id: k.id, editKey: k.key }));
+                void fetch("/api/auth/claim", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ keys }),
+                })
+                  .then((r) => r.json())
+                  .then((b) =>
+                    setNotice(
+                      b.claimed > 0
+                        ? `已把本机 ${b.claimed} 部作品收进账号 ✓`
+                        : "本机作品都已经在账号名下了（或不属于你）"
+                    )
+                  )
+                  .catch(() => setNotice("认领失败，稍后再试"))
+                  .finally(() => setClaiming(false));
+              }}
+            >
+              {claiming ? "处理中…" : "把本机作品收进账号"}
+            </button>
+            {me.role === "admin" && (
+              <Link className="linklike" href="/admin">
+                开发者后台 →
+              </Link>
+            )}
+          </>
+        ) : (
+          <>
+            <span>
+              你现在是<b>游客</b>：作品靠这台浏览器里的编辑钥匙认人，清缓存或换设备就找不回来了。
+            </span>
+            <Link className="btn small" href="/login?next=/mine" onClick={() => refreshMe()}>
+              注册 / 登录，把作品绑到账号
+            </Link>
+          </>
+        )}
+      </div>
       {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
       {entries === null ? (
         <p style={{ color: "var(--muted)" }}>加载中…</p>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getStore } from "@/lib/store";
 import GameCover from "@/components/GameCover";
+import AuthNav from "@/components/AuthNav";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default function HomePage(): React.ReactElement {
             我的创作
           </Link>
           <span className="topnav-spacer" />
+          <AuthNav />
           <Link className="btn small" href="/new">
             ＋ 开始创作
           </Link>

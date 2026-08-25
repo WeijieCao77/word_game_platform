@@ -236,3 +236,69 @@ textarea {
   font-size: 13px;
   color: #f1a49f;
 }
+
+/* 账号：顶栏状态、登录页、我的创作里的账号提示条 */
+.auth-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+.admin-tag {
+  margin-left: 6px;
+  color: #ffd98a;
+  background: rgba(224, 178, 60, 0.16);
+}
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.auth-tabs button {
+  flex: 1;
+  padding: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+}
+.auth-tabs button.active {
+  color: #fff;
+  background: var(--card);
+  border-color: var(--accent);
+}
+.auth-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+.auth-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cta);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.auth-foot {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.account-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--muted);
+}
+.account-bar b {
+  color: var(--fg);
+}

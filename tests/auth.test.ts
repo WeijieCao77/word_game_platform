@@ -48,7 +48,8 @@ describe("密码存储", () => {
   });
 
   it("用户名与口令规则", () => {
-    expect(checkUsername("ab")).toBeTruthy();
+    expect(checkUsername("a")).toBeTruthy();
+    expect(checkUsername("老板")).toBeNull(); // 两个字的中文名要能用
     expect(checkUsername("正常用户名")).toBeNull();
     expect(checkUsername("bad name!")).toBeTruthy();
     expect(checkPassword("1234567")).toBeTruthy();

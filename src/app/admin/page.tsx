@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
-// 平台开发者后台（暗链，不进导航）：全站数据汇总，仅限持 ADMIN_KEY 者。
-// 无账号体系阶段，「用户规模」以游玩人次近似。
+// 平台开发者后台（暗链，不进导航）：全站数据汇总，只对管理员账号开放。
+// 管理员 = 平台第一个注册的账号，之后可由管理员提拔别人。
+// 无账号的游客用游玩人次近似「用户规模」，注册账号数单独统计。
 
 interface AdminStats {
   games: { total: number; published: number; drafts: number };
   creators: number;
+  accounts: { total: number; admins: number };
   totals: { plays: number; likes: number; playSeconds: number };
   daily: { date: string; plays: number; likes: number; playSeconds: number }[];
   topGames: { id: string; title: string; author: string; plays: number; likes: number; playSeconds: number; published: boolean }[];
@@ -22,63 +24,49 @@ function fmtHours(seconds: number): string {
 }
 
 export default function AdminPage(): React.ReactElement {
-  const [key, setKey] = useState<string | null>(null);
-  const [keyInput, setKeyInput] = useState("");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (k: string): Promise<void> => {
+  const load = useCallback(async (): Promise<void> => {
+    setLoading(true);
     setError("");
-    const res = await fetch("/api/admin/stats", { headers: { "x-admin-key": k } });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? "加载失败");
-      setStats(null);
-      return;
+    try {
+      const res = await fetch("/api/admin/stats");
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "加载失败");
+        setStats(null);
+        return;
+      }
+      setStats(body as AdminStats);
+    } finally {
+      setLoading(false);
     }
-    setStats(body as AdminStats);
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem("wgp_admin_key");
-    if (saved) {
-      setKey(saved);
-      void load(saved);
-    }
+    void load();
   }, [load]);
 
-  if (!key || !stats) {
+  if (loading) return <div className="site" style={{ color: "var(--muted)" }}>加载中…</div>;
+
+  if (!stats) {
     return (
-      <div className="site" style={{ maxWidth: 480 }}>
+      <div className="site" style={{ maxWidth: 460 }}>
         <h1 style={{ fontSize: 22, marginBottom: 12 }}>开发者后台</h1>
-        <p style={{ color: "var(--muted)", marginBottom: 16 }}>输入管理密钥（部署环境变量 ADMIN_KEY 的值）。</p>
-        {error && <div className="notice" style={{ marginBottom: 12 }}>{error}</div>}
-        <div className="form">
-          <input
-            type="password"
-            value={keyInput}
-            placeholder="管理密钥"
-            onChange={(e) => setKeyInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && keyInput.trim()) {
-                localStorage.setItem("wgp_admin_key", keyInput.trim());
-                setKey(keyInput.trim());
-                void load(keyInput.trim());
-              }
-            }}
-          />
-          <button
-            className="btn"
-            disabled={!keyInput.trim()}
-            onClick={() => {
-              localStorage.setItem("wgp_admin_key", keyInput.trim());
-              setKey(keyInput.trim());
-              void load(keyInput.trim());
-            }}
-          >
-            进入
-          </button>
+        <p style={{ color: "var(--muted)", marginBottom: 16 }}>{error || "需要管理员账号"}</p>
+        <div className="hero-actions">
+          <Link className="btn" href="/login?next=/admin">
+            去登录
+          </Link>
+          <Link className="btn secondary" href="/">
+            返回首页
+          </Link>
         </div>
+        <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 18 }}>
+          平台的第一个注册账号就是管理员；之后要加管理员，由现有管理员提拔。
+        </p>
       </div>
     );
   }
@@ -90,21 +78,15 @@ export default function AdminPage(): React.ReactElement {
         <div className="site-title">
           <Link href="/">字游 WordPlay</Link> · 开发者后台
         </div>
-        <button
-          className="linklike"
-          onClick={() => {
-            localStorage.removeItem("wgp_admin_key");
-            setKey(null);
-            setStats(null);
-          }}
-        >
-          退出
-        </button>
+        <Link className="linklike" href="/mine">
+          我的创作
+        </Link>
       </header>
 
       <div className="admin-tiles">
-        <div className="admin-tile"><b>{stats.totals.plays}</b><span>总游玩人次（≈用户规模）</span></div>
-        <div className="admin-tile"><b>{stats.creators}</b><span>创作者（署名作者数）</span></div>
+        <div className="admin-tile"><b>{stats.totals.plays}</b><span>总游玩人次</span></div>
+        <div className="admin-tile"><b>{stats.accounts.total}</b><span>注册账号（{stats.accounts.admins} 位管理员）</span></div>
+        <div className="admin-tile"><b>{stats.creators}</b><span>创作者（署名作者数，含游客）</span></div>
         <div className="admin-tile"><b>{stats.games.total}</b><span>作品总数（{stats.games.published} 已发布 / {stats.games.drafts} 草稿）</span></div>
         <div className="admin-tile"><b>{stats.totals.likes}</b><span>总点赞</span></div>
         <div className="admin-tile"><b>{fmtHours(stats.totals.playSeconds)}</b><span>总游玩时长</span></div>
@@ -147,7 +129,7 @@ export default function AdminPage(): React.ReactElement {
         </table>
       </div>
       <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 18 }}>
-        无账号体系阶段：用户规模以游玩人次近似；创作者数为署名作者去重。此页面为暗链，不出现在任何导航中。
+        游客不需要账号也能创作与游玩，所以「注册账号」少于「创作者」是正常的。此页面为暗链，不出现在任何导航中。
       </p>
     </div>
   );

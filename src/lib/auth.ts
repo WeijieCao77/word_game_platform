@@ -50,10 +50,13 @@ export function sessionTokenHash(token: string): string {
 export const SESSION_COOKIE = "wgp_session";
 export const SESSION_MAX_AGE = SESSION_DAYS * 24 * 3600;
 
-/** 用户名规则：3~20 位，字母数字下划线连字符与中文，避免和路由/展示打架 */
+/**
+ * 用户名规则：2~20 个字符，中英文、数字、下划线、连字符。
+ * 下限取 2 是为了中文——「老板」「小明」这类两字名很常见，卡在 3 位纯属添堵。
+ */
 export function checkUsername(name: string): string | null {
   const n = name.trim();
-  if (n.length < 3 || n.length > 20) return "用户名需要 3~20 个字符";
+  if (n.length < 2 || n.length > 20) return "用户名需要 2~20 个字符";
   if (!/^[\w一-龥-]+$/.test(n)) return "用户名只能用中英文、数字、下划线和连字符";
   return null;
 }

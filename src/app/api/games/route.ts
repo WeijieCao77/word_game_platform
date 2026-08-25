@@ -4,6 +4,7 @@ import path from "node:path";
 import { getStore } from "@/lib/store";
 import { currentUser } from "@/lib/session";
 import { blankLife, blankSim, blankStory } from "@/lib/blank";
+import { blankCodeIndex } from "@/lib/blank-code";
 import { validateGameConfig } from "@/lib/schema";
 import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
 
@@ -51,7 +52,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   let config: unknown;
   const template = body.template ?? "blank-life";
-  if (template === "blank-life") config = blankLife(title);
+  // 自由模式：配置只留 meta 那点信息（借分支叙事的空壳过校验），
+  // 游戏本体是随后写进 game_files 的那套页面
+  if (template === "blank-code") config = blankStory(title);
+  else if (template === "blank-life") config = blankLife(title);
   else if (template === "blank-story") config = blankStory(title);
   else if (template === "blank-sim") config = blankSim(title);
   else if (["demo-life", "demo-story", "demo-sim", "demo-romance", "demo-romance-m", "demo-manor", "demo-coldcase"].includes(template)) {
@@ -80,6 +84,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!check.ok) {
     return NextResponse.json({ error: "模板配置未通过校验", issues: check.issues }, { status: 500 });
   }
-  const { id, editKey } = getStore().create({ config, author, designCard: DESIGN_CARD_TEMPLATE, ownerId: user?.id });
+  const store = getStore();
+  const { id, editKey } = store.create({ config, author, designCard: DESIGN_CARD_TEMPLATE, ownerId: user?.id });
+  if (template === "blank-code") {
+    // 先落一份起手页：预览不至于白屏，AI 也有个能照着改的骨架
+    store.fileWrite(id, "index.html", blankCodeIndex(title));
+    store.gameSetMode(id, "code");
+  }
   return NextResponse.json({ id, editKey });
 }

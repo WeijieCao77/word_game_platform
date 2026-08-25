@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>末班车守夜人</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+  <header class="hud">
+    <span class="hud-title">末班车守夜人</span>
+    <span class="hud-stat">站次 <b id="stop">0</b></span>
+    <span class="hud-stat">清醒 <b id="wake">10</b></span>
+    <span class="hud-stat">线索 <b id="clue">0</b></span>
+    <button id="reset" class="hud-btn" type="button">重来</button>
+  </header>
+
+  <main class="stage">
+    <section id="scene" class="scene"></section>
+    <nav id="choices" class="choices"></nav>
+  </main>
+
+  <footer class="foot"><span id="saveHint">存档会自动保留</span></footer>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

@@ -70,6 +70,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       {
         config: record.config as GameConfig,
         designCard: record.designCard,
+        mode: store.gameMode(id),
         files: {
           list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size })),
           read: (path) => store.fileRead(id, path),

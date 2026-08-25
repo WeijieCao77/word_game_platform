@@ -1,6 +1,9 @@
 // 存储层接口。v1 用 SQLite（一游戏一行 JSON），
 // 将来换 Postgres 只需要重新实现这个接口。
 
+/** 作品形态：engine = 一份配置喂通用引擎；code = 自由模式，作品自带一套页面 */
+export type GameMode = "engine" | "code";
+
 /** 额度申请：注册用户把额度池用光时自动落一条，管理员在开发者后台批 */
 export interface QuotaRequest {
   id: number;
@@ -137,8 +140,8 @@ export interface GameStore {
   fileWrite(gameId: string, path: string, content: string): void;
   fileDelete(gameId: string, path: string): void;
   /** 作品形态：engine=配置 + 通用引擎；code=自带页面 */
-  gameMode(id: string): "engine" | "code";
-  gameSetMode(id: string, mode: "engine" | "code"): void;
+  gameMode(id: string): GameMode;
+  gameSetMode(id: string, mode: GameMode): void;
   /** 作品维度的 AI 消耗：识别「烧了很多 token 却什么都没搭出来」的会话 */
   gameAiSpend(id: string, tokens: number): number;
   gameAiTokens(id: string): number;

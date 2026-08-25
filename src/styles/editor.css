@@ -414,3 +414,96 @@ body.splitting * {
   height: 100%;
   overflow: auto;
 }
+
+/* ── 自由模式：预览与文件页签 ───────────────────────────────
+   自由模式的作品自带一套页面，预览就是把那个沙箱地址嵌进来——
+   作者在这里看到的环境跟玩家一模一样（同样不给 allow-same-origin）。 */
+
+.preview-code {
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.preview-code-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
+}
+
+.files-tab {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.files-list {
+  flex: 0 0 auto;
+  max-height: 34%;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.files-row:last-child { border-bottom: 0; }
+.files-row.on { background: var(--panel); }
+
+.files-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--fg);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  text-align: left;
+}
+.files-name:hover { color: var(--accent); }
+
+.files-size {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.files-editor {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.files-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.files-spacer { flex: 1; }
+.files-msg { color: var(--muted); font-size: 12px; }
+
+.files-text {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 12px 14px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  tab-size: 2;
+}

@@ -315,6 +315,7 @@ export class SqliteGameStore implements GameStore {
   delete(id: string): void {
     this.db.prepare("DELETE FROM game_stats_daily WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_assets WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_files WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
 

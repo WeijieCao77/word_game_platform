@@ -37,6 +37,15 @@ export default function CodeGameFrame({
     frameRef.current?.contentWindow?.postMessage(msg, "*");
   }, []);
 
+  const readSave = useCallback((): unknown => {
+    try {
+      const raw = localStorage.getItem(saveKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [saveKey]);
+
   useEffect(() => {
     const onMsg = (e: MessageEvent): void => {
       // 只认自己那个 iframe 发来的消息
@@ -51,14 +60,7 @@ export default function CodeGameFrame({
           // 隐私模式/存储满：存不下就算了，不该让游戏崩
         }
       } else if (data?.type === "wgp:load") {
-        let parsed: unknown = null;
-        try {
-          const raw = localStorage.getItem(saveKey);
-          parsed = raw ? JSON.parse(raw) : null;
-        } catch {
-          parsed = null;
-        }
-        post({ type: "wgp:loaded", data: parsed });
+        post({ type: "wgp:loaded", data: readSave() });
       } else if (data?.type === "wgp:clear") {
         try {
           localStorage.removeItem(saveKey);
@@ -69,7 +71,21 @@ export default function CodeGameFrame({
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [post, saveKey]);
+  }, [post, readSave, saveKey]);
+
+  // 竞态兜底：iframe 常常在 React 水合之前就 load 完，游戏那一句 wgp:ready 与
+  // wgp:load 发出来时外壳还没挂上监听——两条都会石沉大海，结果是遮罩不散、
+  // 存档不回来（而且 onLoad 也不会补发，load 事件早过去了）。
+  // 所以挂载后主动补两次：把存档推给游戏，并给遮罩一个时间下限。
+  // 这两次补发都在第一秒内，玩家还来不及点任何东西，不会盖掉新进度。
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => post({ type: "wgp:loaded", data: readSave() }), 250),
+      setTimeout(() => post({ type: "wgp:loaded", data: readSave() }), 900),
+      setTimeout(() => setReady(true), 1500),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [post, readSave]);
 
   useEffect(() => {
     const onFs = (): void => setFull(Boolean(document.fullscreenElement));

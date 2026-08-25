@@ -8,6 +8,11 @@ const TEMPLATES = [
   { id: "blank-sim", name: "空白 · 经营模拟", desc: "经理式：每回合主动决策 → 结算对抗 → 随机事件 → 赛季滚动" },
   { id: "blank-life", name: "空白 · 随机成长", desc: "人生重开式：时间推进 + 按条件与权重抽事件卡" },
   { id: "blank-story", name: "空白 · 分支叙事", desc: "橙光/Twine 式：选项跳转的分支故事" },
+  {
+    id: "blank-code",
+    name: "自由模式 · 界面自己定",
+    desc: "作品自带一套页面，长什么样、怎么玩全由 AI 按你的要求写。适合界面本身就是卖点的作品",
+  },
   { id: "demo-sim", name: "从示例出发 · 无畏契约经理", desc: "复制官方经营示例（阵容/训练/转会/联赛）改成你的版本" },
   { id: "demo-life", name: "从示例出发 · 修仙人生重开", desc: "复制官方修仙示例改成你的版本" },
   { id: "demo-story", name: "从示例出发 · 雨夜末班车", desc: "复制官方怪谈示例改成你的版本" },

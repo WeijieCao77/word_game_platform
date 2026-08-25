@@ -11,6 +11,7 @@ import CheckTab from "@/components/editor/tabs/CheckTab";
 import CoverTab from "@/components/editor/tabs/CoverTab";
 import AssetsSection from "@/components/editor/tabs/AssetsSection";
 import LibraryTab from "@/components/editor/tabs/LibraryTab";
+import FilesTab, { FileItem } from "@/components/editor/tabs/FilesTab";
 import SplitHandle, { useSplit } from "@/components/editor/SplitHandle";
 import { buildTourSteps } from "@/components/editor/tourSteps";
 import { compressAsset, compressCover, withAssetSection } from "@/components/editor/assets";
@@ -66,6 +67,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [loadError, setLoadError] = useState("");
   const [simText, setSimText] = useState("");
   const [previewNonce, setPreviewNonce] = useState(0);
+  // 自由模式：作品形态与文件清单（快速模式下 files 一直是 null，页签也不出现）
+  const [mode, setMode] = useState<"engine" | "code">("engine");
+  const [files, setFiles] = useState<FileItem[] | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
@@ -87,6 +91,19 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const split = useSplit();
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const reloadFiles = useCallback(async (): Promise<void> => {
+    if (!editKey) return;
+    try {
+      const res = await fetch(`/api/games/${id}/files`, { headers: { "x-edit-key": editKey } });
+      if (!res.ok) return;
+      const body = await res.json();
+      setFiles((body.files ?? []) as FileItem[]);
+      if (body.mode === "code") setMode("code");
+    } catch {
+      // 清单取不到不影响别的事，静默
+    }
+  }, [editKey, id]);
+
   const loadLibrary = useCallback(async (category: string, q: string): Promise<void> => {
     const params = new URLSearchParams();
     if (category) params.set("category", category);
@@ -107,6 +124,10 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setEditKey(localStorage.getItem(`wgp_key_${id}`));
   }, [id]);
 
+  useEffect(() => {
+    if (mode === "code" && files === null) void reloadFiles();
+  }, [mode, files, reloadFiles]);
+
   const load = useCallback(
     async (key: string): Promise<void> => {
       const res = await fetch(`/api/games/${id}`, { headers: { "x-edit-key": key } });
@@ -119,6 +140,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setPublished(body.published);
       if (Array.isArray(body.chat)) setChat(body.chat as ChatMsg[]);
       setHasCover(!!body.hasCover);
+      setMode(body.mode === "code" ? "code" : "engine");
       setDirty(false);
       // 额度读数一进来就要有，不必等发完第一条消息
       try {
@@ -515,7 +537,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }).finally(() => clearTimeout(kill));
       // 网关超时/请求体过大这类失败返回的是 HTML，不是 JSON——别让真正的原因被吞掉
       const rawText = await res.text();
-      let body: { error?: string; reply?: string; config?: unknown; designCard?: string; quota?: QuotaInfo };
+      let body: {
+        error?: string;
+        reply?: string;
+        config?: unknown;
+        designCard?: string;
+        quota?: QuotaInfo;
+        filesChanged?: boolean;
+        mode?: string;
+      };
       try {
         body = JSON.parse(rawText);
       } catch {
@@ -534,6 +564,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         setDirty(false);
       }
       if (typeof body.designCard === "string") setDesignCard(body.designCard);
+      // AI 动过文件：把形态与清单同步过来，并让预览重挂载——
+      // 「说生效却没看到变化」多半就是这里没刷
+      if (body.mode === "code" || body.filesChanged) {
+        setMode("code");
+        void reloadFiles();
+        setPreviewNonce((n) => n + 1);
+      }
       if (body.quota) {
         setQuota(body.quota);
         setStatusMsg(quotaText(body.quota));
@@ -656,14 +693,24 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         <div className="work-pane">
           <div className="tabs">
             {(
-              [
-                ["preview", "预览试玩"],
-                ["design", "设计卡"],
-                ["config", "配置"],
-                ["check", `校验${errorCount > 0 ? ` (${errorCount})` : ""}`],
-                ["library", "内容库"],
-                ["cover", "封面·素材"],
-              ] as [Tab, string][]
+              (mode === "code"
+                ? // 自由模式：游戏本体是文件，配置只剩 meta；
+                  // 内容库（卡片复用）与校验（通用引擎的规则）在这里都用不上
+                  [
+                    ["preview", "预览试玩"],
+                    ["files", `文件${files ? ` (${files.length})` : ""}`],
+                    ["design", "设计卡"],
+                    ["config", "配置"],
+                    ["cover", "封面·素材"],
+                  ]
+                : [
+                    ["preview", "预览试玩"],
+                    ["design", "设计卡"],
+                    ["config", "配置"],
+                    ["check", `校验${errorCount > 0 ? ` (${errorCount})` : ""}`],
+                    ["library", "内容库"],
+                    ["cover", "封面·素材"],
+                  ]) as [Tab, string][]
             ).map(([t, label]) => (
               <button key={t} data-tour={`tab-${t}`} className={tab === t ? "active" : ""} onClick={() => openTab(t)}>
                 {label}
@@ -672,7 +719,23 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           </div>
           <div className="tab-body">
             {tab === "preview" && (
-              <PreviewTab config={config} gameId={id} errorCount={errorCount} previewNonce={previewNonce} />
+              <PreviewTab
+                config={config}
+                gameId={id}
+                errorCount={errorCount}
+                previewNonce={previewNonce}
+                mode={mode}
+                editKey={editKey ?? ""}
+              />
+            )}
+            {tab === "files" && (
+              <FilesTab
+                gameId={id}
+                editKey={editKey ?? ""}
+                files={files}
+                onReload={() => void reloadFiles()}
+                onPreviewRefresh={() => setPreviewNonce((n) => n + 1)}
+              />
             )}
             {tab === "design" && <DesignTab designCard={designCard} onChange={editDesignCard} />}
             {tab === "config" && (

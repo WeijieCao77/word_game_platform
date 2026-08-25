@@ -38,6 +38,8 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     designCard: canEdit ? record.designCard : undefined,
     chat: canEdit ? record.chat : undefined,
     hasCover: record.hasCover,
+    // 作品形态：engine=配置喂通用引擎；code=自由模式，作品自带一套页面
+    mode: store.gameMode(id),
     updatedAt: record.updatedAt,
   });
 }

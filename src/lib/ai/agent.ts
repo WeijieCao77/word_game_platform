@@ -2,6 +2,7 @@ import { GameConfig, GameConfigSchema, validateGameConfig, ValidationIssue } fro
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
 import { SKILL_PACKS, buildSystemPrompt } from "./prompt";
+import { GameMode } from "@/lib/store/types";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 import { LibraryEntry } from "@/lib/library";
 
@@ -88,12 +89,18 @@ const TOOLS: ToolDef[] = [
       name: "write_file",
       description:
         "写入一个文件（自由模式），已存在则整份覆盖。入口必须叫 index.html。" +
-        "文件较大时按模块拆开（index.html / game.js / style.css），别把几千行塞进一个文件。",
+        "文件较大时按模块拆开（index.html / game.js / style.css），别把几千行塞进一个文件。" +
+        "注意：快速模式的作品一旦写文件就切到自由模式，配置里的卡片不再生效——" +
+        "那种情况必须先取得创作者明确同意，再带 switchToCode: true 调用。",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string" },
           content: { type: "string" },
+          switchToCode: {
+            type: "boolean",
+            description: "把一部已有配置内容的快速模式作品切到自由模式。只有创作者明确同意后才填 true。",
+          },
         },
         required: ["path", "content"],
       },
@@ -173,6 +180,8 @@ const TOOLS: ToolDef[] = [
 export interface AgentContext {
   config: GameConfig;
   designCard: string;
+  /** 作品形态：决定发哪套守则（自由模式讲代码，快速模式讲配置） */
+  mode?: GameMode;
   searchLibrary?: (q: string, category?: string) => LibraryEntry[];
   /**
    * 自由模式的文件读写。传了才会把三个文件工具给 AI——
@@ -251,6 +260,7 @@ export async function runAssistant(
   let designChanged = ctx.designCard !== designCard;
   let totalTokens = 0;
 
+  const mode: GameMode = ctx.mode ?? "engine";
   const configJson = JSON.stringify(config);
   const configBlock =
     configJson.length <= CONFIG_INLINE_LIMIT
@@ -258,13 +268,27 @@ export async function runAssistant(
       : `【当前游戏配置·目录】（配置已有 ${Math.round(configJson.length / 1000)}k 字符，太大不再整份贴出来。\n` +
         `要看某几张卡/某个结算的完整内容，用 read_config 工具按 id 取；\n` +
         `要改内容用 patch_config 分批写，不要求你重发整份配置。）\n${summarizeConfig(config)}`;
+  // 自由模式下配置只剩 meta，游戏本体在文件里——上下文该给的是文件清单，
+  // 以及通用引擎的校验结果（那套规则在这里不适用，贴了只会让 AI 去修不存在的问题）。
+  const fileBlock = (): string => {
+    const list = ctx.files?.list() ?? [];
+    if (list.length === 0) return "【当前文件】还没有任何文件。至少要有一个 index.html。";
+    return (
+      "【当前文件】（要看内容用 read_file 取，不要凭印象改）\n" +
+      list.map((f) => `- ${f.path}（${f.size} 字符）`).join("\n")
+    );
+  };
   const contextMsg =
-    `【当前设计卡】\n${designCard}\n\n` +
-    `${configBlock}\n\n` +
-    `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
+    mode === "code"
+      ? `【当前设计卡】\n${designCard}\n\n` +
+        `【游戏信息】${JSON.stringify(config.meta)}\n\n` +
+        fileBlock()
+      : `【当前设计卡】\n${designCard}\n\n` +
+        `${configBlock}\n\n` +
+        `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(config) },
+    { role: "system", content: buildSystemPrompt(config, mode) },
     { role: "system", content: contextMsg },
     ...history.map((m): ChatMessage => ({ role: m.role, content: m.content })),
   ];
@@ -398,6 +422,15 @@ export async function runAssistant(
         }
         case "write_file": {
           if (!ctx.files) return "这部作品是快速模式，不能写文件。";
+          // 切轨闸门：快速模式的作品已经有内容了，写文件等于推倒重来，
+          // 必须是创作者点头之后的动作，不能由 AI 自己决定。
+          if (mode !== "code" && config.cards.length > 1 && args.switchToCode !== true) {
+            return (
+              "拒绝：这部作品现在是快速模式，已经有 " +
+              `${config.cards.length} 张卡片。写文件会切到自由模式，配置里的卡片与数值全部不再生效，` +
+              "等于这部作品重做一遍。先把这个代价告诉创作者，得到他明确同意后，再带 switchToCode: true 调用。"
+            );
+          }
           const path = String(args.path ?? "");
           const content = typeof args.content === "string" ? args.content : "";
           if (!path || path.includes("..") || path.startsWith("/") || !/^[A-Za-z0-9/._-]+$/.test(path)) {

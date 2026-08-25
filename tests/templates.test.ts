@@ -162,3 +162,39 @@ describe("官方示例：整栋实验楼都听见我心跳超频了（story 男�
     expect(report.unfiredCards).toEqual([]);
   });
 });
+
+for (const [name, file, minCards] of [
+  ["无畏契约经理：凤凰计划", "vct-manager.json", 20],
+  ["王者荣耀经理：登顶 KPL", "kpl-manager.json", 20],
+] as const) {
+  describe(`官方示例：${name}（sim 电竞经营，含羁绊/待办/季后赛）`, () => {
+    const raw = load(file);
+
+    it("通过结构 + 语义校验，无错误无警告", () => {
+      const r = validateGameConfig(raw);
+      expect(r.issues.filter((i) => i.severity === "error").map((i) => `${i.path}: ${i.message}`)).toEqual([]);
+      expect(r.issues.filter((i) => i.severity === "warning").map((i) => `${i.path}: ${i.message}`)).toEqual([]);
+    });
+
+    it("三个新模块都真的用上了：关系网、待办箱、淘汰赛对阵表", () => {
+      const cfg = raw as {
+        relations?: unknown[];
+        pendings?: unknown[];
+        brackets?: unknown[];
+        cards: unknown[];
+      };
+      expect(cfg.relations?.length ?? 0).toBeGreaterThan(0);
+      expect(cfg.pendings?.length ?? 0).toBeGreaterThan(0);
+      expect(cfg.brackets?.length ?? 0).toBeGreaterThan(0);
+      expect(cfg.cards.length).toBeGreaterThanOrEqual(minCards);
+    });
+
+    it("模拟 600 局：无错误，全结局可达，无开局即死", { timeout: 120000 }, () => {
+      const r = validateGameConfig(raw);
+      const report = simulate(r.config!, 600, 77);
+      expect(report.errors).toEqual([]);
+      expect(report.unreachedEndings).toEqual([]);
+      expect(report.earlyEndRate).toBeLessThanOrEqual(0.03);
+    });
+  });
+}

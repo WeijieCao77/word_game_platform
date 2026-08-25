@@ -648,6 +648,29 @@ class Validator {
       noteExpr(cv.condition);
       noteEffects(cv.effects);
     }
+    // 待办与对阵表的结果分支同样会改变量——漏扫它们会让「没人赋值」误报
+    for (const pd of c.pendings ?? []) {
+      noteExpr(pd.waitTurns);
+      noteText(pd.waitingText);
+      for (const o of pd.outcomes) {
+        noteExpr(o.condition);
+        noteEffects(o.effects);
+        noteText(o.text);
+      }
+    }
+    for (const bk of c.brackets ?? []) {
+      noteExpr(bk.condition);
+      for (const cp of bk.compute ?? []) noteExpr(cp.expr);
+      for (const o of bk.outcomes) {
+        noteExpr(o.condition);
+        noteEffects(o.effects);
+        noteText(o.text);
+      }
+      noteEffects(bk.championEffects);
+      noteText(bk.championText);
+      noteText(bk.eliminatedText);
+    }
+    for (const rl of c.relations ?? []) noteExpr(rl.initial);
     for (const en of c.search?.entries ?? []) {
       noteExpr(en.condition);
       noteEffects(en.effects);

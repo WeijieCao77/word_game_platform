@@ -6,11 +6,22 @@
 
 我们是平台，不是游戏公司。一个人的想法有限，一百个人里可能就有一个爆点——平台的使命是把"试一次"的成本降到一次对话。
 
+## 接手这个项目？从这里开始
+
+| 文档 | 回答什么 |
+| --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | 给接手的人（和 AI）的工作约定：铁律、加功能的六件套、验收门槛 |
+| [`docs/STATUS.md`](docs/STATUS.md) | **现状**：平台现在能干什么、做到哪一步、有哪些坑 |
+| [`docs/MODULES.md`](docs/MODULES.md) | **模块地图**：要改某个东西该看哪几个文件（代码按模块拆过，不必通读） |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | **未来方向**：下一步做什么、怎么判断一个想法该不该做、明确不做什么 |
+| [`docs/schema.md`](docs/schema.md) | 底层设计：内容卡 schema、受限表达式语言、三级校验 |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | 最初的交接文档（历史决策的来源） |
+
 ## 它长什么样
 
 - **玩家**：打开 `/g/:id` 就能玩，免登录，进度自动存在本地浏览器；玩完看到"我也要做一个"，一分钟后成为创作者。
-- **创作者**：`/new` 创建 → 进入工作台 `/edit/:id`。左边是 **AI 驻场策划**（对话式创作的主入口），右边是实时预览 / 设计卡 / 配置 / 校验 / 内容库五个页签。预览用的就是玩家页的渲染器——所见即所得。
-- **游戏库**：首页陈列所有已发布的游戏，游戏反向为平台引流。
+- **创作者**：`/new` 创建 → 进入工作台 `/edit/:id`。左边是 **AI 驻场策划**（对话式创作的主入口），右边是实时预览 / 设计卡 / 配置 / 校验 / 内容库 / 封面·素材六个页签。预览用的就是玩家页的渲染器——所见即所得。第一次进来会有一遍聚光灯式新手引导，逐个板块告诉你它是干嘛的。
+- **游戏库**：首页陈列所有已发布的游戏，卡片鼠标悬停整张翻面看完整简介；游戏反向为平台引流。
 - **我的创作**：`/mine` 列出本机持有编辑钥匙的全部作品（含未发布草稿）。与 AI 的对话、设计卡、配置都存服务端，关掉页面回来继续；编辑钥匙支持一键导出/导入（钥匙串备份），换设备不丢作品。
 
 ## 核心设计
@@ -40,11 +51,11 @@
 ```bash
 npm install
 npm run dev        # http://localhost:3000
-npm test           # 表达式/校验/引擎/示例模板 37 例
+npm test           # 表达式/校验/引擎/存储/八款官方示例，81 例
 npm run build && npm start   # 生产模式
 ```
 
-首次启动会把两个官方示例（《修仙人生重开》《雨夜末班车》）作为已发布游戏种子入库。
+首次启动会把八款官方示例（修仙人生重开 / 雨夜末班车 / 无畏契约经理 / 两款恋爱 / 两款推理等）作为已发布游戏种子入库。
 
 ## 环境变量
 
@@ -56,6 +67,8 @@ npm run build && npm start   # 生产模式
 | `AI_MODEL` | 模型名（可选），不填用该供应商默认模型 | `gpt-5-mini` / `deepseek-v4-flash` / … |
 | `AI_DAILY_REQUESTS` | 每把编辑钥匙每日 AI 次数上限 | `40` |
 | `AI_DAILY_TOKENS` | 每把编辑钥匙每日 token 上限 | `400000` |
+| `FLAGSHIP_URL` | 旗舰作品地址，设了首页才出现旗舰位（点进 `/flagship` 站内直接玩） | 未设则不显示 |
+| `ADMIN_KEY` | 开发者后台 `/admin` 的口令，自定一串即可；不设则该页返回「未启用」 | 未设 |
 
 **切换模型只改一个变量**：各家 key 各自存放（`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`QWEN_API_KEY`、`KIMI_API_KEY`），想换模型时把 `AI_PROVIDER` 改成对应供应商即可，key 不用动。旧用法（`AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL` 三件套指向任意 OpenAI 兼容端点）在不设 `AI_PROVIDER` 时继续生效，见 `.env.example`。
 
@@ -73,33 +86,41 @@ npm run build && npm start   # 生产模式
 ## 目录结构
 
 ```
-src/lib/expr       受限表达式语言（解析/求值/引用收集，无 eval）
-src/lib/schema     GameConfig 类型 + zod 结构校验 + 语义校验
-src/lib/engine     纯函数引擎（initState/step/choose，种子化 RNG）
-src/lib/simulate   批量模拟与报告（校验面板与 AI 共用）
-src/lib/store      GameStore 接口 + SQLite 实现（可换 Postgres）
-src/lib/ai         驻场策划：OpenAI 兼容 provider + agent 循环 + 四工具
-src/app            页面与 API（/ 游戏库、/new、/mine 我的创作、/g/:id、/edit/:id、/u/:name）
-src/components     GamePlayer——玩家页与编辑器预览共用的渲染器
-templates          官方示例（life / story 各一）
-tests              vitest 单测
-docs               交接文档 + schema 设计文档
+src/lib/expr        受限表达式语言（解析/求值/引用收集，无 eval）
+src/lib/schema      GameConfig 类型 + zod 结构校验 + 语义校验 + 模块功能库登记
+src/lib/engine      纯函数引擎（抽卡/选项/输入门/检索/行动点/结算/联赛，种子化 RNG）
+src/lib/simulate    批量模拟与报告（校验面板与 AI 共用）
+src/lib/store       GameStore 接口 + SQLite 实现（可换 Postgres）
+src/lib/ai          驻场工作室：多供应商 provider + agent 循环 + 工具 + 系统提示
+src/app             页面与 API（/ 游戏库、/new、/mine、/g/:id、/edit/:id、/u/:name、/flagship、/admin）
+src/components      GamePlayer（玩家页与预览同源）+ player/ 玩家界面模块 + Tour 新手引导
+src/styles          按模块拆分的样式（base/store/editor/player/admin/tour）
+templates           八款官方示例（全部由平台工作流产出，过同一套门槛）
+tests               vitest 单测 + 模板体检工具
+docs                现状 / 模块地图 / 路线图 / schema 设计 / 交接文档
 ```
+
+**改某个东西该动哪几个文件，见 [`docs/MODULES.md`](docs/MODULES.md)**——代码是按模块拆的，
+不需要通读任何一个上千行的大文件。
 
 ## 数据与互动
 
-- 玩家可给游戏**点赞**（❤，鼓励创作者），玩家页进入即计**游玩次数**，游玩中静默累计**在线时长**
+- 玩家可给游戏**点赞**（❤，鼓励创作者）；**每次进入、每次重开都计一次游玩次数**（不按用户去重——流量高作者才有激励），游玩中静默累计**在线时长**
 - 「我的创作」对创作者展示每部作品的 点赞 / 游玩次数 / 平均游玩时长；数据按日落表（`game_stats_daily`），
   这是后续**创作者数据后台**（趋势图、日活、结局分布漏斗）的数据地基
-- 防刷：点赞按浏览器去重 + IP 限频；游玩时长单次上报封顶 10 分钟
+- 防刷：点赞按浏览器去重 + IP 限频（游玩 240 次/小时）；游玩时长单次上报封顶 10 分钟
+- 平台方另有 `/admin` 开发者后台（暗链，凭 `ADMIN_KEY` 进入）：全站游玩人次、创作者数、作品数、AI 用量与近 14 天趋势
 
 ## 路线图
 
-- **v1（已上线）**：内容卡底座 + story/life/sim 三调度器 + AI 驻场策划（四阶段创作流程：
-  需求对齐 → 方案确认 → 实现 → 调优，配置生成带流程门禁）+ 游戏库；官方示例三款
-  （无畏契约经理 / 修仙人生重开 / 雨夜末班车 等八款）
-- **v1.5**：sim 阶段进度模块（换地图：每阶段独立对手池/事件池/招募池）、实体运行时生成
-  （无限青训/天骄池）、表现层主题扩展、配置导出按钮
-- **v2**：账号系统与云存档（editKey 过渡方案退役）、沙箱脚本层（Web Worker 自定义结算，硬核作者逃生舱）、运行时 AI（游戏内动态生成事件卡——卡池结构已留好接口）
+- **已上线**：内容卡底座 + story/life/sim 三调度器 + AI 四职能工作室（创意对齐 → 方案确认 → 搭建 → 调优，
+  带流程门禁）+ 游戏库与开发者后台；可选功能模块 14 个（检索台 / 档案夹 / 输入门 / 行动点 / 活联赛 /
+  配图 / 界面定制等）；官方示例八款
+- **下一批**：分步可介入结算（MatchLive 式）、回合摘要 Digest、聊天框传图（带成本分流）
+- **中期**：账号系统与云存档、创作者数据后台、sim 阶段进度模块、实体运行时生成
+- **长期**：开放 API、沙箱脚本层、运行时 AI；放量前的合规硬墙
 
-旗舰内容 [Val Manager](https://github.com/WeijieCao77/Val_Manager)（无畏契约电竞经理）作为独立作品运营，是平台的机制灵感来源与流量锚点，不迁入平台。
+完整版与取舍理由见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+
+旗舰内容 [Val Manager](https://github.com/WeijieCao77/Val_Manager)（无畏契约电竞经理）作为独立作品运营，
+是平台的机制灵感来源与流量锚点，不迁入平台——平台要做的是「让别人用工作台也能做出这个量级的游戏」。

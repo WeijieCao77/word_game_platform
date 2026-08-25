@@ -71,7 +71,7 @@ jobs:
           follow = [x for x in (os.environ.get("FOLLOWUPS") or "").split("|||") if x.strip()]
           msgs = [{"role": "user", "content": os.environ["BRIEF"]}]
 
-          def post(path, payload, timeout=300):
+          def post(path, payload, timeout=600):
               req = urllib.request.Request(
                   f"{BASE}{path}", method="POST",
                   data=json.dumps(payload).encode(),
@@ -79,15 +79,31 @@ jobs:
               with urllib.request.urlopen(req, timeout=timeout) as r:
                   return json.loads(r.read().decode())
 
+          def post_retry(path, payload, tries=3):
+              """502 多半是容器正在重启（部署中）或被网关掐了，退避重试两次再放弃。"""
+              last = None
+              for k in range(tries):
+                  try:
+                      return post(path, payload)
+                  except urllib.error.HTTPError as e:
+                      body = e.read().decode()[:300]
+                      last = f"HTTP {e.code}：{body}"
+                      if e.code not in (502, 503, 504):
+                          raise
+                      wait = 20 * (k + 1)
+                      print(f"  ↻ {last} —— {wait}s 后重试（第 {k + 1} 次）")
+                      time.sleep(wait)
+                  except Exception as e:
+                      last = str(e)
+                      print(f"  ↻ {last} —— 20s 后重试（第 {k + 1} 次）")
+                      time.sleep(20)
+              raise RuntimeError(last or "未知失败")
+
           for i in range(rounds):
               print(f"\n{'=' * 70}\n第 {i + 1} 轮 · 创作者说：{msgs[-1]['content'][:120]}\n{'=' * 70}")
               t0 = time.time()
               try:
-                  body = post(f"/api/games/{GID}/assistant", {"messages": msgs})
-              except urllib.error.HTTPError as e:
-                  detail = e.read().decode()[:600]
-                  print(f"::warning::第 {i + 1} 轮 HTTP {e.code}：{detail}")
-                  break
+                  body = post_retry(f"/api/games/{GID}/assistant", {"messages": msgs})
               except Exception as e:
                   print(f"::warning::第 {i + 1} 轮失败：{e}")
                   break

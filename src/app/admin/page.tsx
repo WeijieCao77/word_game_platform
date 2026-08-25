@@ -58,7 +58,7 @@ export default function AdminPage(): React.ReactElement {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [quotaReqs, setQuotaReqs] = useState<QuotaReq[]>([]);
-  const [defaultGrant, setDefaultGrant] = useState(10_000_000);
+  const [defaultGrant, setDefaultGrant] = useState(2_000_000);
   const [busyReq, setBusyReq] = useState<number | null>(null);
 
   const loadQuota = useCallback(async (): Promise<void> => {

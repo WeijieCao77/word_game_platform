@@ -94,6 +94,9 @@ export const EntityTypeDefSchema = z.object({
   id: IdSchema,
   name: NameSchema,
   attributes: z.array(AttributeDefSchema).min(1).max(30),
+  // 名单分组：按标签把表拆成几段（自家阵容 / 转会市场…），不配就是一张大表
+  groups: z.array(z.object({ tag: NameSchema, label: NameSchema })).max(8).optional(),
+  restLabel: NameSchema.optional(),
 });
 
 export const EntityInstanceSchema = z.object({

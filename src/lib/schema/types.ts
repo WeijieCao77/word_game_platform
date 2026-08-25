@@ -132,6 +132,16 @@ export interface EntityTypeDef {
   id: string;
   name: string;
   attributes: AttributeDef[];
+  /**
+   * 名单分组（可选）：按标签把表格拆成几段，各带小标题与人数。
+   * 不配就是一张大表（老游戏不受影响）。
+   * 用途是把身份完全不同的实体分开——自家阵容和转会市场的选手混在一张表里，
+   * 玩家分不清哪些是自己的人。按 tag 顺序匹配，第一个命中的分组收下它；
+   * 一个都没命中的落进 restLabel 那一组。
+   */
+  groups?: { tag: string; label: string }[];
+  /** 没命中任何分组的实体归到这一组；不填就叫「其他」 */
+  restLabel?: string;
 }
 
 /** 实体实例（初始名单；标签做状态流转：主力/替补/市场/伤病…） */

@@ -16,11 +16,13 @@ function newEditKey(): string {
 
 /**
  * 注册账号的初始 AI 额度（总量，不是日额度）。
- * 默认 1000 万——大到正常创作者感觉不到限制（够做十几到几十款游戏），
+ * 默认 200 万——按实际消耗，从零做完一款能发布的游戏大概 20~100 万，
+ * 所以这个数够做两三款、反复调优也够用，正常创作者感觉不到限制；
  * 同时又是一道真闸门：想拿它当免费聊天机器人用的，烧到头必须来找管理员批。
+ * 这是全站唯一的默认额度来源，@/lib/ai/quota 的 userGrantDefault 直接转发它。
  */
 export function defaultGrant(): number {
-  return Number(process.env.AI_USER_GRANT ?? 10_000_000);
+  return Number(process.env.AI_USER_GRANT ?? 2_000_000);
 }
 
 /**

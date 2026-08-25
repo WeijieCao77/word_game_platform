@@ -1,12 +1,12 @@
-import { GameStore } from "@/lib/store/types";
-import { UserRecord } from "@/lib/store/types";
+import { GameStore, UserRecord } from "@/lib/store/types";
+import { defaultGrant } from "@/lib/store/sqlite";
 
 // AI 额度：三种身份三套算法。
 //
 // - 管理员：不限量。平台自己人做示例、压测、救火时不该被自己的额度挡住。
-// - 注册用户：**总量额度池**（默认 1000 万 token）。用完不是等明天，而是自动开一条
+// - 注册用户：**总量额度池**（默认 200 万 token）。用完不是等明天，而是自动开一条
 //   申请单，由管理员在开发者后台手动批。这就是「让人感觉不到限量、但确实有闸门」。
-// - 游客（没注册）：按日额度（默认每天 40 万）。不能也给 1000 万——清一下 cookie
+// - 游客（没注册）：按日额度（默认每天 40 万）。不能也给一份总量额度——清一下 cookie
 //   就能无限刷；日额度既够试用，又是注册的钩子。
 //
 // 另有一条与身份无关的熔断：一个作品烧掉不少 token 却连一张卡都没有，
@@ -35,9 +35,9 @@ export interface QuotaView {
   maxRequests: number;
 }
 
-/** 注册账号的初始额度（总量）。1000 万 ≈ 十几到几十款游戏的制作量。 */
+/** 注册账号的初始额度（总量）。默认值定义在存储层，这里只转发，避免两处各写一个数字。 */
 export function userGrantDefault(): number {
-  return Number(process.env.AI_USER_GRANT ?? 10_000_000);
+  return defaultGrant();
 }
 
 /** 游客每日额度。够把一个想法聊成方案、搭出雏形，再往下就该注册了。 */

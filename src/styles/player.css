@@ -201,6 +201,26 @@
   padding: 4px 0;
 }
 
+/* 名单分段小标题：自家阵容和转会市场混在一张表里，玩家分不清哪些是自己的人 */
+.roster-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.02em;
+}
+.roster-section-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
 .roster-scroll {
   overflow-x: auto;
   background: var(--card);

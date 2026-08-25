@@ -1,7 +1,10 @@
 node_modules/
 .next/
-out/
-data/
+/out/
+# 只忽略仓库根部那个 SQLite 数据目录。
+# 写成 data/ 会匹配任意层级的同名目录——src/components/editor/data/ 就是这么
+# 被静默排除的：本地跑得好好的，CI 上却 Cannot find module，连着红了二十多次。
+/data/
 *.tsbuildinfo
 next-env.d.ts
 .env

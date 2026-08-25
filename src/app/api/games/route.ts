@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { getStore } from "@/lib/store";
+import { currentUser } from "@/lib/session";
 import { blankLife, blankSim, blankStory } from "@/lib/blank";
 import { validateGameConfig } from "@/lib/schema";
 import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
@@ -44,7 +45,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "请求体不是合法 JSON" }, { status: 400 });
   }
   const title = (body.title ?? "").trim().slice(0, 60) || "未命名游戏";
-  const author = (body.author ?? "").trim().slice(0, 40);
+  // 登录用户默认用账号名署名，作品同时归到账号名下（游客保持匿名 + 编辑钥匙）
+  const user = currentUser(req);
+  const author = ((body.author ?? "").trim() || user?.username || "").slice(0, 40);
 
   let config: unknown;
   const template = body.template ?? "blank-life";
@@ -77,6 +80,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!check.ok) {
     return NextResponse.json({ error: "模板配置未通过校验", issues: check.issues }, { status: 500 });
   }
-  const { id, editKey } = getStore().create({ config, author, designCard: DESIGN_CARD_TEMPLATE });
+  const { id, editKey } = getStore().create({ config, author, designCard: DESIGN_CARD_TEMPLATE, ownerId: user?.id });
   return NextResponse.json({ id, editKey });
 }

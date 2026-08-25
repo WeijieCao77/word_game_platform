@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-// 平台开发者后台数据（仅限持 ADMIN_KEY 者）。
-// ADMIN_KEY 在部署环境变量里配置（Railway Variables），不入库不进代码。
+// 平台开发者后台数据。鉴权靠账号角色：平台的第一个注册者是管理员，
+// 之后可由管理员提拔别人。不再依赖任何环境变量。
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  const adminKey = process.env.ADMIN_KEY;
-  if (!adminKey) {
-    return NextResponse.json(
-      { error: "开发者后台未启用：请在部署环境变量里设置 ADMIN_KEY（自定的一串口令）" },
-      { status: 501 }
-    );
-  }
-  if (req.headers.get("x-admin-key") !== adminKey) {
-    return NextResponse.json({ error: "管理密钥不正确" }, { status: 403 });
-  }
+export function GET(req: NextRequest): NextResponse {
+  const user = currentUser(req);
+  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ error: "这个页面只对管理员开放" }, { status: 403 });
   return NextResponse.json(getStore().adminStats());
 }

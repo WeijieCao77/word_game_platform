@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
 import { GameConfig } from "@/lib/schema";
 import { CardDefSchema } from "@/lib/schema/zod";
 import { LIBRARY_CATEGORIES, extractRequiredVars, shareBlockReason } from "@/lib/library";
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const gameId = body.gameId ?? "";
   const record = store.get(gameId);
   if (!record) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!store.checkEditKey(gameId, req.headers.get("x-edit-key") ?? "")) {
+  if (!canEditGame(req, gameId)) {
     return NextResponse.json({ error: "没有该游戏的编辑权限" }, { status: 403 });
   }
   const config = record.config as GameConfig;

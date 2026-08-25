@@ -579,6 +579,9 @@ export class SqliteGameStore implements GameStore {
     const creators = (
       this.db.prepare("SELECT COUNT(DISTINCT author) AS n FROM games WHERE author != ''").get() as { n: number }
     ).n;
+    const accountsRow = this.db
+      .prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) AS admins FROM users")
+      .get() as { total: number; admins: number | null };
     const totals = this.db
       .prepare("SELECT COALESCE(SUM(plays),0) AS plays, COALESCE(SUM(likes),0) AS likes, COALESCE(SUM(play_seconds),0) AS ps FROM games")
       .get() as { plays: number; likes: number; ps: number };
@@ -617,6 +620,7 @@ export class SqliteGameStore implements GameStore {
     return {
       games: { total: g.total, published: g.pub ?? 0, drafts: g.total - (g.pub ?? 0) },
       creators,
+      accounts: { total: accountsRow.total, admins: accountsRow.admins ?? 0 },
       totals: { plays: totals.plays, likes: totals.likes, playSeconds: totals.ps },
       daily,
       topGames,

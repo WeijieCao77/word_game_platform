@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
   const stats = store.getStats(id);
-  const canEdit = store.checkEditKey(id, req.headers.get("x-edit-key") ?? "");
+  const canEdit = canEditGame(req, id);
   return NextResponse.json({
     likes: stats.likes,
     plays: stats.plays,

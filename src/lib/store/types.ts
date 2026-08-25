@@ -101,6 +101,8 @@ export interface GameStore {
   adminStats(): {
     games: { total: number; published: number; drafts: number };
     creators: number;
+    /** 注册账号数与其中的管理员数（游客不计） */
+    accounts: { total: number; admins: number };
     totals: { plays: number; likes: number; playSeconds: number };
     daily: { date: string; plays: number; likes: number; playSeconds: number }[];
     topGames: { id: string; title: string; author: string; plays: number; likes: number; playSeconds: number; published: boolean }[];

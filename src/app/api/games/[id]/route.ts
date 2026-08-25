@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
 import { GameConfigSchema, validateGameConfig } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const record = store.get(id);
   if (!record) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
   const editKey = req.headers.get("x-edit-key") ?? "";
-  const canEdit = store.checkEditKey(id, editKey);
+  const canEdit = canEditGame(req, id);
   if (!record.published && !canEdit) {
     return NextResponse.json({ error: "游戏未发布" }, { status: 404 });
   }
@@ -34,7 +35,7 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   const { id } = await params;
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!store.checkEditKey(id, req.headers.get("x-edit-key") ?? "")) {
+  if (!canEditGame(req, id)) {
     return NextResponse.json({ error: "没有编辑权限（editKey 不正确）" }, { status: 403 });
   }
   store.delete(id);
@@ -45,7 +46,7 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   const { id } = await params;
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!store.checkEditKey(id, req.headers.get("x-edit-key") ?? "")) {
+  if (!canEditGame(req, id)) {
     return NextResponse.json({ error: "没有编辑权限（editKey 不正确）" }, { status: 403 });
   }
   let body: { config?: unknown; designCard?: string; author?: string };

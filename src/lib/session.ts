@@ -68,3 +68,20 @@ export function clearLoginFails(ip: string): void {
 export function ipOf(req: NextRequest): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 }
+
+/**
+ * 编辑权：编辑钥匙对得上，或者已登录且是这部作品的归属人。
+ * 两条路并存——游客靠钥匙，注册用户靠账号，换设备也不丢。
+ */
+export function canEditGame(req: NextRequest, gameId: string): boolean {
+  const store = getStore();
+  if (store.checkEditKey(gameId, req.headers.get("x-edit-key") ?? "")) return true;
+  const user = currentUser(req);
+  return !!user && store.gameOwner(gameId) === user.id;
+}
+
+/** AI 配额的计数口径：登录用账号，游客用编辑钥匙 */
+export function quotaKeyOf(req: NextRequest, fallback: string): string {
+  const user = currentUser(req);
+  return user ? `u:${user.id}` : fallback;
+}

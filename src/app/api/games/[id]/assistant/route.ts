@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame, quotaKeyOf } from "@/lib/session";
 import { GameConfig } from "@/lib/schema";
 import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   const record = store.get(id);
   if (!record) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
   const editKey = req.headers.get("x-edit-key") ?? "";
-  if (!store.checkEditKey(id, editKey)) {
+  if (!canEditGame(req, id)) {
     return NextResponse.json({ error: "没有编辑权限（editKey 不正确）" }, { status: 403 });
   }
   if (!aiConfigured()) {
@@ -28,10 +29,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     );
   }
 
-  // 配额：按 editKey 记账，防薅（交接文档要求第一天就有）
+  // 配额：登录用户按账号记账，游客按 editKey（交接文档要求第一天就有）
+  const quotaKey = quotaKeyOf(req, editKey);
   const maxRequests = Number(process.env.AI_DAILY_REQUESTS ?? 40);
   const maxTokens = Number(process.env.AI_DAILY_TOKENS ?? 400000);
-  const usage = store.aiUsageToday(editKey);
+  const usage = store.aiUsageToday(quotaKey);
   if (usage.requests >= maxRequests || usage.tokens >= maxTokens) {
     return NextResponse.json(
       { error: `今日 AI 用量已达上限（${maxRequests} 次 / ${maxTokens} tokens），明天再来吧。` },
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       { role: "user", content: history[history.length - 1].content },
       { role: "assistant", content: result.reply || "（无回复）" },
     ]);
-    const quota = store.aiConsume(editKey, result.totalTokens);
+    const quota = store.aiConsume(quotaKey, result.totalTokens);
     return NextResponse.json({
       reply: result.reply,
       config: result.config,

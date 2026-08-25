@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const { id } = await params;
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!store.checkEditKey(id, req.headers.get("x-edit-key") ?? "")) {
+  if (!canEditGame(req, id)) {
     return NextResponse.json({ error: "没有编辑权限（editKey 不正确）" }, { status: 403 });
   }
   return NextResponse.json({ assets: store.assetList(id) });

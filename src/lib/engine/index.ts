@@ -25,3 +25,4 @@ export { endTurn, upcomingRows } from "./settle";
 export type { ActionView } from "./actions";
 
 export { clockOf } from "./internal";
+export { pairKey, readRelation, changeRelation, taggedMembers, groupPairs } from "./relations";

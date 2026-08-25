@@ -18,7 +18,7 @@ const TextSchema = z.string().min(1).max(4000);
 export const EffectSchema = z
   .object({
     ref: z.string().min(1).max(128),
-    op: z.enum(["add", "set", "add_tag", "remove_tag", "pend"]),
+    op: z.enum(["add", "set", "add_tag", "remove_tag", "pend", "relate", "relate_group"]),
     value: ExprSchema.optional(),
     tag: IdSchema.optional(),
   })
@@ -28,6 +28,10 @@ export const EffectSchema = z
         ? e.value !== undefined
         : e.op === "pend"
           ? true // pend 的 ref 就是待办 id，不需要 value/tag
+          : e.op === "relate"
+            ? e.value !== undefined
+            : e.op === "relate_group"
+              ? e.value !== undefined && e.tag !== undefined
           : e.tag !== undefined,
     { message: "数值效果需要 value，标签效果需要 tag" }
   );
@@ -132,6 +136,16 @@ export const ActionDefSchema = z.object({
   cost: z.number().int().min(0).max(10).optional(),
   effects: z.array(EffectSchema).max(40),
   text: z.string().max(2000).optional(),
+});
+
+/** 关系网：两个角色之间的状态 */
+export const RelationDefSchema = z.object({
+  id: IdSchema,
+  name: NameSchema,
+  entityType: IdSchema,
+  initial: ExprSchema.optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
 });
 
 /** 待办：发出去要等回音的事（报价/申请/谈判） */
@@ -320,6 +334,7 @@ export const GameConfigSchema = z.object({
   settlements: z.array(SettlementDefSchema).max(60).optional(),
   curves: z.array(CurveDefSchema).max(60).optional(),
   pendings: z.array(PendingDefSchema).max(30).optional(),
+  relations: z.array(RelationDefSchema).max(8).optional(),
 });
 
 export type GameConfigInput = z.input<typeof GameConfigSchema>;

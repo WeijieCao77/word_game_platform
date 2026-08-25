@@ -18,7 +18,7 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
-const RESERVED = new Set(["time", "turn", "cycle", "true", "false", "fired", "searched", "self", "target", "row"]);
+const RESERVED = new Set(["time", "turn", "cycle", "true", "false", "fired", "searched", "self", "target", "other", "row"]);
 
 const GAME_FUNCTIONS: Record<string, { min: number; max: number }> = {
   rank: { min: 1, max: 1 },
@@ -27,6 +27,9 @@ const GAME_FUNCTIONS: Record<string, { min: number; max: number }> = {
   chance: { min: 1, max: 1 },
   fired: { min: 1, max: 1 },
   searched: { min: 1, max: 1 },
+  bond: { min: 1, max: 1 },
+  harmony: { min: 1, max: 2 },
+  worst_bond: { min: 1, max: 2 },
   tag: { min: 1, max: 1 },
   avg: { min: 2, max: 3 },
   sum: { min: 2, max: 3 },
@@ -468,6 +471,7 @@ class Validator {
     if ((c.driver.kind === "life" || c.driver.kind === "sim") && !c.text?.timeoutEnding) {
       this.warn("text", "建议配置 timeoutEnding（时间走完的兜底结局），否则使用系统默认文案");
     }
+    this.checkRelations();
     this.checkPendings();
     this.auditContent();
   }
@@ -763,6 +767,25 @@ class Validator {
     }
   }
 
+  private checkRelations(): void {
+    const c = this.config;
+    this.checkUnique("relations", c.relations ?? [], "关系");
+    for (const [i, r] of (c.relations ?? []).entries()) {
+      const base = `relations[${i}](${r.id})`;
+      if (!this.typeAttrs.has(r.entityType)) {
+        this.error(`${base}.entityType`, `关系挂在不存在的实体类型 "${r.entityType}" 上`);
+        continue;
+      }
+      if (r.initial) {
+        // 初值表达式里可以用 self.* 与 other.*（other 是对方）
+        this.checkExpr(r.initial, `${base}.initial`, { entity: { binding: "self", typeId: r.entityType } });
+      }
+      if (r.min !== undefined && r.max !== undefined && r.min > r.max) {
+        this.error(base, `关系 "${r.name}" 的 min(${r.min}) 大于 max(${r.max})`);
+      }
+    }
+  }
+
   private checkPendings(): void {
     const c = this.config;
     this.checkUnique("pendings", c.pendings ?? [], "待办");
@@ -797,6 +820,16 @@ class Validator {
     const pendingIds = new Set((this.config.pendings ?? []).map((p) => p.id));
     for (const [i, e] of (effects ?? []).entries()) {
       const p = `${path}[${i}]`;
+      if (e.op === "relate" || e.op === "relate_group") {
+        const rel = (this.config.relations ?? []).find((r) => r.id === e.ref);
+        if (!rel) {
+          this.error(p, `${e.op} 效果引用了不存在的关系 "${e.ref}"`);
+        } else if (e.op === "relate" && !ctx.entity) {
+          this.error(p, "relate 需要同时有 self 和 target 两个实体绑定，这个位置没有");
+        }
+        if (e.value) this.checkExpr(e.value, `${p}.value`, ctx);
+        continue;
+      }
       if (e.op === "pend") {
         // pend 的 ref 是待办 id，不是变量名
         if (!pendingIds.has(e.ref)) this.error(p, `pend 效果引用了不存在的待办 "${e.ref}"`);
@@ -879,6 +912,17 @@ class Validator {
           this.error(path, `searched() 引用了不存在的检索词条 "${arg.value}"`);
         }
       }
+      if (call.name === "bond" || call.name === "harmony" || call.name === "worst_bond") {
+        const arg = call.args[0];
+        if (arg.kind !== "str") {
+          this.error(path, `${call.name}() 的第一个参数必须是关系 id 字符串字面量，如 ${call.name}("羁绊")`);
+        } else if (!(this.config.relations ?? []).some((r) => r.id === arg.value)) {
+          this.error(path, `${call.name}() 引用了不存在的关系 "${arg.value}"`);
+        }
+        if (call.name === "bond" && !ctx.entity) {
+          this.error(path, "bond() 需要同时有 self 和 target 两个实体绑定，这个位置没有");
+        }
+      }
       if (call.name === "rank") {
         const arg = call.args[0];
         if (!this.isSim) this.error(path, "rank() 只在 sim 调度器中可用");
@@ -950,12 +994,14 @@ class Validator {
       return;
     }
     if (p.length === 2) {
-      if (head === "self" || head === "target") {
+      if (head === "self" || head === "target" || head === "other") {
         if (!ctx.entity) {
           this.error(path, `"${p.join(".")}" 需要实体上下文，但该位置没有 ${head}`);
           return;
         }
-        if (head !== ctx.entity.binding) {
+        // other 是「关系里的另一方」：只在关系初值这类成对上下文里出现，
+        // 它和 self 指向同一个实体类型，所以属性按同一张表校验
+        if (head !== "other" && head !== ctx.entity.binding) {
           this.error(path, `该位置的实体绑定是 "${ctx.entity.binding}"，不能用 "${head}"`);
           return;
         }

@@ -5,6 +5,7 @@
 import { ExprError, Scope, Value, evaluate, PURE_FUNCTIONS, asNumber } from "@/lib/expr";
 import { Effect, GameConfig, GameState } from "@/lib/schema";
 import { Rng } from "./rng";
+import { changeRelation, groupPairs, readRelation, relationDef, taggedMembers } from "./relations";
 
 export interface Bindings {
   self?: string;
@@ -53,7 +54,8 @@ export class GameScope implements Scope {
     }
     if (path.length === 2) {
       const [head, field] = path;
-      if (head === "self" || head === "target") {
+      if (head === "self" || head === "target" || head === "other") {
+        // other 是 target 的别名：写关系初值时「self 与 other」比「self 与 target」更像人话
         const entityId = head === "self" ? this.bindings.self : this.bindings.target;
         if (!entityId) return undefined;
         const def = this.config.entities?.find((e) => e.id === entityId);
@@ -99,6 +101,38 @@ export class GameScope implements Scope {
         if (typeof args[0] !== "string") throw new ExprError("searched() 需要检索词条 id 字符串");
         return (this.state.searched?.[args[0]] ?? 0) > 0 ? 1 : 0;
       }
+      case "bond": {
+        // self 与 target 之间的关系值——两个绑定都要有
+        if (typeof args[0] !== "string") throw new ExprError("bond() 需要关系 id 字符串");
+        const a = this.bindings.self;
+        const b = this.bindings.target;
+        if (!a || !b) throw new ExprError("bond() 需要同时有 self 和 target 两个实体绑定");
+        return readRelation(this.config, this.state, args[0], a, b, (x, y) => this.initialRelation(args[0] as string, x, y));
+      }
+      case "harmony": {
+        // 一群人两两之间的平均关系值——队内和谐度就是它
+        if (typeof args[0] !== "string") throw new ExprError("harmony() 需要关系 id 字符串");
+        const tag = args[1] === undefined ? undefined : String(args[1]);
+        const pairs = groupPairs(taggedMembers(this.config, this.state, args[0], tag));
+        if (pairs.length === 0) return 0;
+        let sum = 0;
+        for (const [x, y] of pairs) {
+          sum += readRelation(this.config, this.state, args[0], x, y, (m, n) => this.initialRelation(args[0] as string, m, n));
+        }
+        return sum / pairs.length;
+      }
+      case "worst_bond": {
+        // 最差的那一对——「更衣室里有没有人处不来」靠它判断
+        if (typeof args[0] !== "string") throw new ExprError("worst_bond() 需要关系 id 字符串");
+        const tag = args[1] === undefined ? undefined : String(args[1]);
+        const pairs = groupPairs(taggedMembers(this.config, this.state, args[0], tag));
+        if (pairs.length === 0) return 0;
+        let lo = Infinity;
+        for (const [x, y] of pairs) {
+          lo = Math.min(lo, readRelation(this.config, this.state, args[0], x, y, (m, n) => this.initialRelation(args[0] as string, m, n)));
+        }
+        return lo;
+      }
       case "tag": {
         if (typeof args[0] !== "string") throw new ExprError("tag() 需要标签名字符串");
         const entityId = this.bindings.self ?? this.bindings.target;
@@ -123,6 +157,19 @@ export class GameScope implements Scope {
       default:
         throw new ExprError(`未知函数 "${name}"`);
     }
+  }
+
+  /**
+   * 没碰过的那一对，初值现算。
+   * initial 表达式里可以用 self.* 和 other.* ——比如「同龄人天然亲近一点」
+   * 写成 "10 - abs(self.年龄 - other.年龄)"。
+   */
+  private initialRelation(relId: string, a: string, b: string): number {
+    const def = relationDef(this.config, relId);
+    if (!def?.initial) return 0;
+    // self=a、target=b（other 是 target 的别名，读起来更像人话）
+    const scope = new GameScope(this.config, this.state, this.rng, { self: a, target: b });
+    return asNumber(evaluate(def.initial, scope), def.initial);
   }
 
   private aggregate(name: string, args: Value[]): number {
@@ -194,6 +241,26 @@ export function clampEntityAttr(config: GameConfig, entityId: string, attrId: st
 
 export function applyEffects(config: GameConfig, state: GameState, scope: GameScope, effects: Effect[] | undefined, bindings: Bindings): void {
   for (const e of effects ?? []) {
+    if (e.op === "relate" || e.op === "relate_group") {
+      const delta = asNumber(evaluate(e.value!, scope), e.value);
+      const initFn = (x: string, y: string): number => {
+        const def = relationDef(config, e.ref);
+        if (!def?.initial) return 0;
+        return asNumber(evaluate(def.initial, scope.withBindings({ self: x, target: y })), def.initial);
+      };
+      if (e.op === "relate") {
+        const a = bindings.self;
+        const b = bindings.target;
+        if (!a || !b) throw new Error(`relate 需要同时有 self 和 target 两个实体绑定（关系 "${e.ref}"）`);
+        changeRelation(config, state, e.ref, a, b, delta, initFn);
+      } else {
+        // 组内两两都变——团建、集训、一起打了一场硬仗，都是这个形状
+        if (!e.tag) throw new Error(`relate_group 需要 tag 指定分组（关系 "${e.ref}"）`);
+        const members = taggedMembers(config, state, e.ref, e.tag);
+        for (const [x, y] of groupPairs(members)) changeRelation(config, state, e.ref, x, y, delta, initFn);
+      }
+      continue;
+    }
     if (e.op === "pend") {
       // 发起一件「要等回音的事」：现在只记下到期回合，结果留到那时候再算。
       // 转会报价、赞助洽谈、招聘邀约、跳槽求职都是这个形状。

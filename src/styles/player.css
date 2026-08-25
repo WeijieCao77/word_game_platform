@@ -187,6 +187,53 @@
   font-size: 15px;
 }
 
+/* 关系网：谁和谁处得来、谁和谁处不来 */
+.relation-web {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.relation-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 10px 12px;
+}
+.relation-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.relation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.relation-link {
+  color: var(--muted);
+}
+.relation-value {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.relation-value.good {
+  color: var(--victory);
+}
+.relation-value.bad {
+  color: var(--defeat);
+}
+.relation-sep {
+  margin: 7px 0 3px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
 /* 待办箱：已经发出去、还在等回音的事 */
 .pending-box {
   border: 1px solid var(--border);

@@ -113,14 +113,43 @@ export interface Effect {
   ref: string;
   /**
    * add/set 改数值，add_tag/remove_tag 改标签，
-   * pend 发起一件「要等回音的事」（ref 写待办 id，见 PendingDef）。
+   * pend 发起一件「要等回音的事」（ref 写待办 id，见 PendingDef），
+   * relate/relate_group 改两个角色之间的关系（ref 写关系 id，见 RelationDef）。
    */
-  op: "add" | "set" | "add_tag" | "remove_tag" | "pend";
+  op: "add" | "set" | "add_tag" | "remove_tag" | "pend" | "relate" | "relate_group";
   value?: string;
   tag?: string;
 }
 
 // ---------------- sim 专用（实体/决策/结算/曲线） ----------------
+
+/**
+ * 关系网：两个角色**之间**的状态。
+ *
+ * 平台原本只有两种状态：全局变量、以及每个角色自己的属性。谁和谁的关系无处安放——
+ * 恋爱、宗门、宫斗、群像、队内羁绊，全都卡在这一条上。
+ *
+ * 存储是惰性的：只有被读过或改过的那一对才进存档，没碰过的按 initial 现算，
+ * 所以 500 个角色也不会铺开 12 万条记录。
+ *
+ * 表达式里这样用：
+ *   bond("羁绊")                 self 与 target 之间的值（两个绑定都要有）
+ *   harmony("羁绊", "主力")      带该标签的角色两两之间的平均值
+ *   worst_bond("羁绊", "主力")   其中最差的一对
+ * 效果里这样改：
+ *   { ref: "羁绊", op: "relate", value: "3" }                 self↔target
+ *   { ref: "羁绊", op: "relate_group", tag: "主力", value: "1" }  组内两两都变
+ */
+export interface RelationDef {
+  id: string;
+  name: string;
+  /** 参与这张关系网的实体类型 */
+  entityType: string;
+  /** 没碰过的一对默认是多少（表达式，可用 self.* 与 other.*）；不填按 0 */
+  initial?: string;
+  min?: number;
+  max?: number;
+}
 
 /**
  * 待办：发出去要等回音的事——转会报价、赞助洽谈、招聘邀约、跳槽求职。
@@ -485,8 +514,10 @@ export interface GameConfig {
   actions?: ActionDef[];
   settlements?: SettlementDef[];
   curves?: CurveDef[];
-  /** 待办：发出去要等回音的事（报价/申请/谈判） */
+    /** 待办：发出去要等回音的事（报价/申请/谈判） */
   pendings?: PendingDef[];
+  /** 关系网：两个角色之间的状态（羁绊/好感/恩怨） */
+  relations?: RelationDef[];
 }
 
 // ---------------- 运行时状态 ----------------
@@ -513,6 +544,8 @@ export interface GameState {
   cycle?: number;
   /** sim：本回合剩余行动点（driver.actionPoints 启用时维护） */
   apLeft?: number;
+  /** 关系网：relationId → "A|B"（两个 id 排序后拼接）→ 关系值。只存碰过的那些对 */
+  relations?: Record<string, Record<string, number>>;
   /** 挂起中的待办：报价/申请/谈判，到期自动出结果 */
   pendings?: PendingItem[];
   /** 全局检索台：各词条被查到的次数（效果只在首次生效） */

@@ -8,6 +8,7 @@ import { GameLog } from "./LogView";
 import Roster from "./Roster";
 import SimSchedule from "./SimSchedule";
 import PendingBox from "./PendingBox";
+import RelationWeb from "./RelationWeb";
 import { EndingBanner, ExplainPanel, UpcomingPanel } from "./panels";
 
 // sim 的多页签界面：像一款正经的经营网页游戏那样切页操作，
@@ -117,6 +118,7 @@ export default function SimView({
       {activeTab === "roster" && (
         <div className="sim-panel">
           <Roster config={config} state={state} />
+          <RelationWeb config={config} state={state} />
         </div>
       )}
       {activeTab === "schedule" && (

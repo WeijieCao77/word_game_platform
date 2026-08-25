@@ -87,3 +87,43 @@ describe("官方示例：雨夜末班车（story）", () => {
     expect(report.unfiredCards).toEqual([]);
   });
 });
+
+describe("官方示例：栖雪山庄的第八位客人（story 本格推理）", () => {
+  const raw = load("manor-demo.json");
+
+  it("通过结构 + 语义校验，无错误无警告", () => {
+    const r = validateGameConfig(raw);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.filter((i) => i.severity === "warning")).toEqual([]);
+  });
+
+  it("模拟 600 局：无错误，全结局可达，全卡片触发", { timeout: 120000 }, () => {
+    const r = validateGameConfig(raw);
+    const report = simulate(r.config!, 600, 88);
+    expect(report.errors).toEqual([]);
+    expect(report.endings["__unfinished__"]).toBeUndefined();
+    expect(report.unreachedEndings).toEqual([]);
+    expect(report.unfiredCards).toEqual([]);
+  });
+});
+
+describe("官方示例：他不是自己掉下去的（story 社会派推理，含关键词输入门）", () => {
+  const raw = load("coldcase-demo.json");
+
+  it("通过结构 + 语义校验，无错误无警告；至少 2 处关键词输入门", () => {
+    const r = validateGameConfig(raw);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.filter((i) => i.severity === "warning")).toEqual([]);
+    const inputs = (raw as { cards: { input?: unknown }[] }).cards.filter((c) => c.input).length;
+    expect(inputs).toBeGreaterThanOrEqual(2);
+  });
+
+  it("模拟 600 局：无错误，全结局可达，全卡片触发", { timeout: 120000 }, () => {
+    const r = validateGameConfig(raw);
+    const report = simulate(r.config!, 600, 88);
+    expect(report.errors).toEqual([]);
+    expect(report.endings["__unfinished__"]).toBeUndefined();
+    expect(report.unreachedEndings).toEqual([]);
+    expect(report.unfiredCards).toEqual([]);
+  });
+});

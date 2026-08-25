@@ -4,6 +4,8 @@ import {
   step,
   choose,
   pendingChoices,
+  pendingInput,
+  submitInput,
   performAction,
   endTurn,
   availableActions,
@@ -68,9 +70,32 @@ export function simulate(config: GameConfig, runs = 200, baseSeed = 12345): Simu
       while (!state.ended && guard++ < MAX_STEPS_PER_RUN) {
         if (state.pendingCard) {
           const options = pendingChoices(config, state);
-          if (options.length === 0) break;
-          const pick = options[pickRng.int(0, options.length - 1)];
-          state = choose(config, state, pick.id);
+          const gate = pendingInput(config, state);
+          if (gate && (options.length === 0 || pickRng.next() < 0.5)) {
+            // 关键词输入门：随机策略从该卡的答案键里挑一个词提交（模拟「玩家想到了」），
+            // 两成概率输错一次以覆盖 fallback 路径
+            const card = config.cards.find((c) => c.id === state.pendingCard)!;
+            const answers = card.input!.answers;
+            if (pickRng.next() < 0.2) {
+              state = submitInput(config, state, `__miss_${pickRng.int(0, 999)}`);
+            }
+            if (state.pendingCard === card.id) {
+              const a = answers[pickRng.int(0, answers.length - 1)];
+              state = submitInput(config, state, a.keywords[pickRng.int(0, a.keywords.length - 1)]);
+              // 命中了带 condition 的锁定答案可能无效：仍停在原卡则强制走一遍全部答案键
+              if (state.pendingCard === card.id) {
+                for (const alt of answers) {
+                  state = submitInput(config, state, alt.keywords[0]);
+                  if (state.pendingCard !== card.id || state.ended) break;
+                }
+              }
+            }
+            if (state.pendingCard === card.id && options.length === 0) break;
+          } else {
+            if (options.length === 0) break;
+            const pick = options[pickRng.int(0, options.length - 1)];
+            state = choose(config, state, pick.id);
+          }
         } else if (config.driver.kind === "life") {
           state = step(config, state);
         } else if (config.driver.kind === "sim") {

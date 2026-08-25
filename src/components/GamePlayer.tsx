@@ -8,6 +8,8 @@ import {
   step,
   choose,
   pendingChoices,
+  pendingInput,
+  submitInput,
   performAction,
   endTurn,
   availableActions,
@@ -108,6 +110,16 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
       return pendingChoices(config, state);
     } catch {
       return [];
+    }
+  }, [config, state]);
+
+  const [kwText, setKwText] = useState("");
+  const inputGate = useMemo(() => {
+    if (!state) return null;
+    try {
+      return pendingInput(config, state);
+    } catch {
+      return null;
     }
   }, [config, state]);
 
@@ -391,12 +403,37 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                 </button>
               </p>
             </div>
-          ) : choices.length > 0 ? (
-            choices.map((c) => (
-              <button key={c.id} className="choice-btn" onClick={() => act(() => choose(config, state, c.id))}>
-                {c.label}
-              </button>
-            ))
+          ) : choices.length > 0 || inputGate ? (
+            <>
+              {choices.map((c) => (
+                <button key={c.id} className="choice-btn" onClick={() => act(() => choose(config, state, c.id))}>
+                  {c.label}
+                </button>
+              ))}
+              {inputGate && (
+                <form
+                  className="kw-gate"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const t = kwText.trim();
+                    if (!t) return;
+                    setKwText("");
+                    act(() => submitInput(config, state, t));
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={kwText}
+                    placeholder={inputGate.prompt}
+                    maxLength={40}
+                    onChange={(e) => setKwText(e.target.value)}
+                  />
+                  <button className="btn small" type="submit" disabled={!kwText.trim()}>
+                    检索
+                  </button>
+                </form>
+              )}
+            </>
           ) : isSim ? (
             <>
               <div className="action-grid">

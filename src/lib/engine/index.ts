@@ -5,6 +5,8 @@ export {
   step,
   choose,
   pendingChoices,
+  pendingInput,
+  submitInput,
   performAction,
   endTurn,
   availableActions,

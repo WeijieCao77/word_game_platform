@@ -8,6 +8,7 @@ import {
   GameState,
 } from "@/lib/schema";
 import { Rng, createRng } from "./rng";
+import { normalizeKeyword } from "@/lib/keyword";
 
 // 纯函数引擎：同一份配置 + 同一个种子 + 同样的操作序列 => 完全相同的过程。
 // 播放器、编辑器预览、模拟器、AI 的 simulate 工具共用这一份实现。
@@ -302,7 +303,8 @@ function resolveCard(config: GameConfig, state: GameState, scope: GameScope, sta
       return;
     }
     const choices = availableChoicesOf(card, cardScope);
-    if (choices.length > 0) {
+    if (choices.length > 0 || (card.input && card.input.answers.length > 0)) {
+      // 有选项或关键词输入门：停牌等待玩家
       state.pendingCard = card.id;
       state.pendingEntity = scopeEntity;
       return;
@@ -670,6 +672,89 @@ function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope):
 
 // ---------------- 共用 ----------------
 
+/** 选择/输入结算后的收尾管线：条件结局 → life 时间上限 → sim 回合剩余管线 */
+function continueAfterResolution(config: GameConfig, state: GameState, baseScope: GameScope, renderScope: GameScope): void {
+  if (!state.pendingCard && !state.ended) {
+    checkConditionEndings(config, state, baseScope);
+    if (config.driver.kind === "life" && !state.ended && (state.time ?? 0) >= config.driver.time.max) {
+      const te = config.text?.timeoutEnding;
+      implicitEnd(state, te?.title ?? "岁月尽头", te?.text ? renderText(te.text, renderScope) : undefined);
+    }
+    // sim：事件处理完后继续走完本回合剩余管线
+    if (config.driver.kind === "sim" && !state.ended) {
+      runCurves(config, state, baseScope, "turn");
+      checkConditionEndings(config, state, baseScope);
+      if (!state.ended) advanceSimTime(config, state, baseScope);
+    }
+  }
+}
+
+/** 当前待选卡的关键词输入门（渲染后的提示语）；没有则 null */
+export function pendingInput(config: GameConfig, state: GameState): { prompt: string } | null {
+  if (!state.pendingCard || state.ended) return null;
+  const card = config.cards.find((c) => c.id === state.pendingCard);
+  if (!card?.input || card.input.answers.length === 0) return null;
+  const rng = createRng(state.rngState);
+  const scope = new GameScope(config, state, rng).withBindings(
+    state.pendingEntity ? { self: state.pendingEntity } : {}
+  );
+  return { prompt: renderText(card.input.prompt ?? "输入关键词检索", scope) };
+}
+
+/**
+ * 在带关键词输入门的待选卡上提交输入（MISSING 式调查玩法）。
+ * 命中答案按选项语义结算；未命中记录一次无果检索，停留在原卡上。
+ */
+export function submitInput(config: GameConfig, input: GameState, textRaw: string): GameState {
+  if (input.ended) return input;
+  if (!input.pendingCard) throw new Error("当前没有待输入的卡片");
+  const typed = normalizeKeyword(textRaw);
+  if (!typed) return input;
+  const state = structuredClone(input);
+  const rng = createRng(state.rngState);
+  const baseScope = new GameScope(config, state, rng);
+  const bindings: Bindings = state.pendingEntity ? { self: state.pendingEntity } : {};
+  const scope = baseScope.withBindings(bindings);
+  const card = config.cards.find((c) => c.id === state.pendingCard)!;
+  if (!card.input || card.input.answers.length === 0) throw new Error("这张卡没有输入框");
+
+  const hit = card.input.answers.find(
+    (a) =>
+      (!a.condition || truthy(evaluate(a.condition, scope))) &&
+      a.keywords.some((k) => normalizeKeyword(k) === typed)
+  );
+  const shown = textRaw.trim().slice(0, 40);
+  if (!hit) {
+    state.log.push({ kind: "choice", text: `▸ 检索「${shown}」`, turn: state.turn });
+    state.log.push({
+      kind: "card",
+      text: renderText(card.input.fallbackText ?? "没有查到相关结果。", scope),
+      turn: state.turn,
+    });
+    state.rngState = rng.state();
+    return state;
+  }
+
+  const scopeEntity = state.pendingEntity;
+  state.pendingCard = undefined;
+  state.pendingEntity = undefined;
+  state.log.push({ kind: "choice", text: `▸ 检索「${shown}」`, turn: state.turn });
+  applyEffects(config, state, scope, hit.effects, bindings);
+  if (hit.text) state.log.push({ kind: "card", text: renderText(hit.text, scope), turn: state.turn });
+
+  if (hit.ending) {
+    endGame(config, state, scope, hit.ending);
+  } else if (hit.goto) {
+    resolveCard(config, state, baseScope, hit.goto, scopeEntity);
+  } else if (config.driver.kind === "story") {
+    implicitEnd(state, config.text?.timeoutEnding?.title ?? DEFAULT_END.title, config.text?.timeoutEnding?.text);
+  }
+
+  continueAfterResolution(config, state, baseScope, scope);
+  state.rngState = rng.state();
+  return state;
+}
+
 /** 在待选卡上做出选择（三种调度器共用） */
 export function choose(config: GameConfig, input: GameState, choiceId: string): GameState {
   if (input.ended) return input;
@@ -698,19 +783,7 @@ export function choose(config: GameConfig, input: GameState, choiceId: string): 
     implicitEnd(state, config.text?.timeoutEnding?.title ?? DEFAULT_END.title, config.text?.timeoutEnding?.text);
   }
 
-  if (!state.pendingCard && !state.ended) {
-    checkConditionEndings(config, state, baseScope);
-    if (config.driver.kind === "life" && !state.ended && (state.time ?? 0) >= config.driver.time.max) {
-      const te = config.text?.timeoutEnding;
-      implicitEnd(state, te?.title ?? "岁月尽头", te?.text ? renderText(te.text, scope) : undefined);
-    }
-    // sim：事件选择处理完后继续走完本回合剩余管线
-    if (config.driver.kind === "sim" && !state.ended) {
-      runCurves(config, state, baseScope, "turn");
-      checkConditionEndings(config, state, baseScope);
-      if (!state.ended) advanceSimTime(config, state, baseScope);
-    }
-  }
+  continueAfterResolution(config, state, baseScope, scope);
   state.rngState = rng.state();
   return state;
 }

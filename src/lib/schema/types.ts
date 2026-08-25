@@ -214,6 +214,29 @@ export interface ChoiceDef {
   ending?: string;
 }
 
+/** 关键词输入门的一组答案：命中任一 keyword 即按选项语义结算 */
+export interface InputAnswerDef {
+  id: string;
+  /** 可命中的关键词（归一化后精确匹配：去首尾空白/小写/全角转半角） */
+  keywords: string[];
+  /** 额外开启条件（如需先拿到某线索才认这个词） */
+  condition?: string;
+  effects?: Effect[];
+  /** 命中后的结果文案（支持 {表达式} 插值） */
+  text?: string;
+  goto?: string;
+  ending?: string;
+}
+
+/** 关键词输入门（调查向玩法核心）：玩家自由输入文本，输对了才解锁——「自己想到才算数」 */
+export interface CardInputDef {
+  /** 输入框提示语，如「输入你想检索的人名/地名」 */
+  prompt?: string;
+  answers: InputAnswerDef[];
+  /** 未命中时的反馈文案（支持 {表达式} 插值），默认「没有查到相关结果」 */
+  fallbackText?: string;
+}
+
 /**
  * 内容卡：平台的原子内容单位。
  * - life 调度器：weight>0 的卡进入随机抽取池；priority 卡在条件满足时强制触发
@@ -245,6 +268,8 @@ export interface CardDef {
   textVariants?: string[];
   effects?: Effect[];
   choices?: ChoiceDef[];
+  /** 关键词输入门：玩家自由输入文本解锁（可与 choices 并存） */
+  input?: CardInputDef;
   /** 无选项时自动接到下一张卡（叙事链） */
   goto?: string;
   /** 触发后直接进入某个结局 */

@@ -160,6 +160,22 @@ export const ChoiceDefSchema = z.object({
   ending: IdSchema.optional(),
 });
 
+export const InputAnswerDefSchema = z.object({
+  id: IdSchema,
+  keywords: z.array(z.string().min(1).max(40)).min(1).max(20),
+  condition: ExprSchema.optional(),
+  effects: z.array(EffectSchema).max(20).optional(),
+  text: z.string().max(4000).optional(),
+  goto: IdSchema.optional(),
+  ending: IdSchema.optional(),
+});
+
+export const CardInputDefSchema = z.object({
+  prompt: z.string().max(200).optional(),
+  answers: z.array(InputAnswerDefSchema).min(1).max(40),
+  fallbackText: z.string().max(2000).optional(),
+});
+
 export const CardDefSchema = z.object({
   id: IdSchema,
   title: z.string().max(60).optional(),
@@ -172,6 +188,7 @@ export const CardDefSchema = z.object({
   textVariants: z.array(TextSchema).max(8).optional(),
   effects: z.array(EffectSchema).max(20).optional(),
   choices: z.array(ChoiceDefSchema).max(8).optional(),
+  input: CardInputDefSchema.optional(),
   goto: IdSchema.optional(),
   ending: IdSchema.optional(),
   scope: z.object({ entityType: IdSchema, condition: ExprSchema.optional() }).optional(),

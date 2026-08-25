@@ -1,6 +1,7 @@
 import { collectRefs, parseExpr, ExprError, Expr, PURE_FUNCTIONS } from "@/lib/expr";
 import { CardDef, Effect, GameConfig } from "./types";
 import { GameConfigSchema } from "./zod";
+import { normalizeKeyword } from "@/lib/keyword";
 
 // 语义校验：结构合法之后，检查引用是否悬空、表达式与作用域是否正确、
 // 孤儿卡、不可达结局。错误信息要能直接报给作者/AI。
@@ -141,6 +142,7 @@ class Validator {
     for (const card of c.cards) {
       collectTags(card.effects);
       for (const ch of card.choices ?? []) collectTags(ch.effects);
+      for (const a of card.input?.answers ?? []) collectTags(a.effects);
     }
     for (const a of c.actions ?? []) collectTags(a.effects);
     for (const s of c.settlements ?? []) for (const o of s.outcomes) collectTags(o.effects);
@@ -275,6 +277,37 @@ class Validator {
           this.error(`${cb}.ending`, `选项 "${ch.id}" 引用了不存在的结局 "${ch.ending}"`);
         }
       }
+      // 关键词输入门
+      if (card.input) {
+        const ib = `${base}.input`;
+        if (card.input.prompt) this.checkTemplate(card.input.prompt, `${ib}.prompt`, ctx);
+        if (card.input.fallbackText) this.checkTemplate(card.input.fallbackText, `${ib}.fallbackText`, ctx);
+        const aseen = new Set<string>();
+        const kwSeen = new Set<string>();
+        for (const [j, a] of card.input.answers.entries()) {
+          const ab = `${ib}.answers[${j}](${a.id})`;
+          if (aseen.has(a.id)) this.error(ab, `卡片 "${card.id}" 的输入答案 id "${a.id}" 重复`);
+          aseen.add(a.id);
+          if (a.condition) this.checkExpr(a.condition, `${ab}.condition`, ctx);
+          if (a.text) this.checkTemplate(a.text, `${ab}.text`, ctx);
+          this.checkEffects(a.effects, `${ab}.effects`, ctx);
+          if (a.goto && a.ending) this.error(ab, `输入答案 "${a.id}" 不能同时设置 goto 和 ending`);
+          if (a.goto && !this.cardIds.has(a.goto)) {
+            this.error(`${ab}.goto`, `输入答案 "${a.id}" 的 goto 指向不存在的卡 "${a.goto}"`);
+          }
+          if (a.ending && !this.endingIds.has(a.ending)) {
+            this.error(`${ab}.ending`, `输入答案 "${a.id}" 引用了不存在的结局 "${a.ending}"`);
+          }
+          for (const kw of a.keywords) {
+            const norm = normalizeKeyword(kw);
+            if (!norm) this.error(ab, `关键词 "${kw}" 归一化后为空`);
+            else if (kwSeen.has(norm) && !a.condition) {
+              this.warn(ab, `关键词 "${kw}" 与前面的答案重复，永远轮不到答案 "${a.id}"`);
+            }
+            kwSeen.add(norm);
+          }
+        }
+      }
     }
 
     // 调度器
@@ -335,13 +368,14 @@ class Validator {
       if (!card) continue;
       if (card.goto) queue.push(card.goto);
       for (const ch of card.choices ?? []) if (ch.goto) queue.push(ch.goto);
+      for (const a of card.input?.answers ?? []) if (a.goto) queue.push(a.goto);
     }
     for (const card of this.config.cards) {
       if (!visited.has(card.id)) this.warn(`cards(${card.id})`, `卡片 "${card.id}" 从起始卡无法到达（孤儿卡）`);
     }
     for (const id of visited) {
       const card = byId.get(id);
-      if (card && !card.choices?.length && !card.goto && !card.ending) {
+      if (card && !card.choices?.length && !card.input?.answers?.length && !card.goto && !card.ending) {
         this.warn(`cards(${card.id})`, `卡片 "${card.id}" 是死端（无选项/goto/ending），游戏会在此以默认结局收尾`);
       }
     }
@@ -352,6 +386,7 @@ class Validator {
     for (const card of this.config.cards) {
       if (card.goto) linked.add(card.goto);
       for (const ch of card.choices ?? []) if (ch.goto) linked.add(ch.goto);
+      for (const a of card.input?.answers ?? []) if (a.goto) linked.add(a.goto);
     }
     for (const card of this.config.cards) {
       const drawable = (card.weight ?? 0) > 0 || card.priority !== undefined;
@@ -371,6 +406,7 @@ class Validator {
     for (const card of this.config.cards) {
       scan(card.effects);
       for (const ch of card.choices ?? []) scan(ch.effects);
+      for (const a of card.input?.answers ?? []) scan(a.effects);
     }
     for (const a of this.config.actions ?? []) scan(a.effects);
     for (const s of this.config.settlements ?? []) for (const o of s.outcomes) scan(o.effects);
@@ -384,6 +420,7 @@ class Validator {
     for (const card of this.config.cards) {
       if (card.ending) refs.add(card.ending);
       for (const ch of card.choices ?? []) if (ch.ending) refs.add(ch.ending);
+      for (const a of card.input?.answers ?? []) if (a.ending) refs.add(a.ending);
     }
     return refs;
   }

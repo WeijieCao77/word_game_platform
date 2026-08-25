@@ -270,6 +270,27 @@ textarea {
   white-space: nowrap;
 }
 
+/* 关键词输入门（MISSING 式检索框） */
+.kw-gate {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kw-gate input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+}
+.kw-gate input:focus {
+  outline: none;
+  border-color: var(--accent, #6bd68b);
+}
+
 /* 点赞按钮 */
 .like-btn {
   background: none;

@@ -269,6 +269,11 @@ export interface CardDef {
   /** 正文，支持 {表达式} 插值 */
   text: string;
   /**
+   * 配图：素材名（作者在工作台「封面与素材」上传）或 https 外链。
+   * 展示在卡片文字上方——角色立绘、场景、宗门图等。图片由作者提供，AI 只建议放图位。
+   */
+  image?: string;
+  /**
    * 反重复文案变体：填了则每次触发从 [text, ...textVariants] 中按种子随机挑一套展示。
    * 高频卡（日常/事件）建议至少配 2 条变体，同一张卡多次出现不再一字不差。
    */
@@ -330,6 +335,8 @@ export interface LogEntry {
   kind: "intro" | "header" | "card" | "choice" | "ending" | "action" | "settlement";
   text: string;
   turn: number;
+  /** 卡片配图（素材名或 https 外链），播放器渲染在文字上方 */
+  image?: string;
 }
 
 export interface EntityState {

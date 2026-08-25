@@ -51,6 +51,15 @@ export interface GameStore {
   /** 自定义封面：data=null 表示移除 */
   setCover(id: string, data: Uint8Array | null, contentType?: string): void;
   getCover(id: string): { data: Uint8Array; contentType: string } | null;
+  /** 游戏内图片素材（作者上传，卡片以名称引用） */
+  assetPut(gameId: string, name: string, data: Uint8Array, contentType: string): void;
+  assetGet(gameId: string, name: string): { data: Uint8Array; contentType: string } | null;
+  assetList(gameId: string): { name: string; contentType: string; size: number }[];
+  assetDelete(gameId: string, name: string): void;
+  /** 公共素材库：作者自愿共享的图片，他人可导入自己的游戏 */
+  libraryAssetAdd(entry: { id: string; name: string; data: Uint8Array; contentType: string; author: string }): void;
+  libraryAssetList(): { id: string; name: string; contentType: string; size: number; author: string }[];
+  libraryAssetGet(id: string): { data: Uint8Array; contentType: string } | null;
   /** 统计：进入游玩 +1 / 点赞增减 / 游玩时长累计（按日累计，创作者数据后台的地基） */
   addPlay(id: string): void;
   addLike(id: string, delta: 1 | -1): void;

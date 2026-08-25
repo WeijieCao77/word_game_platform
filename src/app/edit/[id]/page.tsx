@@ -73,6 +73,10 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chatBusy, setChatBusy] = useState(false);
   const [chatSeconds, setChatSeconds] = useState(0);
   const [hasCover, setHasCover] = useState(false);
+  const [assets, setAssets] = useState<{ name: string; contentType: string; size: number }[] | null>(null);
+  const [assetName, setAssetName] = useState("");
+  const [assetShare, setAssetShare] = useState(false);
+  const [libAssets, setLibAssets] = useState<{ id: string; name: string; size: number; author: string }[] | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverVersion, setCoverVersion] = useState(0);
   const [libEntries, setLibEntries] = useState<LibraryEntry[] | null>(null);
@@ -257,6 +261,131 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setCoverBusy(false);
     }
   }, [editKey, id]);
+
+  /** 设计卡「素材清单」自动维护：作者可查，AI 工作室也因此知道有哪些图可用 */
+  const syncAssetSection = useCallback(
+    (names: string[]): void => {
+      const marker = "## 素材清单（自动维护）";
+      const body =
+        names.length === 0
+          ? "（还没有上传素材）"
+          : names.map((n) => `- ${n} —— 卡片 image 字段填 "${n}" 即可展示`).join("\n");
+      const section = `${marker}\n${body}\n`;
+      setDesignCard((prev) => {
+        const idx = prev.indexOf(marker);
+        let next: string;
+        if (idx >= 0) {
+          const after = prev.indexOf("\n## ", idx + marker.length);
+          next = after >= 0 ? prev.slice(0, idx) + section + prev.slice(after + 1) : prev.slice(0, idx) + section;
+        } else {
+          next = prev.trimEnd() + "\n\n" + section;
+        }
+        void fetch(`/api/games/${id}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", "x-edit-key": editKey ?? "" },
+          body: JSON.stringify({ designCard: next }),
+        }).catch(() => undefined);
+        return next;
+      });
+    },
+    [editKey, id]
+  );
+
+  const loadAssets = useCallback(async (): Promise<void> => {
+    if (!editKey) return;
+    const res = await fetch(`/api/games/${id}/assets`, { headers: { "x-edit-key": editKey } });
+    const body = await res.json();
+    if (res.ok) setAssets(body.assets ?? []);
+  }, [editKey, id]);
+
+  const uploadAsset = useCallback(
+    async (file: File): Promise<void> => {
+      if (!editKey) return;
+      const name = assetName.trim();
+      if (!name) {
+        setStatusMsg("先给素材起个名字（如 女主立绘、宗门大门）");
+        return;
+      }
+      setCoverBusy(true);
+      try {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("图片读取失败"));
+          img.src = url;
+        });
+        const scale = Math.min(1, 900 / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx2 = canvas.getContext("2d");
+        if (!ctx2) throw new Error("浏览器不支持 canvas");
+        ctx2.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+        if (!blob) throw new Error("图片编码失败");
+        const res = await fetch(
+          `/api/games/${id}/assets/${encodeURIComponent(name)}${assetShare ? "?share=1" : ""}`,
+          { method: "PUT", headers: { "content-type": "image/jpeg", "x-edit-key": editKey }, body: blob }
+        );
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "上传失败");
+        setStatusMsg(`素材「${name}」已上传${assetShare ? "，并已分享到公共素材库" : ""} ✓`);
+        setAssetName("");
+        const list = [...(assets ?? []).filter((a) => a.name !== name), { name, contentType: "image/jpeg", size: blob.size }];
+        setAssets(list);
+        syncAssetSection(list.map((a) => a.name));
+      } catch (err) {
+        setStatusMsg(err instanceof Error ? err.message : String(err));
+      } finally {
+        setCoverBusy(false);
+      }
+    },
+    [assetName, assetShare, assets, editKey, id, syncAssetSection]
+  );
+
+  const deleteAsset = useCallback(
+    async (name: string): Promise<void> => {
+      if (!editKey || !window.confirm(`删除素材「${name}」？引用它的卡片将显示不出图。`)) return;
+      const res = await fetch(`/api/games/${id}/assets/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        headers: { "x-edit-key": editKey },
+      });
+      if (res.ok) {
+        const list = (assets ?? []).filter((a) => a.name !== name);
+        setAssets(list);
+        syncAssetSection(list.map((a) => a.name));
+        setStatusMsg(`已删除素材「${name}」`);
+      }
+    },
+    [assets, editKey, id, syncAssetSection]
+  );
+
+  const importLibAsset = useCallback(
+    async (libId: string, name: string): Promise<void> => {
+      if (!editKey) return;
+      try {
+        const bytes = await (await fetch(`/api/library/assets/${encodeURIComponent(libId)}`)).blob();
+        const res = await fetch(`/api/games/${id}/assets/${encodeURIComponent(name)}`, {
+          method: "PUT",
+          headers: { "content-type": bytes.type || "image/jpeg", "x-edit-key": editKey },
+          body: bytes,
+        });
+        if (!res.ok) throw new Error((await res.json()).error ?? "导入失败");
+        setStatusMsg(`已从公共素材库导入「${name}」 ✓`);
+        void loadAssets().then(() => {
+          setAssets((cur) => {
+            if (cur) syncAssetSection(cur.map((a) => a.name));
+            return cur;
+          });
+        });
+      } catch (err) {
+        setStatusMsg(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [editKey, id, loadAssets, syncAssetSection]
+  );
 
   const rename = useCallback((): void => {
     if (!config) return;
@@ -505,7 +634,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 ["config", "配置"],
                 ["check", `校验${errorCount > 0 ? ` (${errorCount})` : ""}`],
                 ["library", "内容库"],
-                ["cover", "封面"],
+                ["cover", "封面·素材"],
               ] as [Tab, string][]
             ).map(([t, label]) => (
               <button
@@ -514,6 +643,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 onClick={() => {
                   setTab(t);
                   if (t === "library" && libEntries === null) void loadLibrary(libCategory, libQ);
+                  if (t === "cover" && assets === null) void loadAssets();
                 }}
               >
                 {label}
@@ -524,7 +654,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
             {tab === "preview" &&
               (errorCount === 0 ? (
                 <div className="preview-frame">
-                  <GamePlayer key={previewNonce} config={config} mode="preview" />
+                  <GamePlayer key={previewNonce} config={config} gameId={id} mode="preview" />
                 </div>
               ) : (
                 <div className="pane-note">配置存在 {errorCount} 个错误，修复后即可预览（见「校验」页）。</div>
@@ -636,7 +766,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                     </div>
                   </div>
                   <div style={{ flex: 1, minWidth: 320 }}>
-                    <div className="pane-note" style={{ paddingTop: 0 }}>素材库（点击选用）</div>
+                    <div className="pane-note" style={{ paddingTop: 0 }}>封面样式库（点击选用）</div>
                     <div className="preset-grid">
                       {COVER_PRESET_LIST.map((p) => (
                         <button
@@ -650,6 +780,86 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                <div className="pane-note" style={{ borderTop: "1px solid var(--border)", marginTop: 6 }}>
+                  <b>游戏内图片素材</b>（角色立绘、场景、宗门图……作者自己上传，卡片的 image 字段按名称引用；
+                  上传后清单会自动记进设计卡，AI 工作室会建议放图位）
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={assetName}
+                      placeholder="素材名（如 女主立绘）"
+                      maxLength={40}
+                      style={{ padding: "5px 10px", width: 180 }}
+                      onChange={(e) => setAssetName(e.target.value)}
+                    />
+                    <label className="btn small secondary" style={{ cursor: "pointer" }}>
+                      {coverBusy ? "处理中…" : "选择图片上传"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        disabled={coverBusy}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (f) void uploadAsset(f);
+                        }}
+                      />
+                    </label>
+                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 5 }}>
+                      <input type="checkbox" checked={assetShare} onChange={(e) => setAssetShare(e.target.checked)} />
+                      同时分享到公共素材库（其他创作者可复用）
+                    </label>
+                  </div>
+                  <div className="asset-grid">
+                    {assets === null && <span className="pane-note">加载中…</span>}
+                    {assets?.length === 0 && <span className="pane-note">还没有素材。</span>}
+                    {assets?.map((a) => (
+                      <div key={a.name} className="asset-tile">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/games/${id}/assets/${encodeURIComponent(a.name)}?v=${a.size}`} alt={a.name} loading="lazy" />
+                        <div className="asset-meta">
+                          <span title={`卡片 image 字段填 "${a.name}"`}>{a.name}</span>
+                          <button className="linklike danger" onClick={() => void deleteAsset(a.name)}>
+                            删除
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10 }}>
+                    <button
+                      className="btn small secondary"
+                      onClick={() => {
+                        void fetch("/api/library/assets")
+                          .then((r) => r.json())
+                          .then((b) => setLibAssets(b.assets ?? []));
+                      }}
+                    >
+                      浏览公共素材库
+                    </button>
+                    {libAssets && (
+                      <div className="asset-grid">
+                        {libAssets.length === 0 && <span className="pane-note">公共素材库还是空的。</span>}
+                        {libAssets.map((a) => (
+                          <div key={a.id} className="asset-tile">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/api/library/assets/${encodeURIComponent(a.id)}`} alt={a.name} loading="lazy" />
+                            <div className="asset-meta">
+                              <span>
+                                {a.name} <em style={{ opacity: 0.6 }}>by {a.author}</em>
+                              </span>
+                              <button className="linklike" onClick={() => void importLibAsset(a.id, a.name)}>
+                                导入
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -119,3 +119,27 @@ describe("SqliteGameStore 删除", () => {
     expect(() => store.delete(id)).not.toThrow();
   });
 });
+
+describe("SqliteGameStore 图片素材", () => {
+  it("上传/读取/清单/删除回环；删游戏连带清素材；公共素材库共享与读取", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG, author: "画手" });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    store.assetPut(id, "女主立绘", png, "image/png");
+    store.assetPut(id, "宗门大门", png, "image/jpeg");
+    expect(store.assetList(id).map((a) => a.name).sort()).toEqual(["女主立绘", "宗门大门"]);
+    expect(store.assetGet(id, "女主立绘")!.contentType).toBe("image/png");
+    expect(Array.from(store.assetGet(id, "女主立绘")!.data)).toEqual(Array.from(png));
+
+    store.libraryAssetAdd({ id: `${id}:女主立绘`, name: "女主立绘", data: png, contentType: "image/png", author: "画手" });
+    expect(store.libraryAssetList().some((a) => a.name === "女主立绘" && a.author === "画手")).toBe(true);
+    expect(store.libraryAssetGet(`${id}:女主立绘`)).not.toBeNull();
+
+    store.assetDelete(id, "宗门大门");
+    expect(store.assetList(id)).toHaveLength(1);
+    store.delete(id);
+    expect(store.assetGet(id, "女主立绘")).toBeNull();
+    // 公共库的副本独立保留
+    expect(store.libraryAssetGet(`${id}:女主立绘`)).not.toBeNull();
+  });
+});

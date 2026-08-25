@@ -297,7 +297,12 @@ function resolveCard(config: GameConfig, state: GameState, scope: GameScope, sta
     state.lastFired[card.id] = clockOf(config, state);
     if (config.driver.kind !== "sim") state.turn += 1;
     applyEffects(config, state, cardScope, card.effects, bindings);
-    state.log.push({ kind: "card", text: renderText(pickCardText(card, state), cardScope), turn: state.turn });
+    state.log.push({
+      kind: "card",
+      text: renderText(pickCardText(card, state), cardScope),
+      turn: state.turn,
+      ...(card.image ? { image: card.image } : {}),
+    });
     if (card.ending) {
       endGame(config, state, cardScope, card.ending);
       return;

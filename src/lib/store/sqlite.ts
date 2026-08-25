@@ -103,6 +103,24 @@ export class SqliteGameStore implements GameStore {
         PRIMARY KEY (game_id, date)
       );
     `);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS game_assets (
+        game_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        data BLOB NOT NULL,
+        content_type TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (game_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS library_assets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        data BLOB NOT NULL,
+        content_type TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      );
+    `);
     try {
       this.db.exec("ALTER TABLE game_stats_daily ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0");
     } catch {
@@ -212,6 +230,7 @@ export class SqliteGameStore implements GameStore {
 
   delete(id: string): void {
     this.db.prepare("DELETE FROM game_stats_daily WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_assets WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
 
@@ -228,6 +247,54 @@ export class SqliteGameStore implements GameStore {
     }
     const next = [...chat, ...turns].slice(-CHAT_CAP);
     this.db.prepare("UPDATE games SET chat = ? WHERE id = ?").run(JSON.stringify(next), id);
+  }
+
+  assetPut(gameId: string, name: string, data: Uint8Array, contentType: string): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO game_assets (game_id, name, data, content_type, created_at) VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(gameId, name, Buffer.from(data), contentType, new Date().toISOString());
+  }
+
+  assetGet(gameId: string, name: string): { data: Uint8Array; contentType: string } | null {
+    const row = this.db
+      .prepare("SELECT data, content_type FROM game_assets WHERE game_id = ? AND name = ?")
+      .get(gameId, name) as { data: Buffer; content_type: string } | undefined;
+    return row ? { data: row.data, contentType: row.content_type } : null;
+  }
+
+  assetList(gameId: string): { name: string; contentType: string; size: number }[] {
+    const rows = this.db
+      .prepare("SELECT name, content_type, LENGTH(data) AS size FROM game_assets WHERE game_id = ? ORDER BY created_at")
+      .all(gameId) as { name: string; content_type: string; size: number }[];
+    return rows.map((r) => ({ name: r.name, contentType: r.content_type, size: r.size }));
+  }
+
+  assetDelete(gameId: string, name: string): void {
+    this.db.prepare("DELETE FROM game_assets WHERE game_id = ? AND name = ?").run(gameId, name);
+  }
+
+  libraryAssetAdd(entry: { id: string; name: string; data: Uint8Array; contentType: string; author: string }): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO library_assets (id, name, data, content_type, author, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(entry.id, entry.name, Buffer.from(entry.data), entry.contentType, entry.author, new Date().toISOString());
+  }
+
+  libraryAssetList(): { id: string; name: string; contentType: string; size: number; author: string }[] {
+    const rows = this.db
+      .prepare("SELECT id, name, content_type, LENGTH(data) AS size, author FROM library_assets ORDER BY created_at DESC LIMIT 200")
+      .all() as { id: string; name: string; content_type: string; size: number; author: string }[];
+    return rows.map((r) => ({ id: r.id, name: r.name, contentType: r.content_type, size: r.size, author: r.author }));
+  }
+
+  libraryAssetGet(id: string): { data: Uint8Array; contentType: string } | null {
+    const row = this.db.prepare("SELECT data, content_type FROM library_assets WHERE id = ?").get(id) as
+      | { data: Buffer; content_type: string }
+      | undefined;
+    return row ? { data: row.data, contentType: row.content_type } : null;
   }
 
   setCover(id: string, data: Uint8Array | null, contentType?: string): void {

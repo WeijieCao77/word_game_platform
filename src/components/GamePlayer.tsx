@@ -430,13 +430,20 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
               </p>
             </div>
           );
+          const assetUrl = (ref: string): string =>
+            /^https?:\/\//.test(ref) ? ref : gameId ? `/api/games/${gameId}/assets/${encodeURIComponent(ref)}` : "";
+          const renderEntry = (entry: (typeof state.log)[number], i: number): React.ReactElement => (
+            <div key={i} className={`log-${entry.kind}`}>
+              {entry.image && assetUrl(entry.image) && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="log-img" src={assetUrl(entry.image)} alt="" loading="lazy" />
+              )}
+              {entry.text}
+            </div>
+          );
           const fullLog = (
             <div className="gamelog">
-              {state.log.map((entry, i) => (
-                <div key={i} className={`log-${entry.kind}`}>
-                  {entry.text}
-                </div>
-              ))}
+              {state.log.map(renderEntry)}
               <div ref={logEndRef} />
             </div>
           );
@@ -539,13 +546,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
               {simTab === "overview" && (
                 <div className="sim-panel">
                   {upcomingPanel}
-                  <div className="gamelog sim-recent">
-                    {recentLog.map((entry, i) => (
-                      <div key={i} className={`log-${entry.kind}`}>
-                        {entry.text}
-                      </div>
-                    ))}
-                  </div>
+                  <div className="gamelog sim-recent">{recentLog.map(renderEntry)}</div>
                   {!state.ended && !pendingEvent && (
                     <div className="controls" style={{ display: "flex", gap: 10 }}>
                       <button className="btn small" onClick={() => setSimTab("actions")}>

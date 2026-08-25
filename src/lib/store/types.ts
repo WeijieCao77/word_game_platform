@@ -1,6 +1,21 @@
 // 存储层接口。v1 用 SQLite（一游戏一行 JSON），
 // 将来换 Postgres 只需要重新实现这个接口。
 
+/** 额度申请：注册用户把额度池用光时自动落一条，管理员在开发者后台批 */
+export interface QuotaRequest {
+  id: number;
+  userId: string;
+  username: string;
+  createdAt: string;
+  /** 提交申请时的累计消耗 */
+  used: number;
+  /** 提交申请时手上的总额度 */
+  grantAtRequest: number;
+  status: "pending" | "granted" | "denied";
+  granted: number;
+  handledAt: string | null;
+}
+
 /** 与 AI 策划的对话记录（服务端持久化，关页面不丢） */
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -100,6 +115,20 @@ export interface GameStore {
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */
   aiConsume(key: string, tokens: number): { requests: number; tokens: number };
   aiUsageToday(key: string): { requests: number; tokens: number };
+  /**
+   * 账户额度池（注册用户专用，游客走上面的按日额度）。
+   * grant 是累计授予的总量，used 是累计消耗——用完不是等明天，而是管理员手动批。
+   */
+  userQuota(userId: string): { grant: number; used: number };
+  userSpend(userId: string, tokens: number): void;
+  userGrantAdd(userId: string, tokens: number): void;
+  /** 额度申请：耗尽时自动开一条；同一用户同时只留一条待批 */
+  quotaRequestOpen(userId: string, used: number, grant: number): void;
+  quotaRequestList(onlyPending?: boolean): QuotaRequest[];
+  quotaRequestResolve(id: number, granted: number): { userId: string; granted: number } | null;
+  /** 作品维度的 AI 消耗：识别「烧了很多 token 却什么都没搭出来」的会话 */
+  gameAiSpend(id: string, tokens: number): number;
+  gameAiTokens(id: string): number;
   /** 平台全站汇总（开发者后台专用） */
   adminStats(): {
     games: { total: number; published: number; drafts: number };

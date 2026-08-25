@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { canEditGame, currentUser, quotaKeyOf } from "@/lib/session";
+import { checkQuota, quotaView, recordSpend } from "@/lib/ai/quota";
 import { GameConfig } from "@/lib/schema";
 import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
@@ -29,20 +30,14 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     );
   }
 
-  // 配额：登录用户按账号记账，游客按 editKey（交接文档要求第一天就有）。
-  // 管理员不限量——平台自己人做示例、压测、救火时不该被自己的额度挡住，用量照常记账。
+  // 额度：管理员不限量 / 注册用户走总量额度池（用完由管理员手动批）/ 游客按日额度。
+  // 另有一条与身份无关的熔断：烧了不少 token 却一张卡都没搭出来，说明不是在做游戏。
   const quotaKey = quotaKeyOf(req, editKey);
-  const unlimited = currentUser(req)?.role === "admin";
-  const maxRequests = Number(process.env.AI_DAILY_REQUESTS ?? 200);
-  const maxTokens = Number(process.env.AI_DAILY_TOKENS ?? 1000000);
-  const usage = store.aiUsageToday(quotaKey);
-  if (!unlimited && (usage.requests >= maxRequests || usage.tokens >= maxTokens)) {
-    return NextResponse.json(
-      {
-        error: `今日 AI 用量已达上限（${Math.round(maxTokens / 10000) / 100}M tokens 或 ${maxRequests} 次），明天零点后重置。`,
-      },
-      { status: 429 }
-    );
+  const user = currentUser(req);
+  const cardsCount = (record.config as GameConfig).cards?.length ?? 0;
+  const verdict = checkQuota(store, { user, quotaKey, gameId: id, cardsCount });
+  if (!verdict.allowed) {
+    return NextResponse.json({ error: verdict.reason, code: verdict.code }, { status: 429 });
   }
 
   let body: { messages?: { role: string; content: string }[] };
@@ -80,12 +75,8 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       { role: "user", content: history[history.length - 1].content },
       { role: "assistant", content: result.reply || "（无回复）" },
     ]);
-    const quota = {
-      ...store.aiConsume(quotaKey, result.totalTokens),
-      maxRequests: unlimited ? 0 : maxRequests,
-      maxTokens: unlimited ? 0 : maxTokens,
-      unlimited,
-    };
+    recordSpend(store, { user, quotaKey, gameId: id, tokens: result.totalTokens });
+    const quota = quotaView(store, { user, quotaKey });
     return NextResponse.json({
       reply: result.reply,
       config: result.config,

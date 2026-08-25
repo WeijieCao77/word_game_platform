@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
-import { ChatTurn, GameRecord, GameStore, GameSummary, UserRecord } from "./types";
+import { ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
 
 function newId(): string {
   return randomBytes(6).toString("base64url").replace(/[-_]/g, "a").toLowerCase();
@@ -12,6 +12,15 @@ function newId(): string {
 
 function newEditKey(): string {
   return randomBytes(24).toString("hex");
+}
+
+/**
+ * 注册账号的初始 AI 额度（总量，不是日额度）。
+ * 默认 1000 万——大到正常创作者感觉不到限制（够做十几到几十款游戏），
+ * 同时又是一道真闸门：想拿它当免费聊天机器人用的，烧到头必须来找管理员批。
+ */
+export function defaultGrant(): number {
+  return Number(process.env.AI_USER_GRANT ?? 10_000_000);
 }
 
 /**
@@ -80,6 +89,17 @@ export class SqliteGameStore implements GameStore {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_library_category ON library_cards(category);
+      CREATE TABLE IF NOT EXISTS quota_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        used INTEGER NOT NULL,
+        grant_at_request INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        granted INTEGER NOT NULL DEFAULT 0,
+        handled_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_quota_status ON quota_requests(status, created_at);
     `);
     // 老库升级：games 表补列（已存在则忽略）
     for (const ddl of [
@@ -90,6 +110,8 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN plays INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE games ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE games ADD COLUMN owner_id TEXT",
+      // 作品维度的 AI 消耗：用来发现「把工作台当聊天框」的会话
+      "ALTER TABLE games ADD COLUMN ai_tokens INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
@@ -106,7 +128,11 @@ export class SqliteGameStore implements GameStore {
         password_hash TEXT NOT NULL,
         salt TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'user',
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        -- 账户额度池：已授予的总额度与累计消耗。跟按日重置的 ai_usage 是两套东西——
+        -- ai_usage 留着看趋势，额度池才是闸门（用完要管理员手动批）。
+        token_grant INTEGER NOT NULL DEFAULT 0,
+        tokens_used INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS sessions (
         token_hash TEXT PRIMARY KEY,
@@ -117,6 +143,18 @@ export class SqliteGameStore implements GameStore {
       CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_games_owner ON games(owner_id);
     `);
+    // 老库升级：users 表补额度列。必须放在建表之后——放在上面那个 games 迁移块里
+    // 会在 users 表还不存在时执行，ALTER 静默失败，新库反而少了这两列。
+    for (const ddl of [
+      "ALTER TABLE users ADD COLUMN token_grant INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN tokens_used INTEGER NOT NULL DEFAULT 0",
+    ]) {
+      try {
+        this.db.exec(ddl);
+      } catch {
+        // 列已存在
+      }
+    }
 
     // 按日统计表：创作者数据后台的地基（趋势图/日活直接从这查）
     this.db.exec(`
@@ -503,6 +541,9 @@ export class SqliteGameStore implements GameStore {
         `INSERT INTO users (id, username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(id, input.username, input.passwordHash, input.salt, role, now);
+    // 注册即发一份初始额度（env 可调）。这是「感觉不到限量」的那一份，
+    // 用完不是等明天，而是来找管理员批——所以它是总量，不是日额度。
+    this.db.prepare("UPDATE users SET token_grant = ? WHERE id = ?").run(defaultGrant(), id);
     return { id, username: input.username, role, createdAt: now };
   }
 
@@ -538,6 +579,98 @@ export class SqliteGameStore implements GameStore {
 
   userSetRole(id: string, role: "user" | "admin"): void {
     this.db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+  }
+
+  userQuota(userId: string): { grant: number; used: number } {
+    const row = this.db.prepare("SELECT token_grant AS g, tokens_used AS u FROM users WHERE id = ?").get(userId) as
+      | { g: number; u: number }
+      | undefined;
+    if (!row) return { grant: 0, used: 0 };
+    // 老账号建库时没有这一列，补一份默认额度，别让既有用户凭空变成 0
+    if (!row.g) {
+      const g = defaultGrant();
+      this.db.prepare("UPDATE users SET token_grant = ? WHERE id = ?").run(g, userId);
+      return { grant: g, used: row.u };
+    }
+    return { grant: row.g, used: row.u };
+  }
+
+  userSpend(userId: string, tokens: number): void {
+    this.db.prepare("UPDATE users SET tokens_used = tokens_used + ? WHERE id = ?").run(Math.max(0, tokens), userId);
+  }
+
+  userGrantAdd(userId: string, tokens: number): void {
+    this.db.prepare("UPDATE users SET token_grant = token_grant + ? WHERE id = ?").run(Math.max(0, tokens), userId);
+  }
+
+  quotaRequestOpen(userId: string, used: number, grant: number): void {
+    // 同一个人同时只留一条待批，免得刷屏
+    const exists = this.db
+      .prepare("SELECT id FROM quota_requests WHERE user_id = ? AND status = 'pending'")
+      .get(userId) as { id: number } | undefined;
+    if (exists) return;
+    this.db
+      .prepare(
+        "INSERT INTO quota_requests (user_id, created_at, used, grant_at_request, status) VALUES (?, ?, ?, ?, 'pending')"
+      )
+      .run(userId, new Date().toISOString(), used, grant);
+  }
+
+  quotaRequestList(onlyPending = true): QuotaRequest[] {
+    const rows = this.db
+      .prepare(
+        `SELECT q.id, q.user_id, u.username, q.created_at, q.used, q.grant_at_request, q.status, q.granted, q.handled_at
+         FROM quota_requests q LEFT JOIN users u ON u.id = q.user_id
+         ${onlyPending ? "WHERE q.status = 'pending'" : ""}
+         ORDER BY q.created_at DESC LIMIT 100`
+      )
+      .all() as {
+      id: number;
+      user_id: string;
+      username: string | null;
+      created_at: string;
+      used: number;
+      grant_at_request: number;
+      status: string;
+      granted: number;
+      handled_at: string | null;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      username: r.username ?? "(已注销)",
+      createdAt: r.created_at,
+      used: r.used,
+      grantAtRequest: r.grant_at_request,
+      status: r.status === "granted" ? "granted" : r.status === "denied" ? "denied" : "pending",
+      granted: r.granted,
+      handledAt: r.handled_at,
+    }));
+  }
+
+  quotaRequestResolve(id: number, granted: number): { userId: string; granted: number } | null {
+    const row = this.db.prepare("SELECT user_id, status FROM quota_requests WHERE id = ?").get(id) as
+      | { user_id: string; status: string }
+      | undefined;
+    if (!row || row.status !== "pending") return null;
+    const run = this.db.transaction(() => {
+      this.db
+        .prepare("UPDATE quota_requests SET status = ?, granted = ?, handled_at = ? WHERE id = ?")
+        .run(granted > 0 ? "granted" : "denied", Math.max(0, granted), new Date().toISOString(), id);
+      if (granted > 0) this.userGrantAdd(row.user_id, granted);
+    });
+    run();
+    return { userId: row.user_id, granted: Math.max(0, granted) };
+  }
+
+  gameAiSpend(id: string, tokens: number): number {
+    this.db.prepare("UPDATE games SET ai_tokens = ai_tokens + ? WHERE id = ?").run(Math.max(0, tokens), id);
+    return this.gameAiTokens(id);
+  }
+
+  gameAiTokens(id: string): number {
+    const row = this.db.prepare("SELECT ai_tokens AS t FROM games WHERE id = ?").get(id) as { t: number } | undefined;
+    return row?.t ?? 0;
   }
 
   sessionCreate(userId: string, tokenHash: string, expiresAt: string): void {

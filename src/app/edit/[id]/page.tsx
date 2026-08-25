@@ -40,12 +40,25 @@ function kilo(n: number): string {
  * 配额提示以 token 为主——真正先耗尽的通常是 token 而不是次数，
  * 让作者一眼看到「还剩多少」，次数放在后面做参考。
  */
-function quotaText(q: { requests: number; tokens: number; maxRequests?: number; maxTokens?: number; unlimited?: boolean }): string {
-  if (q.unlimited) return `管理员 · 不限量（今日已用 ${kilo(q.tokens)} tokens / ${q.requests} 次）`;
-  if (!q.maxTokens) return `AI 今日已用 ${kilo(q.tokens)} tokens`;
-  const left = Math.max(0, q.maxTokens - q.tokens);
-  const times = q.maxRequests ? ` · ${q.requests}/${q.maxRequests} 次` : ` · ${q.requests} 次`;
-  return `AI 今日已用 ${kilo(q.tokens)}/${kilo(q.maxTokens)} tokens，还剩 ${kilo(left)}${times}`;
+interface QuotaInfo {
+  kind: "admin" | "user" | "guest";
+  unlimited: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  requests: number;
+  maxRequests: number;
+}
+
+function quotaText(q: QuotaInfo): string {
+  if (q.unlimited) return `管理员 · 不限量（累计已用 ${kilo(q.used)} tokens）`;
+  if (q.kind === "guest") {
+    return (
+      `游客额度：今日已用 ${kilo(q.used)}/${kilo(q.limit)} tokens，还剩 ${kilo(q.remaining)}` +
+      `（零点重置；注册后一次拿一大笔，作品也不会因换设备而丢）`
+    );
+  }
+  return `AI 额度：已用 ${kilo(q.used)}/${kilo(q.limit)} tokens，还剩 ${kilo(q.remaining)}`;
 }
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }): React.ReactElement {
@@ -504,7 +517,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }).finally(() => clearTimeout(kill));
       // 网关超时/请求体过大这类失败返回的是 HTML，不是 JSON——别让真正的原因被吞掉
       const rawText = await res.text();
-      let body: { error?: string; reply?: string; config?: unknown; designCard?: string; quota?: { requests: number; tokens: number; maxRequests?: number; maxTokens?: number; unlimited?: boolean } };
+      let body: { error?: string; reply?: string; config?: unknown; designCard?: string; quota?: QuotaInfo };
       try {
         body = JSON.parse(rawText);
       } catch {

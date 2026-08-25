@@ -19,6 +19,35 @@ interface AdminStats {
   library: { cards: number; assets: number };
 }
 
+interface QuotaReq {
+  id: number;
+  userId: string;
+  username: string;
+  createdAt: string;
+  used: number;
+  grantAtRequest: number;
+  status: "pending" | "granted" | "denied";
+  granted: number;
+  handledAt: string | null;
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(2)} 亿`;
+  if (n >= 10_000) return `${(n / 10_000).toFixed(1)} 万`;
+  return String(n);
+}
+
+/**
+ * 估算花费。单价走 NEXT_PUBLIC_AI_PRICE_PER_M（元/百万 token），没配就不显示——
+ * 与其给一个瞎猜的数字，不如不给。我们的 token 里输入侧占九成以上
+ * （每轮都要重发整份配置），所以这里应该填**混合价**，接近输入价。
+ */
+function fmtCost(tokens: number): string | null {
+  const price = Number(process.env.NEXT_PUBLIC_AI_PRICE_PER_M ?? "");
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return `≈ ¥${((tokens / 1_000_000) * price).toFixed(2)}`;
+}
+
 function fmtHours(seconds: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`;
   return `${(seconds / 3600).toFixed(1)} 小时`;
@@ -28,6 +57,38 @@ export default function AdminPage(): React.ReactElement {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [quotaReqs, setQuotaReqs] = useState<QuotaReq[]>([]);
+  const [defaultGrant, setDefaultGrant] = useState(10_000_000);
+  const [busyReq, setBusyReq] = useState<number | null>(null);
+
+  const loadQuota = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch("/api/admin/quota");
+      if (!res.ok) return;
+      const body = await res.json();
+      setQuotaReqs(body.requests ?? []);
+      if (body.defaultGrant) setDefaultGrant(body.defaultGrant);
+    } catch {
+      // 后台是暗链工具页，额度这一块加载失败不该把整页拖垮
+    }
+  }, []);
+
+  const resolveReq = useCallback(
+    async (id: number, tokens: number): Promise<void> => {
+      setBusyReq(id);
+      try {
+        await fetch("/api/admin/quota", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, tokens }),
+        });
+        await loadQuota();
+      } finally {
+        setBusyReq(null);
+      }
+    },
+    [loadQuota]
+  );
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -41,10 +102,11 @@ export default function AdminPage(): React.ReactElement {
         return;
       }
       setStats(body as AdminStats);
+      await loadQuota();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadQuota]);
 
   useEffect(() => {
     void load();
@@ -91,10 +153,61 @@ export default function AdminPage(): React.ReactElement {
         <div className="admin-tile"><b>{stats.games.total}</b><span>作品总数（{stats.games.published} 已发布 / {stats.games.drafts} 草稿）</span></div>
         <div className="admin-tile"><b>{stats.totals.likes}</b><span>总点赞</span></div>
         <div className="admin-tile"><b>{fmtHours(stats.totals.playSeconds)}</b><span>总游玩时长</span></div>
-        <div className="admin-tile"><b>{stats.ai.todayRequests}</b><span>今日 AI 请求（累计 {stats.ai.totalRequests} 次 / {Math.round(stats.ai.totalTokens / 1000)}k tokens）</span></div>
+        <div className="admin-tile"><b>{stats.ai.todayRequests}</b><span>今日 AI 请求（累计 {stats.ai.totalRequests} 次 / {fmtTokens(stats.ai.totalTokens)} tokens{fmtCost(stats.ai.totalTokens) ? ` · ${fmtCost(stats.ai.totalTokens)}` : ""}）</span></div>
         <div className="admin-tile"><b>{stats.library.cards}</b><span>内容库卡片</span></div>
         <div className="admin-tile"><b>{stats.library.assets}</b><span>公共素材</span></div>
       </div>
+
+      <h2 className="section-title">
+        额度申请
+        {quotaReqs.filter((r) => r.status === "pending").length > 0 && (
+          <span className="tag" style={{ marginLeft: 8 }}>
+            {quotaReqs.filter((r) => r.status === "pending").length} 条待批
+          </span>
+        )}
+      </h2>
+      {quotaReqs.length === 0 ? (
+        <p style={{ color: "var(--muted)", fontSize: 13 }}>
+          还没有人把额度用光。注册账号默认发 {fmtTokens(defaultGrant)} tokens，用完会自动出现在这里。
+        </p>
+      ) : (
+        <div className="roster-scroll">
+          <table className="admin-table">
+            <thead>
+              <tr><th>账号</th><th>申请时间</th><th>已用</th><th>手上额度</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              {quotaReqs.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.username}</td>
+                  <td>{r.createdAt.slice(0, 16).replace("T", " ")}</td>
+                  <td>{fmtTokens(r.used)}{fmtCost(r.used) ? ` · ${fmtCost(r.used)}` : ""}</td>
+                  <td>{fmtTokens(r.grantAtRequest)}</td>
+                  <td>
+                    {r.status === "pending" ? (
+                      <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="linklike" disabled={busyReq === r.id} onClick={() => void resolveReq(r.id, defaultGrant)}>
+                          再批 {fmtTokens(defaultGrant)}
+                        </button>
+                        <button className="linklike" disabled={busyReq === r.id} onClick={() => void resolveReq(r.id, Math.round(defaultGrant / 2))}>
+                          批一半
+                        </button>
+                        <button className="linklike" disabled={busyReq === r.id} onClick={() => void resolveReq(r.id, 0)}>
+                          拒绝
+                        </button>
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--muted)" }}>
+                        {r.status === "granted" ? `已批 ${fmtTokens(r.granted)}` : "已拒绝"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <h2 className="section-title">近 14 天游玩</h2>
       <div className="admin-daily">

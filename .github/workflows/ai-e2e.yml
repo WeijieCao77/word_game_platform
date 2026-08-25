@@ -165,7 +165,6 @@ jobs:
         # 自由模式没有模拟器可跑，能机检的是这几条硬边界：
         # 有没有入口、有没有碰沙箱里用不了的东西、存档桥用没用对。
         if: inputs.template == 'blank-code'
-        continue-on-error: true
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
@@ -179,9 +178,13 @@ jobs:
           print("=== AI 写出来的文件 ===")
           for f in files:
               print(f"  {f['path']}  {f['size']} 字符")
-          if not files:
-              print("::warning::AI 一个文件都没写——自由模式等于什么都没做")
-              raise SystemExit(0)
+          # 建作品时平台会先落一份起手页（约 2.5k 字符的 index.html）。
+          # 只有这一个文件、而且大小没变，等于 AI 一个字都没写——
+          # 这一步就该判失败，别让 run 显示绿色骗人。
+          only_scaffold = len(files) == 1 and files[0]["path"] == "index.html" and files[0]["size"] < 3000
+          if not files or only_scaffold:
+              print("::error::AI 没有写任何文件——自由模式下这等于什么都没做")
+              raise SystemExit(1)
           if not any(f["path"] == "index.html" for f in files):
               print("::warning::没有 index.html，这部作品打不开")
 

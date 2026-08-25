@@ -12,6 +12,8 @@ const TEMPLATES = [
   { id: "demo-life", name: "从示例出发 · 修仙人生重开", desc: "复制官方修仙示例改成你的版本" },
   { id: "demo-story", name: "从示例出发 · 雨夜末班车", desc: "复制官方怪谈示例改成你的版本" },
   { id: "demo-romance", name: "从示例出发 · 恋爱互动小说", desc: "复制官方橙光式恋爱示例改成你的版本" },
+  { id: "demo-manor", name: "从示例出发 · 雪夜山庄推理", desc: "复制官方本格推理示例（线索/指认）改成你的版本" },
+  { id: "demo-coldcase", name: "从示例出发 · 都市悬案调查", desc: "复制官方社会派推理示例（走访/检索）改成你的版本" },
 ];
 
 export default function NewGamePage(): React.ReactElement {

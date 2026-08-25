@@ -530,6 +530,46 @@ export const COVER_PRESETS: Record<string, PresetDef> = {
       </svg>
     ),
   },
+  snowlodge: {
+    label: "推理 · 雪夜山庄",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-night`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#0a1228" />
+            <stop offset="1" stopColor="#1b2a4a" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-night)`} />
+        <circle cx="540" cy="70" r="34" fill="#e8ecf5" opacity="0.9" />
+        <path d="M0 330 Q160 300 320 322 T640 316 L640 360 L0 360 Z" fill="#dfe7f2" />
+        <path d="M40 330 L90 240 L140 330 Z M120 335 L180 220 L240 335 Z" fill="#101b33" />
+        <path d="M96 262 h-12 M108 244 h-14" stroke="#dfe7f2" strokeWidth="3" opacity="0.5" />
+        <g>
+          <rect x="380" y="220" width="170" height="96" fill="#1d283f" />
+          <polygon points="365,220 465,168 565,220" fill="#e8ecf5" />
+          <rect x="398" y="244" width="34" height="30" fill="#ffd98a" />
+          <rect x="452" y="244" width="34" height="30" fill="#ffd98a" opacity="0.85" />
+          <rect x="506" y="244" width="30" height="30" fill="#2a3a5c" />
+          <rect x="414" y="286" width="26" height="30" fill="#0d1526" />
+          <rect x="478" y="172" width="14" height="34" fill="#1d283f" />
+          <path d="M485 168 q10 -12 4 -22" stroke="#c9d4e6" strokeWidth="4" fill="none" opacity="0.6" strokeLinecap="round" />
+        </g>
+        <path d="M470 318 q40 6 90 2" stroke="#8fa4c4" strokeWidth="3" opacity="0.5" fill="none" />
+        {STARS.slice(0, 60).map((s, i) => (
+          <circle
+            key={i}
+            cx={s * 640}
+            cy={STARS[(i + 17) % STARS.length] * 300}
+            r={1.4 + (i % 3) * 0.5}
+            fill="#ffffff"
+            opacity={0.35 + (i % 4) * 0.12}
+          />
+        ))}
+        <rect x="398" y="248" width="34" height="4" fill="#3a2c22" opacity="0.6" />
+      </svg>
+    ),
+  },
   valorant: {
     label: "旗舰 · 战术电竞",
     render: (u) => (
@@ -573,6 +613,8 @@ export const OFFICIAL_PRESET_BY_GAME: Record<string, string> = {
   "yeye-bus": "night-bus",
   "esports-lite": "esports",
   romance: "romance",
+  "snow-manor": "snowlodge",
+  "cold-case": "mystery",
   "val-manager": "valorant",
 };
 

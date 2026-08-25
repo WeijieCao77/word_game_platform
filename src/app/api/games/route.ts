@@ -51,12 +51,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (template === "blank-life") config = blankLife(title);
   else if (template === "blank-story") config = blankStory(title);
   else if (template === "blank-sim") config = blankSim(title);
-  else if (["demo-life", "demo-story", "demo-sim", "demo-romance"].includes(template)) {
+  else if (["demo-life", "demo-story", "demo-sim", "demo-romance", "demo-manor", "demo-coldcase"].includes(template)) {
     const file = {
       "demo-life": "life-demo.json",
       "demo-story": "story-demo.json",
       "demo-sim": "sim-demo.json",
       "demo-romance": "romance-demo.json",
+      "demo-manor": "manor-demo.json",
+      "demo-coldcase": "coldcase-demo.json",
     }[template]!;
     try {
       const parsed = JSON.parse(readFileSync(path.join(process.cwd(), "templates", file), "utf8"));

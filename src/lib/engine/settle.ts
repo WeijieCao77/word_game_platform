@@ -4,7 +4,7 @@
 
 import { Value, evaluate } from "@/lib/expr";
 import { GameConfig, GameState } from "@/lib/schema";
-import { createRng } from "./rng";
+import { Rng, createRng } from "./rng";
 import { Bindings, GameScope, applyEffects, clampVar, clockOf, renderText, truthy } from "./internal";
 import { checkConditionEndings, timeoutEnd } from "./endings";
 import { drawEventCards } from "./cards";
@@ -90,7 +90,7 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
 
   // 3) 回合曲线
   if (!state.ended && !state.pendingCard) {
-    runCurves(config, state, scope, "turn");
+    runCurves(config, state, scope, "turn", rng);
   }
 
   // 4) 结局检查（在周期滚动之前，让 "turn == turnsPerCycle && 积分 >= X" 生效）
@@ -100,7 +100,7 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
 
   // 5) 周期滚动与时间上限
   if (!state.pendingCard && !state.ended) {
-    advanceSimTime(config, state, scope);
+    advanceSimTime(config, state, scope, rng);
   }
 
   state.rngState = rng.state();
@@ -135,26 +135,46 @@ function resolvePendings(config: GameConfig, state: GameState, scope: GameScope,
   }
 }
 
-function runCurves(config: GameConfig, state: GameState, scope: GameScope, phase: "turn" | "cycle"): void {
+function runCurves(
+  config: GameConfig,
+  state: GameState,
+  scope: GameScope,
+  phase: "turn" | "cycle",
+  rng?: Rng
+): void {
   for (const curve of config.curves ?? []) {
     if (curve.phase !== phase) continue;
+    // gate：这条曲线这次跑不跑（全局判定，可用 chance()）
+    if (curve.gate && !truthy(evaluate(curve.gate, scope))) continue;
+
+    // 先把符合条件的实体挑出来，再决定作用于全部还是其中一个
+    const matched: string[] = [];
     for (const e of config.entities ?? []) {
       if (e.type !== curve.entityType || !state.entities?.[e.id]) continue;
-      const bindings: Bindings = { self: e.id };
+      if (curve.condition && !truthy(evaluate(curve.condition, scope.withBindings({ self: e.id })))) continue;
+      matched.push(e.id);
+    }
+    if (matched.length === 0) continue;
+    // pick: "one" 是「世界自己在动」的关键——每周有**一个**市场选手被别的队签走，
+    // 而不是「两成的所有人同时被签走」
+    const targets =
+      curve.pick === "one" ? [matched[rng ? rng.int(0, matched.length - 1) : 0]] : matched;
+
+    for (const id of targets) {
+      const bindings: Bindings = { self: id };
       const entScope = scope.withBindings(bindings);
-      if (curve.condition && !truthy(evaluate(curve.condition, entScope))) continue;
       applyEffects(config, state, entScope, curve.effects, bindings);
       if (curve.text) state.log.push({ kind: "card", text: renderText(curve.text, entScope), turn: state.turn });
     }
   }
 }
 
-function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope): void {
+function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope, rng: Rng): void {
   if (config.driver.kind !== "sim") return;
   const t = config.driver.time;
   const cycleDone = t.turnsPerCycle !== undefined && state.turn >= t.turnsPerCycle;
   if (cycleDone) {
-    runCurves(config, state, scope, "cycle");
+    runCurves(config, state, scope, "cycle", rng);
     if (config.text?.cycleEnd) {
       state.log.push({ kind: "settlement", text: renderText(config.text.cycleEnd, scope), turn: state.turn });
     }
@@ -196,9 +216,13 @@ export function continueAfterResolution(config: GameConfig, state: GameState, ba
     }
     // sim：事件处理完后继续走完本回合剩余管线
     if (config.driver.kind === "sim" && !state.ended) {
-      runCurves(config, state, baseScope, "turn");
+      // 这条路径没有现成的 rng（选项/输入结算后接着跑管线），从存档里的种子取一个，
+      // 保证「随机挑一个实体」这类曲线在这里也可复现
+      const rng = createRng(state.rngState);
+      runCurves(config, state, baseScope, "turn", rng);
       checkConditionEndings(config, state, baseScope);
-      if (!state.ended) advanceSimTime(config, state, baseScope);
+      if (!state.ended) advanceSimTime(config, state, baseScope, rng);
+      state.rngState = rng.state();
     }
   }
 }

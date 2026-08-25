@@ -234,6 +234,8 @@ export const CurveDefSchema = z.object({
   entityType: IdSchema,
   phase: z.enum(["turn", "cycle"]),
   condition: ExprSchema.optional(),
+  pick: z.enum(["all", "one"]).optional(),
+  gate: ExprSchema.optional(),
   effects: z.array(EffectSchema).max(40),
   text: z.string().max(2000).optional(),
 });

@@ -350,6 +350,17 @@ export interface CurveDef {
   phase: "turn" | "cycle";
   /** 实体过滤条件（self.*） */
   condition?: string;
+  /**
+   * 作用范围：all=所有符合条件的实体（默认）；one=只随机挑其中一个。
+   *
+   * one 是「世界自己在动」的关键原语——每周有**一个**市场上的选手被别的队签走、
+   * 每个赛季有**一个**老将退役、随机**一个**队员状态火热。
+   * 写成 condition: "chance(0.2)" 是不行的：那会命中两成的**所有人**，
+   * 而不是「其中一个」。
+   */
+  pick?: "all" | "one";
+  /** 这条曲线本身跑不跑（全局作用域的表达式，可用 chance()）；不填=每次都跑 */
+  gate?: string;
   effects: Effect[];
   /** 生效实体的日志模板（可用 {self.name}）；不填则不记日志 */
   text?: string;

@@ -63,10 +63,27 @@ export default function HomePage(): React.ReactElement {
           <>
             <h2 className="section-title">旗舰作品</h2>
             <Link className="flagship-banner" href="/flagship">
-              <GameCover id="val-manager" title="VAL MANAGER · 无畏契约电竞经理" kind="flagship" wide />
-              <span className="flagship-desc">
-                真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区 · 站内直接开玩
-              </span>
+              <div className="flagship-flip">
+                <div className="flagship-face flagship-front">
+                  <GameCover id="val-manager" title="VAL MANAGER · 无畏契约电竞经理" kind="flagship" wide />
+                  <span className="flagship-desc">
+                    真实 VCT 数据的电竞经理模拟——本平台的机制灵感来源。执掌一支真实战队，征战四大赛区 · 站内直接开玩
+                  </span>
+                </div>
+                <div className="flagship-face flagship-back">
+                  <b className="flagship-back-title">VAL MANAGER · 无畏契约电竞经理</b>
+                  <p>
+                    执掌一支真实战队打完整个赛季：引援与续约、日常训练与体能管理、赛前战术准备、
+                    赛场上的临场调整——每一个决定都会写进战绩。选手与战力取自 vlr.gg 的真实 VCT 数据，
+                    四大赛区、常规赛到季后赛的完整赛程。
+                  </p>
+                  <p className="flagship-back-note">
+                    它是本平台的机制灵感来源：字游的经营模拟调度器——行动点取舍、活的积分榜、
+                    结算复盘——都是从这款游戏倒推出来的。现在你也能用工作台做出这个量级的作品。
+                  </p>
+                  <span className="cover-hover-cta">站内直接开玩 →</span>
+                </div>
+              </div>
             </Link>
           </>
         )}

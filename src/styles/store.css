@@ -389,3 +389,69 @@
     display: none;
   }
 }
+
+/* 旗舰位翻面：正面是宽幅封面，背面是作品介绍（结构与游戏卡片一致，只是更宽） */
+.flagship-banner {
+  perspective: 1600px;
+}
+.flagship-flip {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.flagship-banner:hover .flagship-flip,
+.flagship-banner:focus-visible .flagship-flip {
+  transform: rotateY(180deg);
+}
+.flagship-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.flagship-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  background: linear-gradient(120deg, #1a1013 0%, #0d1117 55%, #0a0f16 100%);
+  color: #e8eef4;
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+.flagship-back-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.flagship-back p {
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: rgba(232, 238, 244, 0.88);
+  max-width: 760px;
+}
+.flagship-back-note {
+  color: rgba(232, 238, 244, 0.62) !important;
+  border-left: 2px solid #ff4655;
+  padding-left: 12px;
+}
+@media (max-width: 720px) {
+  .flagship-back {
+    padding: 14px 16px;
+    gap: 6px;
+  }
+  .flagship-back p {
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .flagship-back-note {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flagship-flip {
+    transition: none;
+  }
+}

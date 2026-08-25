@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
-import { ChatTurn, GameRecord, GameStore, GameSummary } from "./types";
+import { ChatTurn, GameRecord, GameStore, GameSummary, UserRecord } from "./types";
 
 function newId(): string {
   return randomBytes(6).toString("base64url").replace(/[-_]/g, "a").toLowerCase();
@@ -85,6 +85,7 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN likes INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE games ADD COLUMN plays INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE games ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE games ADD COLUMN owner_id TEXT",
     ]) {
       try {
         this.db.exec(ddl);
@@ -92,6 +93,27 @@ export class SqliteGameStore implements GameStore {
         // 列已存在
       }
     }
+    // 账号与会话：游客不需要账号，账号解决的是「换设备/清缓存后找回作品」。
+    // 密码只存 scrypt 哈希；会话只存 token 的 sha256（库被拖走也无法冒充登录）。
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_games_owner ON games(owner_id);
+    `);
+
     // 按日统计表：创作者数据后台的地基（趋势图/日活直接从这查）
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS game_stats_daily (
@@ -161,16 +183,25 @@ export class SqliteGameStore implements GameStore {
     }
   }
 
-  create(input: { config: unknown; designCard?: string; author?: string }): { id: string; editKey: string } {
+  create(input: { config: unknown; designCard?: string; author?: string; ownerId?: string }): { id: string; editKey: string } {
     const id = newId();
     const editKey = newEditKey();
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO games (id, config, design_card, author, published, edit_key, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, ?, ?, ?)`
+        `INSERT INTO games (id, config, design_card, author, published, edit_key, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`
       )
-      .run(id, JSON.stringify(input.config), input.designCard ?? "", input.author ?? "", editKey, now, now);
+      .run(
+        id,
+        JSON.stringify(input.config),
+        input.designCard ?? "",
+        input.author ?? "",
+        editKey,
+        input.ownerId ?? null,
+        now,
+        now
+      );
     return { id, editKey };
   }
 
@@ -416,6 +447,112 @@ export class SqliteGameStore implements GameStore {
       .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 AND author = ? ORDER BY updated_at DESC`)
       .all(author) as GameRow[];
     return rows.map((r) => this.toSummary(r));
+  }
+
+  // ---------------- 作品归属与账号 ----------------
+
+  gameOwner(id: string): string | null {
+    const row = this.db.prepare("SELECT owner_id FROM games WHERE id = ?").get(id) as
+      | { owner_id: string | null }
+      | undefined;
+    return row?.owner_id ?? null;
+  }
+
+  /** 用编辑钥匙把游客作品收归账号；只认领当前无主的，返回成功条数 */
+  claimGames(userId: string, keys: { id: string; editKey: string }[]): number {
+    const check = this.db.prepare("SELECT edit_key, owner_id FROM games WHERE id = ?");
+    const claim = this.db.prepare("UPDATE games SET owner_id = ? WHERE id = ? AND owner_id IS NULL");
+    let n = 0;
+    const tx = this.db.transaction((list: { id: string; editKey: string }[]) => {
+      for (const k of list) {
+        const row = check.get(k.id) as { edit_key: string; owner_id: string | null } | undefined;
+        if (!row || !k.editKey || row.edit_key !== k.editKey || row.owner_id) continue;
+        claim.run(userId, k.id);
+        n += 1;
+      }
+    });
+    tx(keys);
+    return n;
+  }
+
+  listByOwner(userId: string): GameSummary[] {
+    const rows = this.db
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE owner_id = ? ORDER BY updated_at DESC`)
+      .all(userId) as GameRow[];
+    return rows.map((r) => this.toSummary(r));
+  }
+
+  userCreate(input: { username: string; passwordHash: string; salt: string }): UserRecord {
+    const id = newId();
+    const now = new Date().toISOString();
+    // 平台的第一个注册者就是管理员——没有别人可以授权他
+    const role = this.userCount() === 0 ? "admin" : "user";
+    this.db
+      .prepare(
+        `INSERT INTO users (id, username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, input.username, input.passwordHash, input.salt, role, now);
+    return { id, username: input.username, role, createdAt: now };
+  }
+
+  userByName(username: string): (UserRecord & { passwordHash: string; salt: string }) | null {
+    const row = this.db
+      .prepare("SELECT id, username, password_hash, salt, role, created_at FROM users WHERE username = ?")
+      .get(username) as
+      | { id: string; username: string; password_hash: string; salt: string; role: string; created_at: string }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      username: row.username,
+      role: row.role === "admin" ? "admin" : "user",
+      createdAt: row.created_at,
+      passwordHash: row.password_hash,
+      salt: row.salt,
+    };
+  }
+
+  userById(id: string): UserRecord | null {
+    const row = this.db.prepare("SELECT id, username, role, created_at FROM users WHERE id = ?").get(id) as
+      | { id: string; username: string; role: string; created_at: string }
+      | undefined;
+    if (!row) return null;
+    return { id: row.id, username: row.username, role: row.role === "admin" ? "admin" : "user", createdAt: row.created_at };
+  }
+
+  userCount(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
+    return row.n;
+  }
+
+  userSetRole(id: string, role: "user" | "admin"): void {
+    this.db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+  }
+
+  sessionCreate(userId: string, tokenHash: string, expiresAt: string): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+      .run(tokenHash, userId, new Date().toISOString(), expiresAt);
+    // 顺手清理过期会话，免得表无限长
+    this.db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date().toISOString());
+  }
+
+  sessionUser(tokenHash: string): UserRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT u.id, u.username, u.role, u.created_at
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = ? AND s.expires_at > ?`
+      )
+      .get(tokenHash, new Date().toISOString()) as
+      | { id: string; username: string; role: string; created_at: string }
+      | undefined;
+    if (!row) return null;
+    return { id: row.id, username: row.username, role: row.role === "admin" ? "admin" : "user", createdAt: row.created_at };
+  }
+
+  sessionDelete(tokenHash: string): void {
+    this.db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
   }
 
   aiConsume(key: string, tokens: number): { requests: number; tokens: number } {

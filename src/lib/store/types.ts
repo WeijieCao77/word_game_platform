@@ -38,8 +38,16 @@ export interface GameSummary {
   plays: number;
 }
 
+/** 平台账号。游客不需要账号也能创作与游玩，账号解决的是「换设备找回作品」 */
+export interface UserRecord {
+  id: string;
+  username: string;
+  role: "user" | "admin";
+  createdAt: string;
+}
+
 export interface GameStore {
-  create(input: { config: unknown; designCard?: string; author?: string }): { id: string; editKey: string };
+  create(input: { config: unknown; designCard?: string; author?: string; ownerId?: string }): { id: string; editKey: string };
   get(id: string): GameRecord | null;
   /** 校验 editKey；true 表示有编辑权 */
   checkEditKey(id: string, editKey: string): boolean;
@@ -71,6 +79,19 @@ export interface GameStore {
     daily: { date: string; plays: number; likes: number; playSeconds: number }[];
   };
   setPublished(id: string, published: boolean): void;
+  /** 作品归属：游客作品 ownerId 为空，登录后可用编辑钥匙认领 */
+  gameOwner(id: string): string | null;
+  claimGames(userId: string, keys: { id: string; editKey: string }[]): number;
+  listByOwner(userId: string): GameSummary[];
+  /** 账号：注册（首个用户自动成为管理员）、登录查询、会话 */
+  userCreate(input: { username: string; passwordHash: string; salt: string }): UserRecord;
+  userByName(username: string): (UserRecord & { passwordHash: string; salt: string }) | null;
+  userById(id: string): UserRecord | null;
+  userCount(): number;
+  userSetRole(id: string, role: "user" | "admin"): void;
+  sessionCreate(userId: string, tokenHash: string, expiresAt: string): void;
+  sessionUser(tokenHash: string): UserRecord | null;
+  sessionDelete(tokenHash: string): void;
   listPublished(limit?: number): GameSummary[];
   listByAuthor(author: string): GameSummary[];
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */

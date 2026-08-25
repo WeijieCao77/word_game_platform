@@ -97,6 +97,9 @@ jobs:
           echo "=== Volume（持久化磁盘）==="
           run_rw volume list || true
 
+          echo "=== 最近部署（判断新代码有没有上线）==="
+          run_rw deployment list 2>/dev/null | head -20 || run_rw status 2>/dev/null | head -20 || echo "（CLI 不支持 deployment list，看下面的 /api/health）"
+
       - name: Check live health
         run: |
           BASE="https://word-game-platform-production.up.railway.app"

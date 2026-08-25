@@ -19,6 +19,12 @@ export interface GameMeta {
   intro?: string;
   /** 封面样式：素材库预设 id（GameCover COVER_PRESETS）；上传的自定义封面优先于预设 */
   coverPreset?: string;
+  /**
+   * 题材，用于游戏库分类（推理 / 恋爱 / 经营 / 修仙 / 怪谈 / 校园 …）。
+   * 和 driver.kind 是两回事：kind 是「怎么玩」（叙事/成长/经营），genre 是「讲什么」。
+   * 不填就按 kind 归类。
+   */
+  genre?: string;
 }
 
 /** 表现层主题（反同质化：让游戏长得不一样） */

@@ -8,6 +8,28 @@ export const dynamic = "force-dynamic";
 
 const KIND_CN: Record<string, string> = { life: "随机成长", story: "分支叙事", sim: "经营模拟", unknown: "文字游戏" };
 
+/** 游戏库分类：按「怎么玩」分三档，题材（meta.genre）作为附加筛选出现在后面 */
+const KIND_TABS: { key: string; label: string }[] = [
+  { key: "", label: "全部" },
+  { key: "sim", label: "经营模拟" },
+  { key: "story", label: "分支叙事" },
+  { key: "life", label: "随机成长" },
+];
+const SORT_TABS: { key: string; label: string }[] = [
+  { key: "new", label: "最新" },
+  { key: "hot", label: "最热" },
+  { key: "liked", label: "最赞" },
+];
+
+function libraryHref(cat: string, genre: string, sort: string): string {
+  const q = new URLSearchParams();
+  if (cat) q.set("cat", cat);
+  if (genre) q.set("genre", genre);
+  if (sort && sort !== "new") q.set("sort", sort);
+  const qs = q.toString();
+  return `/${qs ? `?${qs}` : ""}#library`;
+}
+
 /** 简介越长，背面字号收得越小——让整段话在卡片背面一次显示完 */
 function descClass(desc: string): string {
   const n = (desc ?? "").length;
@@ -18,8 +40,19 @@ function descClass(desc: string): string {
   return "";
 }
 
-export default function HomePage(): React.ReactElement {
-  const games = getStore().listPublished();
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cat?: string; genre?: string; sort?: string }>;
+}): Promise<React.ReactElement> {
+  const sp = await searchParams;
+  const cat = sp.cat ?? "";
+  const genre = sp.genre ?? "";
+  const sort = sp.sort === "hot" || sp.sort === "liked" ? sp.sort : "new";
+  const all = getStore().listPublished(100, sort);
+  // 题材标签从已发布作品里现算——作者填了才出现，不写死一张表
+  const genres = Array.from(new Set(all.map((g) => g.genre).filter((x): x is string => !!x))).slice(0, 12);
+  const games = all.filter((g) => (!cat || g.kind === cat) && (!genre || g.genre === genre));
   const flagshipUrl = process.env.FLAGSHIP_URL;
   // 旗舰作品的署名：默认「官方出品」，部署时可用 FLAGSHIP_AUTHOR 改成任何名字
   const flagshipAuthor = process.env.FLAGSHIP_AUTHOR || "官方出品";
@@ -107,8 +140,51 @@ export default function HomePage(): React.ReactElement {
         <h2 className="section-title" id="library">
           游戏库
         </h2>
+
+        <div className="lib-filters">
+          <div className="lib-row">
+            {KIND_TABS.map((t) => (
+              <Link
+                key={t.key}
+                className={`lib-chip${cat === t.key && !genre ? " active" : ""}`}
+                href={libraryHref(t.key, "", sort)}
+              >
+                {t.label}
+              </Link>
+            ))}
+            {genres.map((g) => (
+              <Link
+                key={g}
+                className={`lib-chip genre${genre === g ? " active" : ""}`}
+                href={libraryHref("", g, sort)}
+              >
+                {g}
+              </Link>
+            ))}
+          </div>
+          <div className="lib-row lib-sort">
+            <span className="lib-sort-label">排序</span>
+            {SORT_TABS.map((t) => (
+              <Link
+                key={t.key}
+                className={`lib-chip small${sort === t.key ? " active" : ""}`}
+                href={libraryHref(cat, genre, t.key)}
+              >
+                {t.label}
+              </Link>
+            ))}
+          </div>
+        </div>
         {games.length === 0 ? (
-          <p style={{ color: "var(--muted)" }}>还没有已发布的游戏，来做第一个吧。</p>
+          <p style={{ color: "var(--muted)" }}>
+            {cat || genre ? (
+              <>
+                这个分类下还没有作品。<Link href="/#library">看看全部</Link>，或者<Link href="/new">自己做一个</Link>。
+              </>
+            ) : (
+              <>还没有已发布的游戏，来做第一个吧。</>
+            )}
+          </p>
         ) : (
           <div className="game-grid">
             {games.map((g) => (
@@ -127,6 +203,7 @@ export default function HomePage(): React.ReactElement {
                         <div className="desc">{g.description || "（暂无简介）"}</div>
                         <div className="meta">
                           <span className="tag">{KIND_CN[g.kind]}</span>
+                          {g.genre && <span className="tag genre-tag">{g.genre}</span>}
                           <span>{g.author}</span>
                           <span className="stat-chip" title="点赞">♡ {g.likes}</span>
                           <span className="stat-chip" title="游玩次数">▶ {g.plays}</span>

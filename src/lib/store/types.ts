@@ -33,6 +33,8 @@ export interface GameSummary {
   hasCover: boolean;
   /** 作者选的封面预设样式 id */
   coverPreset?: string;
+  /** 题材（推理/恋爱/经营…），游戏库分类用 */
+  genre?: string;
   /** 点赞数与进入游玩次数（累计） */
   likes: number;
   plays: number;
@@ -92,7 +94,8 @@ export interface GameStore {
   sessionCreate(userId: string, tokenHash: string, expiresAt: string): void;
   sessionUser(tokenHash: string): UserRecord | null;
   sessionDelete(tokenHash: string): void;
-  listPublished(limit?: number): GameSummary[];
+  /** 已发布游戏；sort: new=最近更新（默认）/ hot=按游玩 / liked=按点赞 */
+  listPublished(limit?: number, sort?: "new" | "hot" | "liked"): GameSummary[];
   listByAuthor(author: string): GameSummary[];
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */
   aiConsume(key: string, tokens: number): { requests: number; tokens: number };

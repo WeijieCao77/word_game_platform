@@ -413,17 +413,20 @@ export class SqliteGameStore implements GameStore {
     let description = "";
     let kind: GameSummary["kind"] = "unknown";
     let coverPreset: string | undefined;
+    let genre: string | undefined;
     try {
       const config = JSON.parse(row.config) as GameConfig;
       title = config.meta?.title ?? row.id;
       description = config.meta?.description ?? "";
       coverPreset = config.meta?.coverPreset;
+      genre = config.meta?.genre;
       kind = (["story", "life", "sim"] as const).find((k) => k === config.driver?.kind) ?? "unknown";
     } catch {
       // 摘要解析失败不致命
     }
     return {
       id: row.id,
+      genre,
       title,
       description,
       author: row.author,
@@ -439,12 +442,16 @@ export class SqliteGameStore implements GameStore {
   private static readonly SUMMARY_COLS =
     "id, config, design_card, chat, author, published, edit_key, created_at, updated_at, likes, plays, (cover IS NOT NULL) AS has_cover";
 
-  listPublished(limit = 100): GameSummary[] {
+  listPublished(limit = 100, sort: "new" | "hot" | "liked" = "new"): GameSummary[] {
+    // 热度用「游玩次数为主、点赞为辅」，避免只有几个赞的新作直接盖过被玩了几百次的
+    const order =
+      sort === "hot" ? "plays DESC, likes DESC, updated_at DESC" : sort === "liked" ? "likes DESC, plays DESC, updated_at DESC" : "updated_at DESC";
     const rows = this.db
-      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 ORDER BY updated_at DESC LIMIT ?`)
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 ORDER BY ${order} LIMIT ?`)
       .all(limit) as GameRow[];
     return rows.map((r) => this.toSummary(r));
   }
+
 
   listByAuthor(author: string): GameSummary[] {
     const rows = this.db

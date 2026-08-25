@@ -311,6 +311,8 @@ export interface NotebookItemDef {
 export interface NotebookDef {
   /** 按钮名，默认「档案」 */
   label?: string;
+  /** 常驻在页面哪一侧，默认 right；窄屏自动降级为折叠面板 */
+  side?: "left" | "right";
   items: NotebookItemDef[];
 }
 
@@ -326,6 +328,8 @@ export interface SearchDef {
   prompt?: string;
   /** 查无结果的反馈，默认「没有查到相关结果。」 */
   fallbackText?: string;
+  /** 检索框常驻在页面哪一侧，默认 right——推理游戏里它要一直看得见，不能随正文滚走 */
+  side?: "left" | "right";
   entries: SearchEntryDef[];
 }
 

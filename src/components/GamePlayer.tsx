@@ -192,11 +192,18 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
 
   if (!state) return <div className="player" />;
 
+  // 检索台/档案夹常驻侧栏：推理类游戏里这两样要一直看得见，不能随正文滚走
+  const hasSearch = !!config.search && config.search.entries.length > 0;
+  const hasNotebook = !!config.notebook;
+  const hasAside = hasSearch || hasNotebook;
+  const asideSide = config.search?.side ?? config.notebook?.side ?? "right";
+
   const timeLabel = config.driver.kind === "life" ? config.driver.time.label : null;
   const continueLabel = timeLabel === "岁" ? "过一年 ▸" : timeLabel ? `下一${timeLabel} ▸` : "继续 ▸";
 
   return (
     <div className={`player ${themeClass}`} style={accentStyle}>
+      <div className={`player-shell${hasAside ? ` has-aside aside-${asideSide}` : ""}`}>
       <div className="player-inner">
         {mode === "play" && (
           <div className="player-back">
@@ -226,8 +233,7 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
         </div>
 
         <StatsBar config={config} state={state} derived={derived} />
-        <Notebook config={config} state={state} gameId={gameId} />
-        <SearchBox config={config} state={state} act={act} />
+        {!hasAside && <Notebook config={config} state={state} gameId={gameId} />}
 
         {isSim ? (
           <SimView
@@ -292,6 +298,20 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
             </>
           )}
         </div>
+      </div>
+
+      {hasAside && (
+        <aside className="case-aside">
+          {hasSearch && (
+            <section className="aside-block">
+              <div className="aside-title">{config.search?.label ?? "检索"}</div>
+              <SearchBox config={config} state={state} act={act} />
+              <p className="aside-hint">想到什么就查什么——人名、地名、案号、你在走访里留意到的词。</p>
+            </section>
+          )}
+          {hasNotebook && <Notebook config={config} state={state} gameId={gameId} variant="aside" />}
+        </aside>
+      )}
       </div>
     </div>
   );

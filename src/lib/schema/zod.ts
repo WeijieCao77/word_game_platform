@@ -249,6 +249,7 @@ export const SearchDefSchema = z.object({
   label: z.string().min(1).max(12).optional(),
   prompt: z.string().max(200).optional(),
   fallbackText: z.string().max(2000).optional(),
+  side: z.enum(["left", "right"]).optional(),
   entries: z.array(SearchEntryDefSchema).min(1).max(200),
 });
 
@@ -263,6 +264,7 @@ export const NotebookItemDefSchema = z.object({
 
 export const NotebookDefSchema = z.object({
   label: z.string().min(1).max(12).optional(),
+  side: z.enum(["left", "right"]).optional(),
   items: z.array(NotebookItemDefSchema).min(1).max(120),
 });
 

@@ -59,6 +59,13 @@ TEMPLATE=xxx.json npx vitest run tests/adhoc-template.test.ts   # 改了模板�
 
 模板的门槛是：**零错误零警告 + 600 局模拟全结局可达全卡片触发 + 开局即死率 0**。
 
+**自由模式的作品**过不了上面那道模板门槛（模拟器量不了它），改跑冒烟检查——
+像玩家一样真点一遍：打得开、有得点、点得动、存档能续、手机排得下。
+
+```bash
+node scripts/smoke-freemode.mjs http://127.0.0.1:3100 <gameId> [editKey]
+```
+
 改了界面就起本地服务用 Playwright 截图看一眼再交：
 
 ```bash

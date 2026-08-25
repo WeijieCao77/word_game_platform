@@ -36,6 +36,7 @@
 | **自由模式**：游戏跑在哪、存档怎么走 | `src/components/CodeGameFrame.tsx`（postMessage 桥）+ 游玩页 `src/app/p/[id]/page.tsx` |
 | **自由模式**：作者怎么看 AI 写了什么 | `src/components/editor/tabs/FilesTab.tsx` + 文件 API `src/app/api/games/[id]/files/route.ts` |
 | **自由模式**：新建入口与起手页 | `src/app/new/page.tsx` 的 `blank-code` + `src/lib/blank-code.ts` |
+| **自由模式**：验一部作品能不能玩 | `scripts/smoke-freemode.mjs`（Playwright 真点一遍，退出码就是结论） |
 | **自由模式**：AI 的守则与工具 | `prompt.ts` 的 `CORE_CODE` / `UI_CODE` / `CODE_SPEC` + 「自由模式」技能包；工具在 `agent.ts` |
 | 封面预设插画 | `src/components/GameCover.tsx` |
 | 旗舰位与站内嵌入 | `src/app/flagship/page.tsx` + `src/components/FlagshipFrame.tsx` |

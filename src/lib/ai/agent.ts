@@ -9,6 +9,22 @@ import { LibraryEntry } from "@/lib/library";
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
 const MAX_ROUNDS = 6;
+/**
+ * 一轮对话最多占用多久（毫秒）。
+ *
+ * 线上实测两次都撞在同一个地方：第 1 轮（纯聊方案）32 秒稳过，第 2 轮
+ * （「按这个开搭」，真要动手的那一轮）连撞三次 502 Application failed to respond。
+ * 根子是一次请求里塞了太多事——多轮模型调用 + 校验 + 几百局模拟，
+ * 而模拟是**纯 CPU 的同步长任务**（量过：manager 规模 600 局要 30 秒），
+ * 那段时间 Node 的事件循环被占死，网关看到的就是「这个应用没反应」。
+ *
+ * 所以给每一轮设一个墙钟预算：超了就不再开新的工具轮，把已经做完的部分
+ * 交代清楚返回。配置是改一次存一次的，所以「分几轮搭完」不会丢东西——
+ * 这也正是搭一个大作品该有的样子：一口气搭完本来就不现实。
+ */
+function roundBudgetMs(): number {
+  return Number(process.env.AI_ROUND_BUDGET_MS ?? 40_000);
+}
 
 const TOOLS: ToolDef[] = [
   {
@@ -317,8 +333,16 @@ export async function runAssistant(
     return `已拒绝（${what}）：${blockedReason}`;
   };
 
+  const startedAt = Date.now();
+  let outOfTime = false;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (blockedTimes >= 2) break;
+    // 时间到了就别再开新一轮：宁可把这一轮做完的东西交出去，
+    // 也不要让整个请求死在网关上（那样创作者什么都看不到）
+    if (round > 0 && Date.now() - startedAt > roundBudgetMs()) {
+      outOfTime = true;
+      break;
+    }
     const { message, totalTokens: used } = await callChat(messages, TOOLS);
     totalTokens += used;
     messages.push(message);
@@ -492,8 +516,15 @@ export async function runAssistant(
         case "simulate": {
           const check = validateGameConfig(config);
           if (!check.ok) return "配置存在错误，无法模拟。先用 validate 查看并修复。";
-          const runs = Math.min(Math.max(Number(args.runs) || 200, 20), 500);
-          return summarizeReport(simulate(check.config!, runs, Date.now() % 100000));
+          // 上限压到 150 局：模拟是同步的纯 CPU 活，600 局能把事件循环占死半分钟，
+          // 那段时间整个服务对外没反应（线上 502 的直接原因之一）。
+          // 150 局够看出结局分布与死局，正式验收的 600 局在离线门槛里跑。
+          const runs = Math.min(Math.max(Number(args.runs) || 120, 20), 150);
+          const report = simulate(check.config!, runs, Date.now() % 100000);
+          return (
+            summarizeReport(report) +
+            (runs < 300 ? `\n（这里跑的是 ${runs} 局快检；发布前平台会用 600 局的完整门槛再验一次。）` : "")
+          );
         }
         default:
           return `未知工具 ${name}`;
@@ -505,6 +536,24 @@ export async function runAssistant(
   // 以前这里回一句「这轮修改步骤较多，我先停在这里」——等于什么都没说，
   // 创作者连「哪里卡住了」都看不到，只会以为 AI 坏了。改成再问一次模型，
   // 这次不给工具，强制它用文字交代现状。
+  // 超时的这一支不再多打一次模型调用——那又要几十秒，正是要避开的东西。
+  // 直接用确定的文字交代现状，快而且不会失败。
+  if (outOfTime) {
+    return {
+      reply:
+        `这一轮做到这里先交个底（单轮有时间上限，超了我就先把手上的东西交出去，免得整个请求卡死）。\n\n` +
+        (configChanged || filesChanged
+          ? `**已经落盘生效**：${configChanged ? "配置改动" : ""}${configChanged && filesChanged ? " + " : ""}${filesChanged ? "文件改动" : ""}。刷新预览就能看到。\n\n`
+          : `这一轮还没来得及动配置。\n\n`) +
+        `跟我说一声「接着做」，我从这儿往下搭。大作品本来就该分几轮搭——` +
+        `每一轮的成果都已经存好了，不会白做。`,
+      config: configChanged ? config : undefined,
+      designCard: designChanged ? designCard : undefined,
+      filesChanged,
+      totalTokens,
+    };
+  }
+
   messages.push({
     role: "system",
     content:

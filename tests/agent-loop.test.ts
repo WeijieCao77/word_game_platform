@@ -148,3 +148,39 @@ describe("随手落盘：网关断了也不丢活", () => {
     expect(r.config?.meta.title).toBe("无回调");
   });
 });
+
+describe("单轮墙钟预算：别让一次请求死在网关上", () => {
+  // 线上实测两次都卡在同一处：第 1 轮聊方案 32 秒稳过，第 2 轮「按这个开搭」
+  // 连撞三次 502。一次请求里塞了多轮模型调用 + 校验 + 几百局模拟，
+  // 而模拟是同步的纯 CPU 活（量过：600 局要 30 秒），事件循环被占死，
+  // 网关看到的就是「应用没反应」。超预算就把手上的东西交出去，别硬撑。
+  it("超出预算后不再开新一轮，并说清已经落盘的部分", async () => {
+    // 测试里的模型调用是 mock 的、瞬间返回，elapsed 常常就是 0ms，
+    // 所以预算设成 -1 表示「一进第二轮就算超时」
+    process.env.AI_ROUND_BUDGET_MS = "-1";
+    try {
+      scripted = () => toolCall("update_config", { config: { ...builtConfig, meta: { title: "分批搭" } } });
+      const r = await runAssistant(
+        { config: builtConfig, designCard: "# 游戏设计卡\n状态：调优中\n" },
+        [{ role: "user", content: "按这个开搭" }]
+      );
+      expect(r.reply).toContain("已经落盘生效");
+      expect(r.reply).toContain("接着做");
+      expect(r.config?.meta.title).toBe("分批搭");
+      // 关键：没有为了收尾又多打一次模型调用（那又是几十秒，正是要避开的）
+      expect(calls.length).toBeLessThanOrEqual(2);
+    } finally {
+      delete process.env.AI_ROUND_BUDGET_MS;
+    }
+  });
+
+  it("没超预算时照旧走完六轮那套收尾", async () => {
+    scripted = (round, tools) =>
+      tools ? toolCall("validate", {}) : textReply("六轮用满了，我说说卡在哪。");
+    const r = await runAssistant(
+      { config: builtConfig, designCard: "# 游戏设计卡\n状态：调优中\n" },
+      [{ role: "user", content: "查一下" }]
+    );
+    expect(r.reply).toContain("卡在哪");
+  });
+});

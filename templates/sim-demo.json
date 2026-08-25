@@ -71,8 +71,7 @@
       "name": "版本理解",
       "initial": 0,
       "min": 0,
-      "max": 12,
-      "resetEachCycle": true
+      "max": 18
     },
     {
       "id": "垫底次数",
@@ -369,7 +368,7 @@
       "id": "战术合练",
       "name": "特训·战术合练",
       "description": "花 2 万全队合练版本战术，提升版本理解（计入战力；版本随赛季更迭，跨季清零）",
-      "condition": "资金 >= 2 && 版本理解 < 12",
+      "condition": "资金 >= 2 && 版本理解 < 18",
       "cost": 1,
       "effects": [
         {
@@ -641,43 +640,43 @@
       "data": [
         {
           "名称": "Titan Esports Club",
-          "强度": 69
-        },
-        {
-          "名称": "Nova Esports",
-          "强度": 71
-        },
-        {
-          "名称": "Trace Esports",
           "强度": 70
         },
         {
-          "名称": "FunPlus Phoenix",
+          "名称": "Nova Esports",
           "强度": 72
         },
         {
-          "名称": "Wolves Esports",
+          "名称": "Trace Esports",
+          "强度": 71
+        },
+        {
+          "名称": "FunPlus Phoenix",
           "强度": 73
         },
         {
-          "名称": "Xi Lai Gaming",
-          "强度": 75
-        },
-        {
-          "名称": "Bilibili Gaming",
+          "名称": "Wolves Esports",
           "强度": 74
         },
         {
-          "名称": "Dragon Ranger Gaming",
+          "名称": "Xi Lai Gaming",
           "强度": 76
         },
         {
+          "名称": "Bilibili Gaming",
+          "强度": 75
+        },
+        {
+          "名称": "Dragon Ranger Gaming",
+          "强度": 77
+        },
+        {
           "名称": "EDward Gaming",
-          "强度": 78
+          "强度": 79
         },
         {
           "名称": "TYLOO",
-          "强度": 81
+          "强度": 82
         }
       ],
       "compute": [
@@ -691,7 +690,7 @@
         },
         {
           "id": "对手发挥",
-          "expr": "row.强度 + randint(-8, 8)"
+          "expr": "row.强度 + round(turn * 0.2) + randint(-8, 8)"
         },
         {
           "id": "净胜",
@@ -861,7 +860,7 @@
         },
         {
           "id": "对手发挥",
-          "expr": "row.强度 + randint(-8, 8)"
+          "expr": "row.强度 + round(turn * 0.2) + randint(-8, 8)"
         },
         {
           "id": "净胜",
@@ -1031,7 +1030,7 @@
         },
         {
           "id": "对手发挥",
-          "expr": "row.强度 + randint(-8, 8)"
+          "expr": "row.强度 + round(turn * 0.2) + randint(-8, 8)"
         },
         {
           "id": "净胜",
@@ -1344,43 +1343,43 @@
         },
         {
           "name": "Titan Esports Club",
-          "strength": 69
-        },
-        {
-          "name": "Nova Esports",
-          "strength": 71
-        },
-        {
-          "name": "Trace Esports",
           "strength": 70
         },
         {
-          "name": "FunPlus Phoenix",
+          "name": "Nova Esports",
           "strength": 72
         },
         {
-          "name": "Wolves Esports",
+          "name": "Trace Esports",
+          "strength": 71
+        },
+        {
+          "name": "FunPlus Phoenix",
           "strength": 73
         },
         {
-          "name": "Xi Lai Gaming",
-          "strength": 75
-        },
-        {
-          "name": "Bilibili Gaming",
+          "name": "Wolves Esports",
           "strength": 74
         },
         {
-          "name": "Dragon Ranger Gaming",
+          "name": "Xi Lai Gaming",
           "strength": 76
         },
         {
+          "name": "Bilibili Gaming",
+          "strength": 75
+        },
+        {
+          "name": "Dragon Ranger Gaming",
+          "strength": 77
+        },
+        {
           "name": "EDward Gaming",
-          "strength": 78
+          "strength": 79
         },
         {
           "name": "TYLOO",
-          "strength": 81
+          "strength": 82
         }
       ],
       "playerTeam": "All Gamers",
@@ -2197,9 +2196,9 @@
       "id": "王朝",
       "title": "王朝奠基",
       "kind": "victory",
-      "condition": "冠军数 >= 2",
+      "condition": "cycle == 3 && turn >= 10 && (冠军数 >= 2)",
       "priority": 20,
-      "text": "两座冠军奖杯并排放进荣誉室。解说提起这支队伍时，开始用那个词——王朝。而缔造它的人，是你。"
+      "text": "三个赛季，{冠军数} 座奖杯。\n解说在最后一场决赛日说了一句「这已经不是黑马了」。\n年轻人开始把你的战术板截图当壁纸——{round(声望)} 点声望里，有一半是别人替你喊出来的。\n休赛期有人来挖角，名单一个没动。他们说想再来一次。"
     },
     {
       "id": "解散",
@@ -2216,6 +2215,34 @@
       "condition": "声望 <= 0",
       "priority": 15,
       "text": "赞助商解约、粉丝脱粉、队员挂上转会名单。你在深夜清空了办公室，把工牌留在了桌上。"
+    },
+    {
+      "id": "一冠在手",
+      "title": "那一年，我们拿到了",
+      "kind": "victory",
+      "condition": "cycle == 3 && turn >= 10 && (冠军数 == 1 && 声望 >= 40)",
+      "text": "只有一座奖杯，但那一座谁也拿不走。\n休赛期有三家俱乐部来挖人，队员一个没走——他们说想再拿一次。\n声望 {round(声望)}，资金 {round(资金)}。下个赛季的名单，你已经在纸上画了。"
+    },
+    {
+      "id": "人心散了",
+      "title": "最后一个走的是队长",
+      "kind": "defeat",
+      "condition": "cycle == 3 && turn >= 10 && (冠军数 == 0 && 士气 <= 30)",
+      "text": "最后一次团建没人到齐。队长把队服叠好放在桌上，说了句「不是你的问题」，然后走了。\n士气 {round(士气)}，声望 {round(声望)}。有些东西比战绩先垮。"
+    },
+    {
+      "id": "季后赛常客",
+      "title": "年年进季后赛，年年差一口气",
+      "kind": "neutral",
+      "condition": "cycle == 3 && turn >= 10 && (冠军数 == 0 && 声望 >= 45)",
+      "text": "三个赛季，没有一次缺席季后赛，也没有一次走到最后。\n媒体给了个不算难听的词：稳。队里最年轻的那个在采访里说，明年他想听点别的。\n声望 {round(声望)}——足够体面，不足以传说。"
+    },
+    {
+      "id": "重建有望",
+      "title": "账面难看，人还在",
+      "kind": "neutral",
+      "condition": "cycle == 3 && turn >= 10 && (冠军数 == 0 && 声望 >= 20 && 士气 >= 55)",
+      "text": "成绩单不好看，资金 {round(资金)}，声望 {round(声望)}。\n但训练室的灯还是每天亮到很晚——你没有卖掉任何一个愿意留下的人。\n重建这件事，第一年从来都是这样。"
     }
   ],
   "text": {

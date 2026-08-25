@@ -31,6 +31,12 @@
 | 开发者后台 | `src/app/admin/page.tsx` + `src/app/api/admin/stats/route.ts` + `store.adminStats()` |
 | 额度审批（谁申请了、批多少） | `src/app/api/admin/quota/route.ts` + 后台页的「额度申请」区块 |
 | 让线上 AI 自己做一遍游戏（端到端实测） | `.github/workflows/ai-e2e.yml` |
+| **自由模式**：作品自带的网页文件怎么存 | `src/lib/store/sqlite.ts` 的 `game_files` 表与六个 `file*` 方法 |
+| **自由模式**：文件怎么发给浏览器、沙箱边界在哪 | `src/app/play/[id]/[...path]/route.ts`（CSP 全在这一层） |
+| **自由模式**：游戏跑在哪、存档怎么走 | `src/components/CodeGameFrame.tsx`（postMessage 桥）+ 游玩页 `src/app/p/[id]/page.tsx` |
+| **自由模式**：作者怎么看 AI 写了什么 | `src/components/editor/tabs/FilesTab.tsx` + 文件 API `src/app/api/games/[id]/files/route.ts` |
+| **自由模式**：新建入口与起手页 | `src/app/new/page.tsx` 的 `blank-code` + `src/lib/blank-code.ts` |
+| **自由模式**：AI 的守则与工具 | `prompt.ts` 的 `CORE_CODE` / `UI_CODE` / `CODE_SPEC` + 「自由模式」技能包；工具在 `agent.ts` |
 | 封面预设插画 | `src/components/GameCover.tsx` |
 | 旗舰位与站内嵌入 | `src/app/flagship/page.tsx` + `src/components/FlagshipFrame.tsx` |
 | 全站配色与排版 | `src/styles/base.css` |

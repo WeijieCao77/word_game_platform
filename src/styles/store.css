@@ -342,6 +342,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.embed-author {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .embed-spacer {
   flex: 1;
 }
@@ -385,6 +390,7 @@
 }
 @media (max-width: 640px) {
   .embed-bar .tag,
+  .embed-author,
   .embed-title {
     display: none;
   }

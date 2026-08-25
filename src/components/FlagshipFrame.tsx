@@ -6,7 +6,15 @@ import { useEffect, useRef, useState } from "react";
 // 旗舰作品内嵌壳：站内直接游玩，不再跳新标签页。
 // 目标站是独立部署（自带存档与后端），这里只提供外壳——返回、全屏、以及嵌入失败时的兜底出口。
 
-export default function FlagshipFrame({ url, title }: { url: string; title: string }): React.ReactElement {
+export default function FlagshipFrame({
+  url,
+  title,
+  author,
+}: {
+  url: string;
+  title: string;
+  author: string;
+}): React.ReactElement {
   const shellRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [full, setFull] = useState(false);
@@ -31,6 +39,7 @@ export default function FlagshipFrame({ url, title }: { url: string; title: stri
         </Link>
         <span className="embed-title">{title}</span>
         <span className="tag">旗舰作品</span>
+        <span className="embed-author">作者：{author}</span>
         <span className="embed-spacer" />
         <button
           className="linklike"

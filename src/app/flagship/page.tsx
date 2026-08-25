@@ -4,6 +4,8 @@ import FlagshipFrame from "@/components/FlagshipFrame";
 export const dynamic = "force-dynamic";
 
 const TITLE = "VAL MANAGER · 无畏契约电竞经理";
+// 旗舰作品由点点独立制作，与官方示例区分开；部署时可用 FLAGSHIP_AUTHOR 覆盖
+const AUTHOR = process.env.FLAGSHIP_AUTHOR || "点点";
 
 /**
  * 探测目标站是否明确拒绝被嵌入（X-Frame-Options / CSP frame-ancestors）。
@@ -41,6 +43,7 @@ export default async function FlagshipPage(): Promise<React.ReactElement> {
     return (
       <div className="site" style={{ maxWidth: 560 }}>
         <h1 style={{ fontSize: 22, marginBottom: 10 }}>{TITLE}</h1>
+        <p style={{ color: "var(--muted)", marginBottom: 6 }}>作者：{AUTHOR}</p>
         <p style={{ color: "var(--muted)", marginBottom: 16 }}>
           该站点设置了禁止嵌入，只能在新窗口打开游玩。
         </p>
@@ -56,5 +59,5 @@ export default async function FlagshipPage(): Promise<React.ReactElement> {
     );
   }
 
-  return <FlagshipFrame url={url} title={TITLE} />;
+  return <FlagshipFrame url={url} title={TITLE} author={AUTHOR} />;
 }

@@ -16,6 +16,11 @@ on:
         description: "要设置的非敏感变量，空格分隔的 KEY=VALUE（如 AI_PROVIDER=deepseek AI_MODEL=deepseek-chat）；留空只查看"
         required: false
         default: ""
+      redeploy:
+        description: "即使没改变量也强制重新部署一次（把仓库最新提交推上线）"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   vars:
@@ -24,6 +29,7 @@ jobs:
       TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       SERVICE: word-game-platform
       SET_VARS: ${{ inputs.set_vars }}
+      REDEPLOY: ${{ inputs.redeploy }}
     steps:
       - name: Inspect and update variables
         run: |
@@ -79,8 +85,13 @@ jobs:
             echo "=== 设置变量 ==="
             VAR_ARGS=(--service "$SERVICE" --skip-deploys)
             for kv in $SET_VARS; do
+              # 白名单里的变量确定不是密钥（AI_DAILY_TOKENS 名字里带 TOKEN，但它只是个数字上限），
+              # 先放行；其余按名字拦截密钥类。
+              if echo "$kv" | grep -qE "$SAFE_VARS"; then
+                VAR_ARGS+=(--set "$kv"); continue
+              fi
               case "$kv" in
-                *_API_KEY=*|*TOKEN*=*|*SECRET*=*)
+                *_API_KEY=*|*TOKEN*=*|*SECRET*=*|*PASSWORD*=*)
                   echo "::error::拒绝通过 workflow 设置密钥类变量（$kv 的名字像密钥）。密钥请在 Railway 控制台 Variables 页添加。"
                   exit 1;;
                 *=*) VAR_ARGS+=(--set "$kv");;
@@ -97,8 +108,16 @@ jobs:
           echo "=== Volume（持久化磁盘）==="
           run_rw volume list || true
 
+          if [ -z "$SET_VARS" ] && [ "$REDEPLOY" = "true" ]; then
+            echo "=== 强制重新部署 ==="
+            run_rw redeploy --service "$SERVICE" -y || echo "::warning::redeploy 触发失败，请在 Railway 控制台手动 Deploy"
+          fi
+
+          echo "=== 服务来源（GitHub 自动部署是否还连着）==="
+          run_rw status --json 2>/dev/null | head -40 || run_rw status 2>/dev/null | head -20 || true
+
           echo "=== 最近部署（判断新代码有没有上线）==="
-          run_rw deployment list 2>/dev/null | head -20 || run_rw status 2>/dev/null | head -20 || echo "（CLI 不支持 deployment list，看下面的 /api/health）"
+          run_rw deployment list 2>/dev/null | head -12 || echo "（CLI 不支持 deployment list，看下面的 /api/health）"
 
       - name: Check live health
         run: |

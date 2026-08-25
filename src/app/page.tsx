@@ -54,8 +54,9 @@ export default async function HomePage({
   const genres = Array.from(new Set(all.map((g) => g.genre).filter((x): x is string => !!x))).slice(0, 12);
   const games = all.filter((g) => (!cat || g.kind === cat) && (!genre || g.genre === genre));
   const flagshipUrl = process.env.FLAGSHIP_URL;
-  // 旗舰作品的署名：默认「官方出品」，部署时可用 FLAGSHIP_AUTHOR 改成任何名字
-  const flagshipAuthor = process.env.FLAGSHIP_AUTHOR || "官方出品";
+  // 旗舰作品的署名：VAL MANAGER 由点点独立制作（平台的合伙人，不是官方出品），
+  // 部署时可用 FLAGSHIP_AUTHOR 改成任何名字
+  const flagshipAuthor = process.env.FLAGSHIP_AUTHOR || "点点";
   return (
     <>
       <nav className="topnav">

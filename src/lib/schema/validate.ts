@@ -468,6 +468,7 @@ class Validator {
     if ((c.driver.kind === "life" || c.driver.kind === "sim") && !c.text?.timeoutEnding) {
       this.warn("text", "建议配置 timeoutEnding（时间走完的兜底结局），否则使用系统默认文案");
     }
+    this.checkPendings();
     this.auditContent();
   }
 
@@ -762,9 +763,45 @@ class Validator {
     }
   }
 
+  private checkPendings(): void {
+    const c = this.config;
+    this.checkUnique("pendings", c.pendings ?? [], "待办");
+    for (const [i, p] of (c.pendings ?? []).entries()) {
+      const base = `pendings[${i}](${p.id})`;
+      if (p.targetType && !this.typeAttrs.has(p.targetType)) {
+        this.error(`${base}.targetType`, `待办绑定了不存在的实体类型 "${p.targetType}"`);
+      }
+      // 结果分支里的 target.* 指向发起时选中的那个实体
+      const ctx: ExprContext = p.targetType ? { entity: { binding: "target", typeId: p.targetType } } : {};
+      this.checkExpr(p.waitTurns, `${base}.waitTurns`, ctx);
+      if (p.waitingText) this.checkTemplate(p.waitingText, `${base}.waitingText`, ctx);
+      let hasFallback = false;
+      for (const [j, o] of p.outcomes.entries()) {
+        const ob = `${base}.outcomes[${j}](${o.id})`;
+        this.checkExpr(o.condition, `${ob}.condition`, ctx);
+        this.checkEffects(o.effects, `${ob}.effects`, ctx);
+        if (o.text) this.checkTemplate(o.text, `${ob}.text`, ctx);
+        if (o.condition.trim() === "1") hasFallback = true;
+      }
+      if (!hasFallback) {
+        this.warn(
+          `${base}.outcomes`,
+          `待办 "${p.name}" 的所有结果分支都可能不满足——到期时会悄无声息地消失，` +
+            `玩家等了半天什么都没等到。最后一个分支的条件写 1 作兜底`
+        );
+      }
+    }
+  }
+
   private checkEffects(effects: Effect[] | undefined, path: string, ctx: ExprContext): void {
+    const pendingIds = new Set((this.config.pendings ?? []).map((p) => p.id));
     for (const [i, e] of (effects ?? []).entries()) {
       const p = `${path}[${i}]`;
+      if (e.op === "pend") {
+        // pend 的 ref 是待办 id，不是变量名
+        if (!pendingIds.has(e.ref)) this.error(p, `pend 效果引用了不存在的待办 "${e.ref}"`);
+        continue;
+      }
       if (e.op === "add_tag" || e.op === "remove_tag") {
         if (!ctx.entity) {
           this.error(p, "标签效果需要实体上下文（该位置没有 target/self）");

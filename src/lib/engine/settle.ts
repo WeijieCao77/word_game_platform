@@ -22,6 +22,9 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
   const t = config.driver.time;
   const globalTurn = clockOf(config, state);
 
+  // 0) 到期的待办先出结果——这周收到的回音，应该在这周的比赛之前落地
+  resolvePendings(config, state, scope, globalTurn);
+
   // 1) 结算
   for (const s of config.settlements ?? []) {
     if (state.ended) break;
@@ -90,6 +93,34 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
 
   state.rngState = rng.state();
   return state;
+}
+
+/**
+ * 结算到期的待办。
+ *
+ * 「发出去要等回音」这件事，经理类游戏里到处都是：转会报价、赞助洽谈、招聘邀约、
+ * 跳槽求职。它们的共同形状是「现在做个动作，过几回合才知道结果」——压扁成
+ * 当场结算就没有了等待的张力，也没有了「同时押好几件事」的经营感。
+ */
+function resolvePendings(config: GameConfig, state: GameState, scope: GameScope, globalTurn: number): void {
+  if (!state.pendings?.length) return;
+  const due = state.pendings.filter((p) => p.dueTurn <= globalTurn);
+  if (due.length === 0) return;
+  state.pendings = state.pendings.filter((p) => p.dueTurn > globalTurn);
+  for (const item of due) {
+    if (state.ended) break;
+    const def = (config.pendings ?? []).find((d) => d.id === item.def);
+    if (!def) continue;
+    const bindings: Bindings = item.target ? { target: item.target, self: item.target } : {};
+    const pScope = scope.withBindings(bindings);
+    for (const o of def.outcomes) {
+      if (!truthy(evaluate(o.condition, pScope))) continue;
+      applyEffects(config, state, pScope, o.effects, bindings);
+      if (o.text) state.log.push({ kind: "settlement", text: renderText(o.text, pScope), turn: state.turn });
+      break;
+    }
+    checkConditionEndings(config, state, scope);
+  }
 }
 
 function runCurves(config: GameConfig, state: GameState, scope: GameScope, phase: "turn" | "cycle"): void {

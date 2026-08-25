@@ -194,6 +194,22 @@ export function clampEntityAttr(config: GameConfig, entityId: string, attrId: st
 
 export function applyEffects(config: GameConfig, state: GameState, scope: GameScope, effects: Effect[] | undefined, bindings: Bindings): void {
   for (const e of effects ?? []) {
+    if (e.op === "pend") {
+      // 发起一件「要等回音的事」：现在只记下到期回合，结果留到那时候再算。
+      // 转会报价、赞助洽谈、招聘邀约、跳槽求职都是这个形状。
+      const def = (config.pendings ?? []).find((d) => d.id === e.ref);
+      if (!def) throw new Error(`待办 "${e.ref}" 不存在`);
+      const wait = Math.max(1, Math.round(asNumber(evaluate(def.waitTurns, scope), def.waitTurns)));
+      if (!state.pendings) state.pendings = [];
+      state.pendings.push({
+        key: `${def.id}#${clockOf(config, state)}#${state.pendings.length}`,
+        def: def.id,
+        dueTurn: clockOf(config, state) + wait,
+        // 记住发起时选中的目标，结果分支里还能用 target.*
+        target: bindings.target ?? bindings.self,
+      });
+      continue;
+    }
     if (e.op === "add_tag" || e.op === "remove_tag") {
       const entityId = e.ref === "self" ? bindings.self : e.ref === "target" ? bindings.target : undefined;
       if (!entityId || !e.tag) throw new Error(`标签效果 ref 应为 self/target 且该位置有实体绑定（ref="${e.ref}"）`);

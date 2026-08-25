@@ -111,12 +111,53 @@ export type Driver = DriverStory | DriverLife | DriverSim;
  */
 export interface Effect {
   ref: string;
-  op: "add" | "set" | "add_tag" | "remove_tag";
+  /**
+   * add/set 改数值，add_tag/remove_tag 改标签，
+   * pend 发起一件「要等回音的事」（ref 写待办 id，见 PendingDef）。
+   */
+  op: "add" | "set" | "add_tag" | "remove_tag" | "pend";
   value?: string;
   tag?: string;
 }
 
 // ---------------- sim 专用（实体/决策/结算/曲线） ----------------
+
+/**
+ * 待办：发出去要等回音的事——转会报价、赞助洽谈、招聘邀约、跳槽求职。
+ *
+ * 这类玩法的共同形状是「现在做一个动作，过几回合才知道结果」，而不是当场结算。
+ * 少了它，经理类游戏里所有的谈判都只能压扁成一次性的「点一下就成」。
+ *
+ * 用法：某个决策（或选项）挂一条 { op: "pend", ref: "转会报价" } 的效果，
+ * 引擎按 waitTurns 算出到期回合，到期时按 outcomes 顺序取第一个满足的分支。
+ */
+export interface PendingDef {
+  id: string;
+  name: string;
+  /** 等几个回合出结果（表达式，可用 randint(3, 10)）；至少 1 */
+  waitTurns: string;
+  /**
+   * 发起时绑定的实体类型 id。填了才能在结果分支里用 target.*
+   * （比如「给某个选手的报价」到期时，还要知道是给谁的）。
+   */
+  targetType?: string;
+  /** 挂起期间在待办面板上显示的一句话 */
+  waitingText?: string;
+  /** 结果分支，按序求值，第一个满足条件的生效 */
+  outcomes: SettlementOutcome[];
+}
+
+/** 一条挂起中的待办（存档里的运行时状态） */
+export interface PendingItem {
+  /** 唯一实例 id */
+  key: string;
+  /** 对应的 PendingDef.id */
+  def: string;
+  /** 到期的全局回合数 */
+  dueTurn: number;
+  /** 发起时绑定的目标实体（结果分支里可用 target.*） */
+  target?: string;
+}
 
 /** 实体属性定义，如选手的「枪法」 */
 export interface AttributeDef {
@@ -444,6 +485,8 @@ export interface GameConfig {
   actions?: ActionDef[];
   settlements?: SettlementDef[];
   curves?: CurveDef[];
+  /** 待办：发出去要等回音的事（报价/申请/谈判） */
+  pendings?: PendingDef[];
 }
 
 // ---------------- 运行时状态 ----------------
@@ -470,6 +513,8 @@ export interface GameState {
   cycle?: number;
   /** sim：本回合剩余行动点（driver.actionPoints 启用时维护） */
   apLeft?: number;
+  /** 挂起中的待办：报价/申请/谈判，到期自动出结果 */
+  pendings?: PendingItem[];
   /** 全局检索台：各词条被查到的次数（效果只在首次生效） */
   searched?: Record<string, number>;
   /** 活联赛积分榜：leagueId → 队名 → 战绩 */

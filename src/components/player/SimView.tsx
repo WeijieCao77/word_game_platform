@@ -7,6 +7,7 @@ import { ChoiceControls } from "./Choices";
 import { GameLog } from "./LogView";
 import Roster from "./Roster";
 import SimSchedule from "./SimSchedule";
+import PendingBox from "./PendingBox";
 import { EndingBanner, ExplainPanel, UpcomingPanel } from "./panels";
 
 // sim 的多页签界面：像一款正经的经营网页游戏那样切页操作，
@@ -105,6 +106,7 @@ export default function SimView({
       )}
       {activeTab === "actions" && (
         <div className="sim-panel">
+          <PendingBox config={config} state={state} />
           {!state.ended && !pendingEvent ? (
             <ActionPanel config={config} state={state} actions={actions} act={act} turnLabel={turnLabel} />
           ) : (

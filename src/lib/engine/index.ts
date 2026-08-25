@@ -23,3 +23,5 @@ export { leagueStandings } from "./leagues";
 export { performAction, availableActions, eligibleTargets } from "./actions";
 export { endTurn, upcomingRows } from "./settle";
 export type { ActionView } from "./actions";
+
+export { clockOf } from "./internal";

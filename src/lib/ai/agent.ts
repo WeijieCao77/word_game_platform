@@ -205,7 +205,23 @@ export async function runAssistant(
     ...history.map((m): ChatMessage => ({ role: m.role, content: m.content })),
   ];
 
+  // 作品已经有卡片 = 已经搭出来了，创作者现在是在改成品，配置写入不再受设计卡门禁约束
+  const alreadyBuilt = config.cards.length > 0;
+  const writeAllowed = (): boolean => alreadyBuilt || configUnlocked(designCard);
+  // 同一个拒绝理由连着撞两次就别再耗轮次了——模型不会自己想通，直接把话说给创作者听
+  let blockedTimes = 0;
+  let blockedReason = "";
+  const rejectWrite = (what: string): string => {
+    blockedTimes += 1;
+    blockedReason =
+      `配置写入被流程门禁挡住了：设计卡状态还是「${parseCardStatus(designCard)}」，` +
+      `而这个作品还没有任何卡片，属于「从零开搭」。` +
+      `按流程要先跟创作者把方案对齐、拿到明确同意，再把设计卡状态改成「已确认」。`;
+    return `已拒绝（${what}）：${blockedReason}`;
+  };
+
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    if (blockedTimes >= 2) break;
     const { message, totalTokens: used } = await callChat(messages, TOOLS);
     totalTokens += used;
     messages.push(message);
@@ -239,9 +255,11 @@ export async function runAssistant(
           return "设计卡已更新。";
         }
         case "update_config": {
-          // 流程门禁：需求没对齐、方案没经创作者批准，禁止生成配置
-          if (!configUnlocked(designCard)) {
-            return `已拒绝：设计卡状态是「${parseCardStatus(designCard)}」。请先完成需求对齐并向创作者展示方案，获得其明确同意后把设计卡状态改为「已确认」，才能生成配置。`;
+          // 流程门禁：需求没对齐、方案没经创作者批准，禁止**从零**生成配置。
+          // 但作品已经搭出来了（有卡片）就不该再拦——那时创作者是在改自己的成品，
+          // 拦下来会导致「说什么都没反应」：AI 反复被拒、轮次烧光、只回一句废话。
+          if (!writeAllowed()) {
+            return rejectWrite("生成配置");
           }
           const raw = typeof args.config === "string" ? JSON.parse(args.config) : args.config;
           const check = validateGameConfig(raw);
@@ -257,8 +275,8 @@ export async function runAssistant(
             : "配置已更新，校验全部通过。";
         }
         case "patch_config": {
-          if (!configUnlocked(designCard)) {
-            return `已拒绝：设计卡状态是「${parseCardStatus(designCard)}」。请先完成需求对齐并取得创作者同意。`;
+          if (!writeAllowed()) {
+            return rejectWrite("分批写入配置");
           }
           const section = String(args.section ?? "");
           const allowed = ["cards", "entities", "entityTypes", "actions", "settlements", "endings", "vars", "curves", "leagues"];
@@ -337,8 +355,41 @@ export async function runAssistant(
     }
   }
 
+  // 走到这里说明：要么工具轮次用尽，要么同一个门禁连撞两次。
+  // 以前这里回一句「这轮修改步骤较多，我先停在这里」——等于什么都没说，
+  // 创作者连「哪里卡住了」都看不到，只会以为 AI 坏了。改成再问一次模型，
+  // 这次不给工具，强制它用文字交代现状。
+  messages.push({
+    role: "system",
+    content:
+      (blockedTimes >= 2
+        ? `你连续被流程门禁拒绝。${blockedReason}\n`
+        : `工具调用轮次已用尽（上限 ${MAX_ROUNDS} 轮）。\n`) +
+      "现在不要再调用任何工具，直接用中文回答创作者：" +
+      "①这一轮你实际改了什么（没改就直说没改）；②卡在哪、为什么；" +
+      "③需要创作者做什么决定或补什么信息。不要重复套话。",
+  });
+  try {
+    const { message, totalTokens: used } = await callChat(messages);
+    totalTokens += used;
+    if (message.content && message.content.trim()) {
+      return {
+        reply: message.content,
+        config: configChanged ? config : undefined,
+        designCard: designChanged ? designCard : undefined,
+        totalTokens,
+      };
+    }
+  } catch {
+    // 收尾这次调用失败就用下面的兜底文案，不要因此丢掉本轮已经生效的改动
+  }
   return {
-    reply: "（这轮修改步骤较多，我先停在这里。刚才的改动已生效，继续说下一步要做什么吧。）",
+    reply:
+      blockedTimes >= 2
+        ? `${blockedReason}\n\n你可以直接回我「按这个方案开搭」，我就把设计卡状态推进到「已确认」再动手。`
+        : `这一轮工具用满了 ${MAX_ROUNDS} 轮还没收尾。` +
+          (configChanged ? "已经写入的改动都生效了，" : "配置没有产生改动，") +
+          "再说一次你想要的效果，我接着做。",
     config: configChanged ? config : undefined,
     designCard: designChanged ? designCard : undefined,
     totalTokens,

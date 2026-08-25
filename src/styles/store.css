@@ -187,6 +187,61 @@
   white-space: nowrap;
 }
 
+/* 游戏库筛选条：题材/玩法胶囊 + 排序。两行分开，别挤成一坨 */
+.lib-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -4px 0 18px;
+}
+.lib-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lib-chip {
+  display: inline-block;
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.lib-chip:hover {
+  background: var(--card-hover);
+  color: var(--fg);
+  text-decoration: none;
+}
+.lib-chip.active {
+  border-color: var(--accent);
+  background: rgba(88, 178, 240, 0.14);
+  color: var(--accent);
+  font-weight: 600;
+}
+/* 题材标签是作者填出来的，弱一档，跟固定的玩法分类区分开 */
+.lib-chip.genre {
+  border-style: dashed;
+}
+.lib-chip.small {
+  padding: 3px 11px;
+  font-size: 12px;
+}
+.lib-sort-label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: 2px;
+}
+/* 排序行跟分类行之间给一条淡淡的分隔，视觉上是两组不同的东西 */
+.lib-sort {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 .flagship-banner {
   display: block;
   position: relative;

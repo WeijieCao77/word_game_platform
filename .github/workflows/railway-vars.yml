@@ -99,11 +99,23 @@ jobs:
 
       - name: Check live health
         run: |
-          URL="https://word-game-platform-production.up.railway.app/api/health"
+          BASE="https://word-game-platform-production.up.railway.app"
           echo "线上健康检查（含当前 AI 供应商/模型）："
+          OK=""
           for i in $(seq 1 18); do
-            BODY=$(curl -s --max-time 10 "$URL" || true)
-            if [ -n "$BODY" ]; then echo "$BODY"; exit 0; fi
+            BODY=$(curl -s --max-time 10 "$BASE/api/health" || true)
+            if [ -n "$BODY" ]; then echo "$BODY"; OK=1; break; fi
             sleep 10
           done
-          echo "::warning::健康检查未返回内容（服务可能正在重启）"
+          [ -z "$OK" ] && echo "::warning::健康检查未返回内容（服务可能正在重启）"
+
+          # 开发者后台是否已启用：不带密钥请求，403=已启用（密钥不对被拒），501=还没配 ADMIN_KEY。
+          # 只看状态码，不发送也不打印任何密钥。
+          echo "开发者后台 /admin："
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$BASE/api/admin/stats" || echo 000)
+          case "$CODE" in
+            403) echo "已启用 ✓（ADMIN_KEY 已配置，无密钥访问被正确拒绝）";;
+            501) echo "::warning::未启用——Railway Variables 里还没有 ADMIN_KEY，或新变量尚未重新部署";;
+            000) echo "::warning::探测失败（服务可能正在重启）";;
+            *)   echo "::warning::意外状态码 $CODE";;
+          esac

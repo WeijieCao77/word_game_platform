@@ -12,6 +12,7 @@ import {
   submitInput,
   searchKeyword,
   leagueStandings,
+  notebookItems,
   performAction,
   endTurn,
   availableActions,
@@ -117,7 +118,17 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
 
   const [kwText, setKwText] = useState("");
   const [globalKw, setGlobalKw] = useState("");
+  const [notebookOpen, setNotebookOpen] = useState(false);
   const [simTab, setSimTab] = useState<"overview" | "actions" | "roster" | "schedule" | "log">("overview");
+  const nbItems = useMemo(() => {
+    if (!state || !config.notebook) return [];
+    try {
+      return notebookItems(config, state);
+    } catch {
+      return [];
+    }
+  }, [config, state]);
+
   const inputGate = useMemo(() => {
     if (!state) return null;
     try {
@@ -371,6 +382,47 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
             </span>
           ))}
         </div>
+
+        {config.notebook && state && (
+          <>
+            <button className="notebook-fab" onClick={() => setNotebookOpen((v) => !v)} title="随时翻看已掌握的线索与档案">
+              📔 {config.notebook.label ?? "档案"}（{nbItems.length}）
+            </button>
+            {notebookOpen && (
+              <div className="notebook-drawer">
+                <div className="notebook-head">
+                  <b>{config.notebook.label ?? "档案"}</b>
+                  <button className="linklike" onClick={() => setNotebookOpen(false)}>
+                    收起 ✕
+                  </button>
+                </div>
+                {nbItems.length === 0 && <div className="pane-note">还没有掌握任何条目。</div>}
+                {Array.from(new Set(nbItems.map((n) => n.category))).map((cat) => (
+                  <div key={cat} className="notebook-cat">
+                    <div className="notebook-cat-name">{cat}</div>
+                    {nbItems
+                      .filter((n) => n.category === cat)
+                      .map((n) => (
+                        <details key={n.id} className="notebook-item">
+                          <summary>{n.name}</summary>
+                          {n.image && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              className="log-img"
+                              src={/^https?:\/\//.test(n.image) ? n.image : gameId ? `/api/games/${gameId}/assets/${encodeURIComponent(n.image)}` : ""}
+                              alt=""
+                              loading="lazy"
+                            />
+                          )}
+                          <div className="notebook-text">{n.text}</div>
+                        </details>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
 
         {config.search && config.search.entries.length > 0 && state && !state.ended && (
           <form

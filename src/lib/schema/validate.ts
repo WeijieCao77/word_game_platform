@@ -371,6 +371,33 @@ class Validator {
       if (c.search.fallbackText) this.checkTemplate(c.search.fallbackText, "search.fallbackText", {});
     }
 
+    // 档案夹
+    if (c.notebook) {
+      this.checkUnique("notebook.items", c.notebook.items, "档案条目");
+      for (const [i, item] of c.notebook.items.entries()) {
+        const base = `notebook.items[${i}](${item.id})`;
+        if (item.condition) this.checkExpr(item.condition, `${base}.condition`, {});
+        this.checkTemplate(item.name, `${base}.name`, {});
+        this.checkTemplate(item.text, `${base}.text`, {});
+        // 随机函数会让每次翻开档案内容不同：禁用
+        const sources: string[] = [];
+        if (item.condition) sources.push(item.condition);
+        for (const t of [item.name, item.text]) {
+          for (const m of t.matchAll(/\{([^{}]+)\}/g)) sources.push(m[1]);
+        }
+        for (const src of sources) {
+          try {
+            const calls = collectRefs(parseExpr(src)).calls;
+            if (calls.some((cl) => ["rand", "randint", "chance"].includes(cl.name))) {
+              this.warn(base, `档案条目 "${item.id}" 使用了随机函数——每次翻开内容会变，请改用确定性条件`);
+            }
+          } catch {
+            // 已由其他检查报告
+          }
+        }
+      }
+    }
+
     // 调度器
     if (c.driver.kind === "story") {
       if (!this.cardIds.has(c.driver.startCard)) {

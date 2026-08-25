@@ -291,6 +291,29 @@ export interface SearchEntryDef {
   effects?: Effect[];
 }
 
+/** 档案夹条目：可随时翻看的线索/人物/物证卡（满足条件才出现） */
+export interface NotebookItemDef {
+  id: string;
+  name: string;
+  /** 分组，如 人物/物证/线索；不填归入「档案」 */
+  category?: string;
+  /** 显示条件：不填=开局即可翻看（人物档案）；填了=拿到线索才出现（线索索引） */
+  condition?: string;
+  /** 内容，支持 {表达式} 插值——可随进度显示更多信息 */
+  text: string;
+  image?: string;
+}
+
+/**
+ * 档案夹（推理/叙事类的随身索引）：玩家随时翻看已解锁的线索、人物档案、物证。
+ * 纯展示模块（不改状态）：查阅性内容放这里，不要做成繁琐的选项。
+ */
+export interface NotebookDef {
+  /** 按钮名，默认「档案」 */
+  label?: string;
+  items: NotebookItemDef[];
+}
+
 /**
  * 全局检索台（鲁特里一家死了 / MISSING 式）：常驻检索框，玩家随时输入关键词查档案。
  * 与卡片级 input 的分工：检索台是随时可查的百科/数据库，解锁线索变量全局生效；
@@ -389,6 +412,8 @@ export interface GameConfig {
   text?: GameText;
   /** 全局检索台（可选）：调查/解谜类的常驻检索框 */
   search?: SearchDef;
+  /** 档案夹（可选）：随时翻看的线索索引与人物/物证档案 */
+  notebook?: NotebookDef;
   /** 活联赛（sim 可选）：NPC 之间也比赛，产生会变化的积分榜 */
   leagues?: LeagueDef[];
   // ---- sim 模块（driver.kind === "sim" 时使用）----

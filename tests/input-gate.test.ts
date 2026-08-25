@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameConfig, validateGameConfig } from "@/lib/schema";
-import { initState, pendingInput, submitInput, pendingChoices, choose, searchKeyword } from "@/lib/engine";
+import { initState, pendingInput, submitInput, pendingChoices, choose, searchKeyword, notebookItems } from "@/lib/engine";
 import { normalizeKeyword } from "@/lib/keyword";
 import { simulate } from "@/lib/simulate";
 
@@ -149,5 +149,52 @@ describe("全局检索台（config.search）", () => {
     const report = simulate(SEARCH_CONFIG, 300, 11);
     expect(report.errors).toEqual([]);
     expect(report.unreachedEndings).toEqual([]);
+  });
+});
+
+describe("档案夹（config.notebook）", () => {
+  const NB_CONFIG: GameConfig = {
+    schemaVersion: 1,
+    meta: { title: "档案夹测试" },
+    driver: { kind: "story", startCard: "开场" },
+    vars: [{ id: "线索_怀表", name: "线索_怀表", initial: 0, visible: false }],
+    notebook: {
+      label: "手帐",
+      items: [
+        { id: "嫌疑人甲", name: "账房柳先生", category: "人物", text: "欠了赌债的账房。" },
+        { id: "怀表", name: "停摆的怀表", category: "物证", condition: "线索_怀表 >= 1", text: "表冠有拨动痕迹。" },
+      ],
+    },
+    cards: [
+      {
+        id: "开场",
+        text: "你进了藏书楼。",
+        choices: [
+          { id: "查表", label: "检查怀表", effects: [{ ref: "线索_怀表", op: "set", value: "1" }], ending: "收工" },
+          { id: "走", label: "离开", ending: "收工" },
+        ],
+      },
+    ],
+    endings: [{ id: "收工", title: "收工", kind: "neutral" }],
+    text: { timeoutEnding: { title: "完" } },
+  };
+
+  it("零错误零警告；开局可翻人物档案；条件条目拿到线索才出现", () => {
+    const r = validateGameConfig(NB_CONFIG);
+    expect(r.issues).toEqual([]);
+    let s = initState(NB_CONFIG, 3);
+    let items = notebookItems(NB_CONFIG, s);
+    expect(items.map((i) => i.id)).toEqual(["嫌疑人甲"]);
+    s = choose(NB_CONFIG, s, "查表");
+    items = notebookItems(NB_CONFIG, s);
+    expect(items.map((i) => i.id).sort()).toEqual(["嫌疑人甲", "怀表"]);
+    expect(items.find((i) => i.id === "怀表")!.category).toBe("物证");
+  });
+
+  it("条件里用随机函数会被校验器警告", () => {
+    const bad = structuredClone(NB_CONFIG);
+    bad.notebook!.items[0].condition = "chance(0.5)";
+    const r = validateGameConfig(bad);
+    expect(r.issues.some((i) => i.severity === "warning" && i.message.includes("随机函数"))).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ export {
   submitInput,
   searchKeyword,
   leagueStandings,
+  notebookItems,
   performAction,
   endTurn,
   availableActions,

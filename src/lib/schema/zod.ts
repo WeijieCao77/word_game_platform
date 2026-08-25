@@ -252,6 +252,20 @@ export const SearchDefSchema = z.object({
   entries: z.array(SearchEntryDefSchema).min(1).max(200),
 });
 
+export const NotebookItemDefSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(40),
+  category: z.string().min(1).max(12).optional(),
+  condition: ExprSchema.optional(),
+  text: z.string().min(1).max(4000),
+  image: z.string().max(300).optional(),
+});
+
+export const NotebookDefSchema = z.object({
+  label: z.string().min(1).max(12).optional(),
+  items: z.array(NotebookItemDefSchema).min(1).max(120),
+});
+
 export const GameConfigSchema = z.object({
   schemaVersion: z.literal(1),
   meta: GameMetaSchema,
@@ -262,6 +276,7 @@ export const GameConfigSchema = z.object({
   endings: EndingDefSchema.array().min(1).max(50),
   text: GameTextSchema.optional(),
   search: SearchDefSchema.optional(),
+  notebook: NotebookDefSchema.optional(),
   leagues: z.array(LeagueDefSchema).max(6).optional(),
   entityTypes: z.array(EntityTypeDefSchema).max(10).optional(),
   entities: z.array(EntityInstanceSchema).max(200).optional(),

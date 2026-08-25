@@ -936,6 +936,34 @@ export function searchKeyword(config: GameConfig, input: GameState, textRaw: str
   return state;
 }
 
+/** 档案夹：当前可翻看的条目（纯查询，不改状态；条件里禁用随机函数由校验器把关） */
+export function notebookItems(
+  config: GameConfig,
+  state: GameState
+): { id: string; name: string; category: string; text: string; image?: string }[] {
+  if (!config.notebook || config.notebook.items.length === 0) return [];
+  const rng = createRng(state.rngState);
+  const scope = new GameScope(config, state, rng).withBindings(
+    state.pendingEntity ? { self: state.pendingEntity } : {}
+  );
+  const out: { id: string; name: string; category: string; text: string; image?: string }[] = [];
+  for (const item of config.notebook.items) {
+    try {
+      if (item.condition && !truthy(evaluate(item.condition, scope))) continue;
+      out.push({
+        id: item.id,
+        name: renderText(item.name, scope),
+        category: item.category ?? "档案",
+        text: renderText(item.text, scope),
+        image: item.image,
+      });
+    } catch {
+      // 单条渲染失败不拖垮整个档案夹
+    }
+  }
+  return out;
+}
+
 /** 在待选卡上做出选择（三种调度器共用） */
 export function choose(config: GameConfig, input: GameState, choiceId: string): GameState {
   if (input.ended) return input;

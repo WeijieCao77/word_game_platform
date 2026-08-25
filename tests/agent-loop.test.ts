@@ -110,3 +110,41 @@ describe("设计卡门禁：只拦从零开搭，不拦改成品", () => {
     expect(calls.length).toBeLessThan(6);
   });
 });
+
+describe("随手落盘：网关断了也不丢活", () => {
+  it("工具每写一次配置就调一次 persist，不必等这一轮跑完", async () => {
+    // 线上实测撞过：生成量大的那一轮被网关 502 掐断，请求死在半路。
+    // 那时候配置只在内存里，等到最后统一保存的话，这一轮就全白做。
+    const saved: { config?: unknown; designCard?: string }[] = [];
+    scripted = (round) =>
+      round === 0
+        ? toolCall("update_config", { config: { ...builtConfig, meta: { title: "改过的标题" } } })
+        : textReply("标题改好了。");
+
+    await runAssistant(
+      {
+        config: builtConfig,
+        designCard: "# 游戏设计卡\n状态：调优中\n",
+        persist: (patch) => saved.push(patch),
+      },
+      [{ role: "user", content: "把标题改一下" }]
+    );
+
+    // 关键：这一轮还没返回，配置就已经交给存储层了
+    const withConfig = saved.find((p) => p.config);
+    expect(withConfig, "写配置的那一刻就该落盘").toBeDefined();
+    expect((withConfig!.config as typeof builtConfig).meta.title).toBe("改过的标题");
+  });
+
+  it("不传 persist 也照常跑——老调用方不受影响", async () => {
+    scripted = (round) =>
+      round === 0
+        ? toolCall("update_config", { config: { ...builtConfig, meta: { title: "无回调" } } })
+        : textReply("好了。");
+    const r = await runAssistant(
+      { config: builtConfig, designCard: "# 游戏设计卡\n状态：调优中\n" },
+      [{ role: "user", content: "改标题" }]
+    );
+    expect(r.config?.meta.title).toBe("无回调");
+  });
+});

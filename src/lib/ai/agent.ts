@@ -182,6 +182,15 @@ export interface AgentContext {
   designCard: string;
   /** 作品形态：决定发哪套守则（自由模式讲代码，快速模式讲配置） */
   mode?: GameMode;
+  /**
+   * 每次配置/设计卡真的变了就立刻落盘。
+   *
+   * 不传也能跑（调用方在结束后统一保存），但那样有个真实的坑：
+   * 生成量大的那一轮可能被网关掐掉（线上实测撞过 502），
+   * 请求死在半路，这一轮辛辛苦苦改的东西就全丢了。
+   * 传了这个回调，改一次存一次——连接断了，活还在。
+   */
+  persist?: (patch: { config?: GameConfig; designCard?: string }) => void;
   searchLibrary?: (q: string, category?: string) => LibraryEntry[];
   /**
    * 自由模式的文件读写。传了才会把三个文件工具给 AI——
@@ -341,6 +350,7 @@ export async function runAssistant(
           if (typeof args.content !== "string") return "参数错误：content 必须是字符串";
           designCard = args.content.slice(0, 20000);
           designChanged = true;
+          ctx.persist?.({ designCard });
           return "设计卡已更新。";
         }
         case "update_config": {
@@ -358,6 +368,7 @@ export async function runAssistant(
           }
           config = check.config!;
           configChanged = true;
+          ctx.persist?.({ config });
           const warnings = check.issues.filter((i) => i.severity === "warning");
           return warnings.length > 0
             ? `配置已更新。有 ${warnings.length} 个警告可酌情处理：\n${issuesToText(warnings)}`
@@ -398,6 +409,7 @@ export async function runAssistant(
           }
           config = structural.data as GameConfig;
           configChanged = true;
+          ctx.persist?.({ config });
           const semantic = validateGameConfig(config).issues.filter((i) => i.severity === "error");
           return semantic.length > 0
             ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +

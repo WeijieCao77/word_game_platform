@@ -71,6 +71,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
         config: record.config as GameConfig,
         designCard: record.designCard,
         mode: store.gameMode(id),
+        // 改一次存一次：网关掐断连接时（线上实测撞过 502），
+        // 这一轮已经做完的部分不会白做
+        persist: (patch) => store.update(id, patch),
         files: {
           list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size })),
           read: (path) => store.fileRead(id, path),

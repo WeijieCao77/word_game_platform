@@ -30,6 +30,22 @@ import { LIBRARY_CATEGORIES, LibraryEntry, insertLibraryCard, rankLibraryEntries
 /** 新手引导看过一次就不再自动弹（顶栏「引导」可随时重看） */
 const TOUR_KEY = "wgp_tour_edit_v1";
 
+/** token 数看着舒服些：4321 → 4.3k */
+function kilo(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+/**
+ * 配额提示以 token 为主——真正先耗尽的通常是 token 而不是次数，
+ * 让作者一眼看到「还剩多少」，次数放在后面做参考。
+ */
+function quotaText(q: { requests: number; tokens: number; maxRequests?: number; maxTokens?: number }): string {
+  if (!q.maxTokens) return `AI 今日已用 ${kilo(q.tokens)} tokens`;
+  const left = Math.max(0, q.maxTokens - q.tokens);
+  const times = q.maxRequests ? ` · ${q.requests}/${q.maxRequests} 次` : ` · ${q.requests} 次`;
+  return `AI 今日已用 ${kilo(q.tokens)}/${kilo(q.maxTokens)} tokens，还剩 ${kilo(left)}${times}`;
+}
+
 export default function EditPage({ params }: { params: Promise<{ id: string }> }): React.ReactElement {
   const { id } = use(params);
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -495,7 +511,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }
       if (typeof body.designCard === "string") setDesignCard(body.designCard);
       if (body.quota) {
-        setStatusMsg(`AI 今日已用 ${body.quota.requests} 次`);
+        setStatusMsg(quotaText(body.quota));
       }
     } catch (err) {
       setChat((c) => [...c, { role: "system", content: `⚠ ${err instanceof Error ? err.message : String(err)}` }]);

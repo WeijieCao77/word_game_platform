@@ -76,7 +76,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       { role: "user", content: history[history.length - 1].content },
       { role: "assistant", content: result.reply || "（无回复）" },
     ]);
-    const quota = store.aiConsume(quotaKey, result.totalTokens);
+    const quota = { ...store.aiConsume(quotaKey, result.totalTokens), maxRequests, maxTokens };
     return NextResponse.json({
       reply: result.reply,
       config: result.config,

@@ -55,6 +55,19 @@ function AssistantMsg({ content }: { content: string }): React.ReactElement {
   );
 }
 
+
+/**
+ * 等待提示按真实耗时分档。聊方案通常十几秒，搭建整份配置要写卡片 → 校验 → 跑几百局模拟，
+ * 两三分钟很正常——用一个固定区间套所有情况，超了就显得平台出故障了。
+ */
+function waitingHint(sec: number): string {
+  if (sec <= 15) return "";
+  if (sec <= 60) return "（聊方案通常十几秒；要动配置的话会久一些，它可能正在跑校验和模拟）";
+  if (sec <= 150) return "（正在搭建配置：写卡片 → 校验 → 跑几百局模拟，两三分钟都算正常）";
+  if (sec <= 300) return "（这轮改动比较大，还在迭代配平——校验没过它会自己重来，最多 6 轮）";
+  return "（已经超过 5 分钟，可能是卡住了：刷新页面后把要求拆小一点重发，聊天记录不会丢）";
+}
+
 export default function ChatPane({
   cardStatus,
   chat,
@@ -99,7 +112,7 @@ export default function ChatPane({
         )}
         {chatBusy && (
           <div className="chat-msg system">
-            AI 策划工作中… {chatSeconds}s{chatSeconds > 15 ? "（生成/修改配置通常要 30~120 秒，它可能正在跑校验和模拟）" : ""}
+            AI 策划工作中… {chatSeconds}s{waitingHint(chatSeconds)}
           </div>
         )}
         <div ref={chatEndRef} />

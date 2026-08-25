@@ -14,8 +14,12 @@ function newEditKey(): string {
   return randomBytes(24).toString("hex");
 }
 
+/**
+ * 「今天」按东八区算（平台用户主要在国内）。
+ * 用 UTC 会变成每天早上 8 点才重置配额与日统计，反直觉。
+ */
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
 interface GameRow {

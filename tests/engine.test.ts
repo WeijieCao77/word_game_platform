@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GameConfig } from "@/lib/schema";
+import { GameConfig, validateGameConfig } from "@/lib/schema";
 import {
   initState,
   step,
@@ -9,6 +9,7 @@ import {
   endTurn,
   availableActions,
   eligibleTargets,
+  leagueStandings,
 } from "@/lib/engine";
 import { simulate } from "@/lib/simulate";
 
@@ -370,5 +371,84 @@ describe("sim 行动点（actionPoints）", () => {
     expect(s.apLeft).toBeUndefined();
     for (let i = 0; i < 6; i++) s = performAction(legacy, s, "轻活");
     expect(s.vars["资金"]).toBe(16);
+  });
+});
+
+describe("活联赛（leagues）", () => {
+  const LG_CONFIG = {
+    schemaVersion: 1,
+    meta: { title: "联赛测试" },
+    driver: { kind: "sim", time: { turnLabel: "周", cycleLabel: "赛季", turnsPerCycle: 3, maxCycles: 2 } },
+    vars: [{ id: "战力", name: "战力", initial: 80 }],
+    cards: [{ id: "填充", weight: 1, text: "一周过去。" }],
+    endings: [{ id: "夺冠", title: "夺冠", kind: "victory", condition: 'rank("城际联赛") == 1 && cycle == 2 && turn == 3' }],
+    text: { timeoutEnding: { title: "赛季收官" } },
+    actions: [
+      { id: "备战", name: "备战", effects: [{ ref: "战力", op: "add", value: "0" }] },
+      { id: "休整", name: "休整", effects: [] },
+      { id: "观察", name: "观察", effects: [] },
+    ],
+    settlements: [
+      {
+        id: "周赛",
+        name: "周赛",
+        data: [{ 名称: "北门虎", 强度: 40 }, { 名称: "南关豹", 强度: 45 }, { 名称: "西市狼", 强度: 50 }],
+        compute: [{ id: "净胜", expr: "战力 - row.强度" }],
+        outcomes: [
+          { id: "胜", condition: "净胜 > 0", effects: [], text: "拿下{row.名称}", leagueResult: "win" },
+          { id: "负", condition: "1", effects: [], leagueResult: "loss" },
+        ],
+      },
+    ],
+    leagues: [
+      {
+        id: "城际联赛",
+        name: "城际联赛",
+        playerTeam: "主角队",
+        settlement: "周赛",
+        playoffs: 2,
+        teams: [
+          { name: "主角队", strength: 80 },
+          { name: "北门虎", strength: 40 },
+          { name: "南关豹", strength: 45 },
+          { name: "西市狼", strength: 50 },
+          { name: "东郊鹰", strength: 60 },
+          { name: "中州龙", strength: 70 },
+        ],
+      },
+    ],
+  } as unknown as import("@/lib/schema").GameConfig;
+
+  it("配置零错误零警告；玩家与对手镜像记账；NPC 互赛推进；rank 表达式与积分榜一致", () => {
+    const check = validateGameConfig(LG_CONFIG);
+    expect(check.issues).toEqual([]);
+    let s = initState(LG_CONFIG, 7);
+    s = endTurn(LG_CONFIG, s);
+    while (s.pendingCard && !s.ended) s = choose(LG_CONFIG, s, pendingChoices(LG_CONFIG, s)[0]?.id ?? "");
+    const table = s.leagues!["城际联赛"];
+    // 玩家战力80 vs 北门虎40 必胜；镜像记账
+    expect(table["主角队"]).toEqual({ w: 1, l: 0, diff: 1 });
+    expect(table["北门虎"]).toEqual({ w: 0, l: 1, diff: -1 });
+    // 其余四队（南关豹/西市狼/东郊鹰/中州龙）两两互赛：共 2 场，总胜场=玩家1+镜像0+NPC2=... 每轮总胜=1+2
+    const totalW = Object.values(table).reduce((a, r) => a + r.w, 0);
+    expect(totalW).toBe(3);
+    const standings = leagueStandings(LG_CONFIG, s, "城际联赛");
+    expect(standings[0].rank).toBe(1);
+    expect(standings.find((r) => r.isPlayer)).toBeTruthy();
+
+    // 同种子复现
+    let s2 = initState(LG_CONFIG, 7);
+    s2 = endTurn(LG_CONFIG, s2);
+    while (s2.pendingCard && !s2.ended) s2 = choose(LG_CONFIG, s2, pendingChoices(LG_CONFIG, s2)[0]?.id ?? "");
+    expect(s2.leagues).toEqual(s.leagues);
+
+    // 归因快照存在
+    expect(s.lastSettlements?.["周赛"].locals["净胜"]).toBe(40);
+  });
+
+  it("模拟 200 局：夺冠可达，赛季滚动重置战绩不报错", { timeout: 60000 }, () => {
+    const report = simulate(LG_CONFIG, 200, 33);
+    expect(report.errors).toEqual([]);
+    expect(report.unreachedEndings).toEqual([]);
   });
 });

@@ -21,6 +21,7 @@ export interface ValidationResult {
 const RESERVED = new Set(["time", "turn", "cycle", "true", "false", "fired", "self", "target", "row"]);
 
 const GAME_FUNCTIONS: Record<string, { min: number; max: number }> = {
+  rank: { min: 1, max: 1 },
   rand: { min: 0, max: 0 },
   randint: { min: 2, max: 2 },
   chance: { min: 1, max: 1 },
@@ -317,6 +318,38 @@ class Validator {
       }
     }
 
+    // 活联赛
+    this.checkUnique("leagues", c.leagues ?? [], "联赛");
+    for (const [i, lg] of (c.leagues ?? []).entries()) {
+      const base = `leagues[${i}](${lg.id})`;
+      if (!this.isSim) this.warn(base, "leagues 只在 sim 调度器中生效");
+      const st = (c.settlements ?? []).find((x) => x.id === lg.settlement);
+      if (!st) this.error(base, `联赛 "${lg.name}" 挂接的结算 "${lg.settlement}" 不存在`);
+      else {
+        if (!st.outcomes.some((o) => o.leagueResult)) {
+          this.warn(base, `结算 "${st.name}" 没有任何 outcome 标注 leagueResult——联赛永远不会记账`);
+        }
+        const key = lg.opponentKey ?? "名称";
+        if ((st.data?.length ?? 0) > 0 && !st.data!.some((r) => typeof r[key] === "string")) {
+          this.warn(base, `结算 "${st.name}" 的 data 行没有字符串字段 "${key}"，对手无法镜像记账`);
+        }
+      }
+      if (!lg.teams.some((t) => t.name === lg.playerTeam)) {
+        this.error(base, `playerTeam "${lg.playerTeam}" 不在参赛队伍名单里`);
+      }
+      const names = new Set<string>();
+      for (const t of lg.teams) {
+        if (names.has(t.name)) this.error(base, `联赛 "${lg.name}" 的队伍 "${t.name}" 重复`);
+        names.add(t.name);
+      }
+    }
+    // leagueResult 只有挂接了联赛才有意义
+    for (const [i, st] of (c.settlements ?? []).entries()) {
+      if (st.outcomes.some((o) => o.leagueResult) && !(c.leagues ?? []).some((lg) => lg.settlement === st.id)) {
+        this.warn(`settlements[${i}](${st.id})`, `结算标注了 leagueResult 但没有联赛挂接它`);
+      }
+    }
+
     // 全局检索台
     if (c.search) {
       this.checkUnique("search.entries", c.search.entries, "检索词条");
@@ -542,6 +575,15 @@ class Validator {
           this.error(path, `fired() 的参数必须是卡片 id 字符串字面量，如 fired("遇仙")`);
         } else if (!this.cardIds.has(arg.value)) {
           this.error(path, `fired() 引用了不存在的卡片 "${arg.value}"`);
+        }
+      }
+      if (call.name === "rank") {
+        const arg = call.args[0];
+        if (!this.isSim) this.error(path, "rank() 只在 sim 调度器中可用");
+        else if (arg.kind !== "str") {
+          this.error(path, `rank() 的参数必须是联赛 id 字符串字面量，如 rank("联赛")`);
+        } else if (!(this.config.leagues ?? []).some((lg) => lg.id === arg.value)) {
+          this.error(path, `rank() 引用了不存在的联赛 "${arg.value}"`);
         }
       }
       if (call.name === "tag") {

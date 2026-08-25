@@ -175,6 +175,8 @@ export interface SettlementOutcome {
   condition: string;
   effects: Effect[];
   text?: string;
+  /** 活联赛：此分支代表玩家在挂接联赛中的胜/负（触发联赛记账与 NPC 互赛一轮） */
+  leagueResult?: "win" | "loss";
 }
 
 /**
@@ -190,6 +192,36 @@ export interface SettlementDef {
   data?: Array<Record<string, number | string>>;
   compute?: SettlementCompute[];
   outcomes: SettlementOutcome[];
+}
+
+/** 活联赛参赛队 */
+export interface LeagueTeamDef {
+  name: string;
+  /** 强度（与玩家结算里的对手强度同一量纲），NPC 互赛用 logistic 胜率 */
+  strength: number;
+}
+
+/**
+ * 活联赛：没有玩家参与的比赛也在发生。挂接一个带 data 赛程的结算——
+ * 玩家场次由结算 outcome 的 leagueResult 记账（对手镜像记账），
+ * 同轮其余队伍两两互赛（确定性配对+强度胜率），积分榜存进 state，
+ * 表达式用 rank("联赛id") 取玩家当前排名。
+ */
+export interface LeagueDef {
+  id: string;
+  name: string;
+  /** 参赛队（含玩家队） */
+  teams: LeagueTeamDef[];
+  /** 玩家队伍名（必须在 teams 中） */
+  playerTeam: string;
+  /** 挂接的结算 id：该结算每运行一次=联赛推进一轮 */
+  settlement: string;
+  /** 结算 data 行里表示对手名的字段，默认「名称」 */
+  opponentKey?: string;
+  /** 积分榜上标注前 N 名晋级线（纯展示） */
+  playoffs?: number;
+  /** 每个新周期重置战绩（赛季制联赛），默认 true */
+  resetEachCycle?: boolean;
 }
 
 /** 成长/衰退曲线：按回合或按周期对某类实体批量应用的规则 */
@@ -357,6 +389,8 @@ export interface GameConfig {
   text?: GameText;
   /** 全局检索台（可选）：调查/解谜类的常驻检索框 */
   search?: SearchDef;
+  /** 活联赛（sim 可选）：NPC 之间也比赛，产生会变化的积分榜 */
+  leagues?: LeagueDef[];
   // ---- sim 模块（driver.kind === "sim" 时使用）----
   entityTypes?: EntityTypeDef[];
   entities?: EntityInstance[];
@@ -392,6 +426,13 @@ export interface GameState {
   apLeft?: number;
   /** 全局检索台：各词条被查到的次数（效果只在首次生效） */
   searched?: Record<string, number>;
+  /** 活联赛积分榜：leagueId → 队名 → 战绩 */
+  leagues?: Record<string, Record<string, { w: number; l: number; diff: number }>>;
+  /** 最近一次各结算的归因快照：中间量与结果（「为什么是这个结果”面板的数据源） */
+  lastSettlements?: Record<
+    string,
+    { name: string; row?: Record<string, number | string>; locals: Record<string, number>; text?: string }
+  >;
   /** sim：实体状态 */
   entities?: Record<string, EntityState>;
   /** sim：本回合各决策已用次数 */

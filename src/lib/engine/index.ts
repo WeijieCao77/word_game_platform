@@ -8,6 +8,7 @@ export {
   pendingInput,
   submitInput,
   searchKeyword,
+  leagueStandings,
   performAction,
   endTurn,
   availableActions,

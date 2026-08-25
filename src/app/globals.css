@@ -1302,3 +1302,43 @@ textarea {
 .kw-global-icon {
   opacity: 0.7;
 }
+
+/* 活联赛积分榜与结算复盘 */
+.standings-me td {
+  font-weight: 700;
+  color: var(--accent, #2f7d43);
+}
+.standings-line td {
+  border-bottom: 2px solid var(--accent, #6bd68b);
+}
+.explain-panel {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+}
+.explain-panel summary {
+  cursor: pointer;
+  opacity: 0.85;
+  font-weight: 600;
+}
+.explain-block {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.explain-row {
+  opacity: 0.75;
+  font-size: 12.5px;
+}
+.explain-locals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.explain-text {
+  opacity: 0.9;
+}
+

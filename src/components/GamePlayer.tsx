@@ -11,6 +11,7 @@ import {
   pendingInput,
   submitInput,
   searchKeyword,
+  leagueStandings,
   performAction,
   endTurn,
   availableActions,
@@ -583,6 +584,31 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
               {activeTab === "overview" && (
                 <div className="sim-panel">
                   {upcomingPanel}
+                  {state.lastSettlements && Object.keys(state.lastSettlements).length > 0 && (
+                    <details className="explain-panel">
+                      <summary>上一次结算复盘——为什么是这个结果</summary>
+                      {Object.entries(state.lastSettlements).map(([sid, snap]) => (
+                        <div key={sid} className="explain-block">
+                          <b>{snap.name}</b>
+                          {snap.row && (
+                            <span className="explain-row">
+                              {Object.entries(snap.row)
+                                .map(([k, v]) => (typeof v === "string" ? v : `${k} ${v}`))
+                                .join(" · ")}
+                            </span>
+                          )}
+                          <div className="explain-locals">
+                            {Object.entries(snap.locals).map(([k, v]) => (
+                              <span key={k} className="stat">
+                                {k} <b>{v}</b>
+                              </span>
+                            ))}
+                          </div>
+                          {snap.text && <div className="explain-text">{snap.text}</div>}
+                        </div>
+                      ))}
+                    </details>
+                  )}
                   <div className="gamelog sim-recent">{recentLog.map(renderEntry)}</div>
                   {!state.ended && !pendingEvent && (
                     <div className="controls" style={{ display: "flex", gap: 10 }}>
@@ -644,9 +670,46 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
 /** sim 赛程页：每个带 data 的结算展示完整赛程表，标出已赛/下一场 */
 function SimSchedule({ config, state }: { config: GameConfig; state: GameState }): React.ReactElement {
   const withData = (config.settlements ?? []).filter((st) => (st.data?.length ?? 0) > 0);
-  if (withData.length === 0) return <div className="pane-note">这个游戏没有固定赛程。</div>;
+  const leagues = config.leagues ?? [];
+  if (withData.length === 0 && leagues.length === 0) return <div className="pane-note">这个游戏没有固定日程。</div>;
   return (
     <div className="sched">
+      {leagues.map((lg) => {
+        const rows = leagueStandings(config, state, lg.id);
+        return (
+          <div key={lg.id} className="sched-block">
+            <div className="sched-title">{lg.name} · 积分榜</div>
+            <div className="roster-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>队伍</th>
+                    <th>胜</th>
+                    <th>负</th>
+                    <th>净胜</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr
+                      key={r.name}
+                      className={`${r.isPlayer ? "standings-me" : ""} ${lg.playoffs && r.rank === lg.playoffs ? "standings-line" : ""}`}
+                    >
+                      <td>{r.rank}</td>
+                      <td>{r.name}{r.isPlayer ? "（你）" : ""}</td>
+                      <td>{r.w}</td>
+                      <td>{r.l}</td>
+                      <td>{r.diff > 0 ? `+${r.diff}` : r.diff}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {lg.playoffs && <div className="pane-note">线上为前 {lg.playoffs} 名（晋级区）</div>}
+          </div>
+        );
+      })}
       {withData.map((st) => {
         const rows = st.data!;
         const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));

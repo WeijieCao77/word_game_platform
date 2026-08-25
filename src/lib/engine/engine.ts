@@ -115,6 +115,15 @@ class GameScope implements Scope {
         if (!entityId) throw new ExprError("tag() 只能在实体上下文中使用");
         return (this.state.entities?.[entityId]?.tags ?? []).includes(args[0]) ? 1 : 0;
       }
+      case "rank": {
+        if (typeof args[0] !== "string") throw new ExprError("rank() 需要联赛 id 字符串");
+        const league = (this.config.leagues ?? []).find((lg) => lg.id === args[0]);
+        if (!league) throw new ExprError(`联赛 "${args[0]}" 不存在`);
+        const table = this.state.leagues?.[league.id];
+        const rows = league.teams.map((t) => ({ name: t.name, ...(table?.[t.name] ?? { w: 0, l: 0, diff: 0 }) }));
+        rows.sort((a, b) => b.w - a.w || b.diff - a.diff || a.name.localeCompare(b.name, "zh"));
+        return rows.findIndex((r) => r.name === league.playerTeam) + 1;
+      }
       case "avg":
       case "sum":
       case "max_of":
@@ -608,11 +617,32 @@ export function endTurn(config: GameConfig, input: GameState): GameState {
       locals[cp.id] = evaluate(cp.expr, scope.withBindings({ row, locals }));
     }
     const outScope = scope.withBindings({ row, locals });
+    let firedOutcome: (typeof s.outcomes)[number] | undefined;
+    let firedText: string | undefined;
     for (const o of s.outcomes) {
       if (truthy(evaluate(o.condition, outScope))) {
+        firedOutcome = o;
         applyEffects(config, state, outScope, o.effects, {});
-        if (o.text) state.log.push({ kind: "settlement", text: renderText(o.text, outScope), turn: state.turn });
+        if (o.text) {
+          firedText = renderText(o.text, outScope);
+          state.log.push({ kind: "settlement", text: firedText, turn: state.turn });
+        }
         break;
+      }
+    }
+    // 归因快照：把结算的中间量留给「为什么是这个结果」面板
+    if ((s.compute?.length ?? 0) > 0 || row) {
+      const numLocals: Record<string, number> = {};
+      for (const [k, v] of Object.entries(locals)) if (typeof v === "number") numLocals[k] = Math.round(v * 10) / 10;
+      if (!state.lastSettlements) state.lastSettlements = {};
+      state.lastSettlements[s.id] = { name: s.name, row, locals: numLocals, text: firedText };
+    }
+    // 活联赛：玩家场次记账（对手镜像）+ 同轮 NPC 互赛
+    if (firedOutcome?.leagueResult) {
+      const league = (config.leagues ?? []).find((lg) => lg.settlement === s.id);
+      if (league) {
+        const oppName = row?.[league.opponentKey ?? "名称"];
+        leagueTick(state, league, rng, firedOutcome.leagueResult, typeof oppName === "string" ? oppName : undefined);
       }
     }
     if (!state.counters) state.counters = {};
@@ -658,6 +688,84 @@ function runCurves(config: GameConfig, state: GameState, scope: GameScope, phase
   }
 }
 
+/** 活联赛推进一轮：玩家胜负记账（对手镜像），其余队伍确定性配对互赛 */
+function leagueTick(
+  state: GameState,
+  league: import("@/lib/schema").LeagueDef,
+  rng: Rng,
+  playerResult: "win" | "loss",
+  opponentName: string | undefined
+): void {
+  if (!state.leagues) state.leagues = {};
+  if (!state.leagues[league.id]) {
+    state.leagues[league.id] = Object.fromEntries(league.teams.map((t) => [t.name, { w: 0, l: 0, diff: 0 }]));
+  }
+  const table = state.leagues[league.id];
+  const rec = (name: string): { w: number; l: number; diff: number } => {
+    if (!table[name]) table[name] = { w: 0, l: 0, diff: 0 };
+    return table[name];
+  };
+  const me = rec(league.playerTeam);
+  if (playerResult === "win") {
+    me.w += 1;
+    me.diff += 1;
+  } else {
+    me.l += 1;
+    me.diff -= 1;
+  }
+  if (opponentName && opponentName !== league.playerTeam) {
+    const opp = rec(opponentName);
+    if (playerResult === "win") {
+      opp.l += 1;
+      opp.diff -= 1;
+    } else {
+      opp.w += 1;
+      opp.diff += 1;
+    }
+  }
+  // 其余队伍两两互赛：按轮次旋转确定性配对，logistic 胜率（同一 rng 流，可复现）
+  const rest = league.teams
+    .map((t) => t.name)
+    .filter((n) => n !== league.playerTeam && n !== opponentName);
+  const round = me.w + me.l;
+  const rotated = rest.map((_, i) => rest[(i + round) % rest.length]);
+  for (let i = 0; i + 1 < rotated.length; i += 2) {
+    const a = rotated[i];
+    const b = rotated[i + 1];
+    const sa = league.teams.find((t) => t.name === a)?.strength ?? 50;
+    const sb = league.teams.find((t) => t.name === b)?.strength ?? 50;
+    const pa = 1 / (1 + Math.exp(-(sa - sb) / 12));
+    const aWins = rng.next() < pa;
+    const ra = rec(a);
+    const rb = rec(b);
+    if (aWins) {
+      ra.w += 1;
+      ra.diff += 1;
+      rb.l += 1;
+      rb.diff -= 1;
+    } else {
+      rb.w += 1;
+      rb.diff += 1;
+      ra.l += 1;
+      ra.diff -= 1;
+    }
+  }
+}
+
+/** 联赛积分榜排序（胜场 → 净胜 → 名称），返回带排名的行 */
+export function leagueStandings(
+  config: GameConfig,
+  state: GameState,
+  leagueId: string
+): { rank: number; name: string; w: number; l: number; diff: number; isPlayer: boolean }[] {
+  const league = (config.leagues ?? []).find((lg) => lg.id === leagueId);
+  if (!league) return [];
+  const table = state.leagues?.[leagueId] ?? Object.fromEntries(league.teams.map((t) => [t.name, { w: 0, l: 0, diff: 0 }]));
+  const rows = league.teams.map((t) => ({ name: t.name, ...(table[t.name] ?? { w: 0, l: 0, diff: 0 }) }));
+  rows.sort((a, b) => b.w - a.w || b.diff - a.diff || a.name.localeCompare(b.name, "zh"));
+  return rows.map((r, i) => ({ rank: i + 1, ...r, isPlayer: r.name === league.playerTeam }));
+}
+
 function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope): void {
   if (config.driver.kind !== "sim") return;
   const t = config.driver.time;
@@ -673,6 +781,9 @@ function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope):
     state.turn = 1;
     for (const v of config.vars) {
       if (v.resetEachCycle) state.vars[v.id] = clampVar(config, v.id, v.initial);
+    }
+    for (const lg of config.leagues ?? []) {
+      if (lg.resetEachCycle !== false && state.leagues?.[lg.id]) delete state.leagues[lg.id];
     }
     if (state.cycle > t.maxCycles) {
       const te = config.text?.timeoutEnding;

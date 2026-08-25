@@ -136,10 +136,25 @@ export const SettlementDefSchema = z.object({
         condition: ExprSchema,
         effects: z.array(EffectSchema).max(20),
         text: z.string().max(2000).optional(),
+        leagueResult: z.enum(["win", "loss"]).optional(),
       })
     )
     .min(1)
     .max(20),
+});
+
+export const LeagueDefSchema = z.object({
+  id: IdSchema,
+  name: NameSchema,
+  teams: z
+    .array(z.object({ name: z.string().min(1).max(40), strength: z.number().min(0).max(1000) }))
+    .min(4)
+    .max(40),
+  playerTeam: z.string().min(1).max(40),
+  settlement: IdSchema,
+  opponentKey: IdSchema.optional(),
+  playoffs: z.number().int().min(1).max(40).optional(),
+  resetEachCycle: z.boolean().optional(),
 });
 
 export const CurveDefSchema = z.object({
@@ -247,6 +262,7 @@ export const GameConfigSchema = z.object({
   endings: EndingDefSchema.array().min(1).max(50),
   text: GameTextSchema.optional(),
   search: SearchDefSchema.optional(),
+  leagues: z.array(LeagueDefSchema).max(6).optional(),
   entityTypes: z.array(EntityTypeDefSchema).max(10).optional(),
   entities: z.array(EntityInstanceSchema).max(200).optional(),
   derived: z.array(DerivedDefSchema).max(50).optional(),

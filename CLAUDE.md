@@ -74,6 +74,26 @@ git reset --hard origin/<branch>          # 工作区没有要保留的改动时
 
 所以下面这条不是洁癖，是这个环境的生存法则：
 
+## 「代码改了，线上没变」——先查是不是没部署
+
+Railway 是靠 GitHub 推送事件自动部署的，这条链路**断过一次**（2026-08-25，12:40 之后
+所有推送都没触发构建，线上停在 8e5286c 整整两小时；期间连着报了三个「功能没实现」，
+其实全都写完推上去了）。判断方法，按顺序：
+
+1. `GET /api/health` 看 `build.commit` 是不是最新 commit 的前 7 位。
+   没有 `build` 段 = 跑的是 2026-08-25 14:13 之前的老代码。
+2. 跑 `Railway variables` workflow（不填 set_vars 就是只读），看「最近部署」那一段：
+   最新一条的时间戳如果早于你最后一次 push，就是自动部署断了。
+3. 断了只能人去 Railway 控制台修：服务 → Settings → Source，确认还连着
+   `WeijieCao77/word_game_platform` 的 `claude/text-game-platform-handoff-op7cmd` 分支；
+   断开就重新 Connect（GitHub App 授权过期会导致静默失效，控制台不报错）。
+   临时应急可以在 Deployments 页手动 Deploy 一次。
+
+**注意 `railway redeploy` 不会拉新代码**——它只是把同一个 commit 再部署一遍。
+workflow 里改变量后触发的那次重新部署也一样，只能让**环境变量**生效，不能让新代码上线。
+反过来说这也是个应急手段：能用环境变量控制的东西（配额上限、模型、旗舰位署名），
+改 Railway 变量就能立刻生效，不必等代码部署。
+
 ## 工作约定
 
 - **每完成一段就 commit + push**。容器会回收，没推送的工作会丢——这在本项目真实发生过三次，

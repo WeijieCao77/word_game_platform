@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -39,16 +40,27 @@ export async function GET(
   { params }: { params: Promise<{ id: string; path: string[] }> }
 ): Promise<NextResponse> {
   const { id, path } = await params;
-  const rel = safePath(path ?? []);
+  const segs = [...(path ?? [])];
+  // 路径里的预览通行证：/play/:id/k~<token>/index.html
+  // 放路径而不是查询串，是为了让 index.html 里的相对引用也带得上（见 preview-token.ts）
+  const pass = segs[0]?.startsWith("k~") ? segs.shift()!.slice(2) : "";
+  const rel = safePath(segs);
   if (!rel) return new NextResponse("bad path", { status: 400 });
 
   const store = getStore();
   const record = store.get(id);
   if (!record) return new NextResponse("not found", { status: 404 });
 
-  // 未发布的作品只有拿着编辑钥匙才能看（作者自己预览）
-  if (!record.published && !store.checkEditKey(id, req.headers.get("x-edit-key") ?? new URL(req.url).searchParams.get("k") ?? "")) {
-    return new NextResponse("not published", { status: 403 });
+  // 未发布的作品只有作者本人看得到。三种凭据：
+  //   1. 请求头（接口调用）
+  //   2. cookie（工作台预览换来的通行证——**子资源只有这一条走得通**：
+  //      index.html 里相对引用的 style.css / game.js，浏览器不会带上 ?k=）
+  //   3. ?k=（直接开链接时的兜底）
+  if (!record.published) {
+    const key = req.headers.get("x-edit-key") ?? new URL(req.url).searchParams.get("k") ?? "";
+    const ok =
+      (pass && store.checkPreviewToken(id, pass)) || canEditGame(req, id) || store.checkEditKey(id, key);
+    if (!ok) return new NextResponse("not published", { status: 403 });
   }
 
   const content = store.fileRead(id, rel);

@@ -93,7 +93,26 @@ export default function CodeGameFrame({
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  const src = `/play/${gameId}/index.html${editKey ? `?k=${encodeURIComponent(editKey)}` : ""}`;
+  // 未发布的作品先换一张预览通行证，并把它放进**路径**——
+  // index.html 里相对引用的 style.css / game.js 才带得上（见 lib/preview-token.ts）。
+  // 换到之前先不加载 iframe，免得先渲染一张裸页再闪一下。
+  const [pass, setPass] = useState(editKey ? "" : "-");
+  useEffect(() => {
+    if (!editKey) return;
+    let alive = true;
+    void fetch(`/api/games/${gameId}/preview`, { method: "POST", headers: { "x-edit-key": editKey } })
+      .then(async (r) => {
+        if (!alive) return;
+        const t = r.ok ? ((await r.json()) as { token?: string }).token : "";
+        setPass(t ? `k~${t}/` : "-");
+      })
+      .catch(() => alive && setPass("-"));
+    return () => {
+      alive = false;
+    };
+  }, [editKey, gameId]);
+
+  const src = `/play/${gameId}/${pass === "-" ? "" : pass}index.html`;
 
   return (
     <div className="embed-shell" ref={shellRef}>
@@ -129,6 +148,7 @@ export default function CodeGameFrame({
       </div>
       <div className="embed-stage">
         {!ready && <div className="embed-loading">正在载入《{title}》…</div>}
+        {pass !== "" && (
         <iframe
           ref={frameRef}
           className="embed-frame"
@@ -139,6 +159,7 @@ export default function CodeGameFrame({
           sandbox="allow-scripts"
           onLoad={() => setTimeout(() => setReady(true), 1200)}
         />
+        )}
       </div>
     </div>
   );

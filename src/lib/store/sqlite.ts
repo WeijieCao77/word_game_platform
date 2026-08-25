@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { makePreviewToken, checkPreviewToken } from "@/lib/preview-token";
 import { mkdirSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
@@ -291,6 +292,23 @@ export class SqliteGameStore implements GameStore {
       | { edit_key: string }
       | undefined;
     return !!row && !!editKey && row.edit_key === editKey;
+  }
+
+  private editKeyOf(id: string): string | null {
+    const row = this.db.prepare("SELECT edit_key FROM games WHERE id = ?").get(id) as
+      | { edit_key: string }
+      | undefined;
+    return row?.edit_key ?? null;
+  }
+
+  previewToken(id: string): string | null {
+    const key = this.editKeyOf(id);
+    return key ? makePreviewToken(key) : null;
+  }
+
+  checkPreviewToken(id: string, token: string): boolean {
+    const key = this.editKeyOf(id);
+    return !!key && checkPreviewToken(key, token);
   }
 
   update(id: string, patch: { config?: unknown; designCard?: string; author?: string }): void {

@@ -71,6 +71,12 @@ export interface GameStore {
   get(id: string): GameRecord | null;
   /** 校验 editKey；true 表示有编辑权 */
   checkEditKey(id: string, editKey: string): boolean;
+  /**
+   * 未发布作品的预览通行证：由编辑钥匙推出、半小时一换。
+   * 钥匙本身不出存储层——通行证只够读这一部作品的文件。
+   */
+  previewToken(id: string): string | null;
+  checkPreviewToken(id: string, token: string): boolean;
   update(id: string, patch: { config?: unknown; designCard?: string; author?: string }): void;
   /** 删除游戏（连带按日统计；已分享到内容库的卡片是独立副本，保留） */
   delete(id: string): void;

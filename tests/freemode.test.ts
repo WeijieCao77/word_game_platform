@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { SqliteGameStore } from "@/lib/store/sqlite";
 import { buildSystemPrompt, pickSkills } from "@/lib/ai/prompt";
+import { makePreviewToken, checkPreviewToken } from "@/lib/preview-token";
 import { GameConfig } from "@/lib/schema";
 
 // 自由模式：作品自带一套网页文件，跑在沙箱 iframe 里。
@@ -152,5 +153,53 @@ describe("示范作品《末班车守夜人》", () => {
     for (const e of endings) expect(gotos.has(e), `${e} 没有任何选项通向它`).toBe(true);
     // 反过来：每个 to 都要有对应的场景，别有断链
     for (const g of gotos) expect(ids.includes(g), `选项指向不存在的场景 ${g}`).toBe(true);
+  });
+});
+
+describe("未发布作品的预览通行证", () => {
+  // 这一组守的是一个真实翻车：多文件作品在工作台里预览，index.html 能开，
+  // style.css / game.js 全 403 —— 作者看到一张裸页，还以为 AI 把代码写坏了。
+  // 根因是浏览器发子请求时不带查询串；换 cookie 也不行，沙箱 iframe 是不透明源，
+  // 它发的子请求算「跨站」，SameSite=Lax 的 cookie 不会带上。
+  // 所以通行证放进路径，让相对引用自然继承。
+  const KEY = "edit-key-abcdef";
+
+  it("同一把钥匙推出来的通行证能过，别的钥匙不行", () => {
+    const t = makePreviewToken(KEY);
+    expect(checkPreviewToken(KEY, t)).toBe(true);
+    expect(checkPreviewToken("另一把钥匙", t)).toBe(false);
+  });
+
+  it("通行证不等于钥匙——看不出原文", () => {
+    const t = makePreviewToken(KEY);
+    expect(t).not.toContain(KEY);
+    expect(t).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("上一个时间窗的通行证还认（别在半小时边界上把作者踢下去）", () => {
+    const now = 1_800_000_000_000;
+    const old = makePreviewToken(KEY, now - 25 * 60 * 1000);
+    expect(checkPreviewToken(KEY, old, now)).toBe(true);
+  });
+
+  it("再往前就不认了", () => {
+    const now = 1_800_000_000_000;
+    const ancient = makePreviewToken(KEY, now - 3 * 60 * 60 * 1000);
+    expect(checkPreviewToken(KEY, ancient, now)).toBe(false);
+  });
+
+  it("乱填的通行证一律不认", () => {
+    for (const junk of ["", "abc", "../../etc/passwd", "Z".repeat(32), "0".repeat(64)]) {
+      expect(checkPreviewToken(KEY, junk)).toBe(false);
+    }
+  });
+
+  it("存储层：通行证按作品隔离，A 的过不了 B", () => {
+    const store = newStore();
+    const a = store.create({ config: MINI });
+    const b = store.create({ config: MINI });
+    const ta = store.previewToken(a.id)!;
+    expect(store.checkPreviewToken(a.id, ta)).toBe(true);
+    expect(store.checkPreviewToken(b.id, ta)).toBe(false);
   });
 });

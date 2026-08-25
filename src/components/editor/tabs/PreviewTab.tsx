@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import GamePlayer from "@/components/GamePlayer";
 import { GameConfig } from "@/lib/schema";
 
@@ -26,19 +27,7 @@ export default function PreviewTab({
   editKey?: string;
 }): React.ReactElement {
   if (mode === "code") {
-    return (
-      <div className="preview-frame preview-code">
-        <iframe
-          key={previewNonce}
-          className="preview-code-frame"
-          src={`/play/${gameId}/index.html?k=${encodeURIComponent(editKey)}&n=${previewNonce}`}
-          title="预览"
-          // 跟正式游玩页一样的沙箱：不给 allow-same-origin，作者预览到的
-          // 就是玩家会遇到的那个环境（存档在这里不接桥，纯看界面与流程）
-          sandbox="allow-scripts"
-        />
-      </div>
-    );
+    return <CodePreview gameId={gameId} editKey={editKey} nonce={previewNonce} />;
   }
   if (errorCount > 0) {
     return <div className="pane-note">配置存在 {errorCount} 个错误，修复后即可预览（见「校验」页）。</div>;
@@ -46,6 +35,65 @@ export default function PreviewTab({
   return (
     <div className="preview-frame">
       <GamePlayer key={previewNonce} config={config} gameId={gameId} mode="preview" />
+    </div>
+  );
+}
+
+/**
+ * 自由模式的预览。
+ *
+ * 先去换一张预览通行证（httpOnly cookie）再加载 iframe——不能靠 ?k=：
+ * index.html 里相对引用的 style.css / game.js，浏览器发子请求时不会带上查询串，
+ * 那些文件会全部 403，作者看到一张裸页还以为 AI 写坏了。
+ * 顺带的好处是钥匙不再出现在 iframe 的 location 里，作者的代码读不到它。
+ */
+function CodePreview({
+  gameId,
+  editKey,
+  nonce,
+}: {
+  gameId: string;
+  editKey: string;
+  nonce: number;
+}): React.ReactElement {
+  const [token, setToken] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setToken("");
+    setErr("");
+    void fetch(`/api/games/${gameId}/preview`, {
+      method: "POST",
+      headers: { "x-edit-key": editKey },
+    })
+      .then(async (r) => {
+        if (!alive) return;
+        if (!r.ok) {
+          setErr("拿不到预览权限，刷新页面试试");
+          return;
+        }
+        setToken(((await r.json()) as { token?: string }).token ?? "");
+      })
+      .catch(() => alive && setErr("预览请求失败，检查一下网络"));
+    return () => {
+      alive = false;
+    };
+  }, [gameId, editKey, nonce]);
+
+  if (err) return <div className="pane-note">{err}</div>;
+  if (!token) return <div className="pane-note">正在打开预览…</div>;
+  return (
+    <div className="preview-frame preview-code">
+      <iframe
+        key={nonce}
+        className="preview-code-frame"
+        src={`/play/${gameId}/k~${token}/index.html?n=${nonce}`}
+        title="预览"
+        // 跟正式游玩页一样的沙箱：不给 allow-same-origin，作者预览到的
+        // 就是玩家会遇到的那个环境
+        sandbox="allow-scripts"
+      />
     </div>
   );
 }

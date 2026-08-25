@@ -19,6 +19,41 @@ interface ChatMsg {
   content: string;
 }
 
+// ---- 创作流程可视化：阶段条 + 职能徽章 ----
+
+const ROLE_CLASS: Record<string, string> = { 主策: "lead", 剧情: "story", 人设: "chara", 数值: "num" };
+
+/** 流程状态 → 阶段条展示（当前步 + 活跃职能 + 一句话说明） */
+const STAGE_VIEW: Record<string, { step: number; roles: string[]; hint: string }> = {
+  需求对齐中: { step: 0, roles: ["主策", "剧情", "人设"], hint: "创意策划阶段：聊清题材、角色与玩法方向" },
+  方案待确认: { step: 1, roles: ["主策"], hint: "方案已就绪，等你拍板——同意后团队开始搭建" },
+  已确认: { step: 2, roles: ["数值", "主策"], hint: "搭建阶段：生成配置、校验、模拟配平" },
+  调优中: { step: 3, roles: ["数值", "剧情"], hint: "调优阶段：直接提修改意见，团队改完用模拟验证" },
+};
+const STAGE_STEPS = ["创意对齐", "方案确认", "搭建", "调优"];
+
+/** 把 AI 消息按【职能】署名拆段，渲染成带徽章的段落 */
+function AssistantMsg({ content }: { content: string }): React.ReactElement {
+  const parts = content.split(/(?=【(?:主策|剧情|人设|数值)】)/g).filter((p) => p.trim());
+  if (parts.length <= 1 && !/^【/.test(content.trim())) {
+    return <div className="chat-msg assistant">{content}</div>;
+  }
+  return (
+    <div className="chat-msg assistant">
+      {parts.map((p, i) => {
+        const m = p.match(/^【(主策|剧情|人设|数值)】\s*/);
+        if (!m) return <div key={i}>{p}</div>;
+        return (
+          <div key={i} className="role-seg">
+            <span className={`role-chip ${ROLE_CLASS[m[1]]}`}>{m[1]}</span>
+            {p.slice(m[0].length)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function EditPage({ params }: { params: Promise<{ id: string }> }): React.ReactElement {
   const { id } = use(params);
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -396,6 +431,30 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
 
       <div className="editor-main">
         <div className="chat-pane">
+          {(() => {
+            const view = STAGE_VIEW[cardStatus] ?? STAGE_VIEW["需求对齐中"];
+            return (
+              <div className="chat-stagebar" title="创作流程：创意对齐 → 方案确认 → 搭建 → 调优">
+                <div className="stage-steps">
+                  {STAGE_STEPS.map((s, i) => (
+                    <span key={s} className={`stage-step ${i === view.step ? "active" : i < view.step ? "done" : ""}`}>
+                      {i < view.step ? "✓ " : ""}
+                      {s}
+                    </span>
+                  ))}
+                </div>
+                <div className="stage-hint">
+                  <span>正在服务：</span>
+                  {view.roles.map((r) => (
+                    <span key={r} className={`role-chip ${ROLE_CLASS[r]}`}>
+                      {r}
+                    </span>
+                  ))}
+                  <span className="stage-hint-text">{view.hint}</span>
+                </div>
+              </div>
+            );
+          })()}
           <div className="chat-log">
             {chat.length === 0 && (
               <div className="chat-msg assistant">
@@ -406,11 +465,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 {"\n\n"}跟我们说说你想做什么——一个题材、一部小说的感觉、或者一个模糊的念头都行。
               </div>
             )}
-            {chat.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`}>
-                {m.content}
-              </div>
-            ))}
+            {chat.map((m, i) =>
+              m.role === "assistant" ? (
+                <AssistantMsg key={i} content={m.content} />
+              ) : (
+                <div key={i} className={`chat-msg ${m.role}`}>
+                  {m.content}
+                </div>
+              )
+            )}
             {chatBusy && (
               <div className="chat-msg system">
                 AI 策划工作中… {chatSeconds}s{chatSeconds > 15 ? "（生成/修改配置通常要 30~120 秒，它可能正在跑校验和模拟）" : ""}

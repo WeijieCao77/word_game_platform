@@ -114,6 +114,8 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN owner_id TEXT",
       // 作品维度的 AI 消耗：用来发现「把工作台当聊天框」的会话
       "ALTER TABLE games ADD COLUMN ai_tokens INTEGER NOT NULL DEFAULT 0",
+      // 作品形态：engine=配置喂给通用引擎（快速模式）；code=自带 HTML 包（自由模式）
+      "ALTER TABLE games ADD COLUMN mode TEXT NOT NULL DEFAULT 'engine'",
     ]) {
       try {
         this.db.exec(ddl);
@@ -177,6 +179,13 @@ export class SqliteGameStore implements GameStore {
         content_type TEXT NOT NULL,
         created_at TEXT NOT NULL,
         PRIMARY KEY (game_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS game_files (
+        game_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        content TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (game_id, path)
       );
       CREATE TABLE IF NOT EXISTS library_assets (
         id TEXT PRIMARY KEY,
@@ -663,6 +672,46 @@ export class SqliteGameStore implements GameStore {
     });
     run();
     return { userId: row.user_id, granted: Math.max(0, granted) };
+  }
+
+  fileList(gameId: string): { path: string; size: number; updatedAt: string }[] {
+    return this.db
+      .prepare("SELECT path, length(content) AS size, updated_at FROM game_files WHERE game_id = ? ORDER BY path")
+      .all(gameId)
+      .map((r) => {
+        const row = r as { path: string; size: number; updated_at: string };
+        return { path: row.path, size: row.size, updatedAt: row.updated_at };
+      });
+  }
+
+  fileRead(gameId: string, path: string): string | null {
+    const row = this.db
+      .prepare("SELECT content FROM game_files WHERE game_id = ? AND path = ?")
+      .get(gameId, path) as { content: string } | undefined;
+    return row?.content ?? null;
+  }
+
+  fileWrite(gameId: string, path: string, content: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO game_files (game_id, path, content, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(game_id, path) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`
+      )
+      .run(gameId, path, content, new Date().toISOString());
+    this.db.prepare("UPDATE games SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), gameId);
+  }
+
+  fileDelete(gameId: string, path: string): void {
+    this.db.prepare("DELETE FROM game_files WHERE game_id = ? AND path = ?").run(gameId, path);
+  }
+
+  gameMode(id: string): "engine" | "code" {
+    const row = this.db.prepare("SELECT mode FROM games WHERE id = ?").get(id) as { mode?: string } | undefined;
+    return row?.mode === "code" ? "code" : "engine";
+  }
+
+  gameSetMode(id: string, mode: "engine" | "code"): void {
+    this.db.prepare("UPDATE games SET mode = ? WHERE id = ?").run(mode, id);
   }
 
   gameAiSpend(id: string, tokens: number): number {

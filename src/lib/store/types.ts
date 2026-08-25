@@ -126,6 +126,19 @@ export interface GameStore {
   quotaRequestOpen(userId: string, used: number, grant: number): void;
   quotaRequestList(onlyPending?: boolean): QuotaRequest[];
   quotaRequestResolve(id: number, granted: number): { userId: string; granted: number } | null;
+  /**
+   * 自由模式的作品文件（HTML / JS / CSS）。
+   *
+   * 快速模式的作品是一份配置喂给通用引擎；自由模式的作品是**自己的一套页面**，
+   * 跑在沙箱 iframe 里，长什么样由作者说了算。二进制素材仍走 game_assets。
+   */
+  fileList(gameId: string): { path: string; size: number; updatedAt: string }[];
+  fileRead(gameId: string, path: string): string | null;
+  fileWrite(gameId: string, path: string, content: string): void;
+  fileDelete(gameId: string, path: string): void;
+  /** 作品形态：engine=配置 + 通用引擎；code=自带页面 */
+  gameMode(id: string): "engine" | "code";
+  gameSetMode(id: string, mode: "engine" | "code"): void;
   /** 作品维度的 AI 消耗：识别「烧了很多 token 却什么都没搭出来」的会话 */
   gameAiSpend(id: string, tokens: number): number;
   gameAiTokens(id: string): number;

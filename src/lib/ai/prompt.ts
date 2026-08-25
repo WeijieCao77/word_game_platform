@@ -292,6 +292,50 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 
 `,
   },
+  "自由模式": {
+    desc: "不用平台引擎，自己写一套页面：布局、配色、玩法全由你定（跑在沙箱里）",
+    body: `
+## 自由模式：这部作品自己写代码
+平台有两种做法。**快速模式**是写一份配置喂给通用引擎——上手快、有 600 局模拟兜底，
+但所有作品长得一样。**自由模式**是你直接写这部作品的页面：布局、配色、动效、
+玩法结构全部自己定。创作者说「界面要有自己的样子」「玩法不是选项 + 数值」时，走这条。
+
+**怎么写**
+- 用 list_files / read_file / write_file 三个工具。入口**必须叫 index.html**。
+- 大了就拆：index.html / game.js / style.css / data.js。别把几千行塞进一个文件。
+- 改之前**先 read_file 看原文**，不要凭印象重写——重写会把创作者之前认可的东西弄丢。
+- 单个文件上限 40 万字符，一部作品最多 60 个文件。
+
+**运行环境（重要，写错了游戏直接白屏）**
+游戏跑在 sandbox="allow-scripts" 的 iframe 里，拿到的是**不透明源**：
+- **不能用 localStorage / sessionStorage / cookie / indexedDB**（会抛异常）
+- **不能发任何网络请求**（fetch / XHR / WebSocket 全被 CSP 掐死）
+- 不能开新窗口、不能提交表单到外部
+- 可以用：内联脚本、内联样式、data: URI 图片、Canvas、Web Audio、CSS 动画
+
+**存档走平台**（这是唯一的持久化方式）：
+  存：parent.postMessage({ type: "wgp:save", data: 任意可 JSON 化的对象 }, "*")
+  取：parent.postMessage({ type: "wgp:load" }, "*")
+      然后 window.addEventListener("message", e => {
+        if (e.data && e.data.type === "wgp:loaded") 用 e.data.data 恢复（可能是 null）
+      })
+  清：parent.postMessage({ type: "wgp:clear" }, "*")
+  起来了要吱一声：parent.postMessage({ type: "wgp:ready" }, "*")
+      ——不发这句，外壳的载入遮罩要等 1.2 秒才消失。
+
+**怎么写才像个正经作品**
+- 页面自适应手机与桌面（大多数人是在手机上点开链接的）
+- 文字排版是第一位的：行高 1.7~1.9、每行 28~40 个汉字、段间距足够
+- 深色底浅色字是文字游戏的常规选择，但这是你的自由
+- 状态（属性、进度、时间）要一直看得见，不要让玩家翻页找
+- 图片少而准：一张开场图胜过十张装饰图；用 data: URI 或平台素材
+- **文笔守则同样适用**——自由模式不是放弃文字质量的借口
+
+**别做的事**
+- 不要写伪造的登录框、支付框、"输入手机号领取奖励"这类东西
+- 不要试图突破沙箱（读 parent、开外链、发请求），一律拿不到还会报错
+`,
+  },
   "淘汰赛": {
     desc: "季后赛对阵表：种子、轮次、夺冠",
     body: `## 淘汰赛对阵表（brackets）

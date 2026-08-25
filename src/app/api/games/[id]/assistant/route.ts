@@ -70,6 +70,14 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       {
         config: record.config as GameConfig,
         designCard: record.designCard,
+        files: {
+          list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size })),
+          read: (path) => store.fileRead(id, path),
+          write: (path, content) => {
+            store.fileWrite(id, path, content);
+            if (store.gameMode(id) !== "code") store.gameSetMode(id, "code");
+          },
+        },
         searchLibrary: (q, category) =>
           rankLibraryEntries(store.libraryList({ q, category, limit: 32 }), record.config as GameConfig)
             .slice(0, 8)
@@ -92,6 +100,8 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       reply: result.reply,
       config: result.config,
       designCard: result.designCard,
+      filesChanged: result.filesChanged,
+      mode: store.gameMode(id),
       quota,
     });
   } catch (err) {

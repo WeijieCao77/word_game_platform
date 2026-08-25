@@ -65,6 +65,43 @@ const TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "list_files",
+      description: "列出这部作品当前有哪些文件（自由模式）。改代码之前先看一眼有什么。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_file",
+      description: "读一个文件的全文（自由模式）。要改哪个文件就先读哪个，不要凭印象重写。",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string", description: "相对路径，如 index.html" } },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_file",
+      description:
+        "写入一个文件（自由模式），已存在则整份覆盖。入口必须叫 index.html。" +
+        "文件较大时按模块拆开（index.html / game.js / style.css），别把几千行塞进一个文件。",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "read_skill",
       description:
         "取一份技能包的全文。系统提示里只常驻核心规则与一行索引，写法细节要用它取——不要凭印象猜。",
@@ -137,12 +174,23 @@ export interface AgentContext {
   config: GameConfig;
   designCard: string;
   searchLibrary?: (q: string, category?: string) => LibraryEntry[];
+  /**
+   * 自由模式的文件读写。传了才会把三个文件工具给 AI——
+   * 快速模式的作品不该看到它们，免得 AI 分心去写代码。
+   */
+  files?: {
+    list: () => { path: string; size: number }[];
+    read: (path: string) => string | null;
+    write: (path: string, content: string) => void;
+  };
 }
 
 export interface AgentResult {
   reply: string;
   config?: GameConfig;
   designCard?: string;
+  /** 这一轮有没有动过自由模式的文件（前端据此刷新预览） */
+  filesChanged?: boolean;
   totalTokens: number;
 }
 
@@ -199,6 +247,7 @@ export async function runAssistant(
   let config = ctx.config;
   let designCard = ctx.designCard || DESIGN_CARD_TEMPLATE;
   let configChanged = false;
+  let filesChanged = false;
   let designChanged = ctx.designCard !== designCard;
   let totalTokens = 0;
 
@@ -246,6 +295,7 @@ export async function runAssistant(
         reply: message.content ?? "（无回复）",
         config: configChanged ? config : undefined,
         designCard: designChanged ? designCard : undefined,
+        filesChanged,
         totalTokens,
       };
     }
@@ -330,6 +380,34 @@ export async function runAssistant(
                 `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
             : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
         }
+        case "list_files": {
+          if (!ctx.files) return "这部作品是快速模式（配置 + 通用引擎），没有文件可列。";
+          const list = ctx.files.list();
+          if (list.length === 0) return "还没有任何文件。自由模式的入口必须是 index.html。";
+          return list.map((f) => `${f.path}（${f.size} 字符）`).join("\n");
+        }
+        case "read_file": {
+          if (!ctx.files) return "这部作品是快速模式，没有文件可读。";
+          const path = String(args.path ?? "");
+          const content = ctx.files.read(path);
+          if (content === null) return `没有这个文件：${path}`;
+          const MAX = 30000;
+          return content.length > MAX
+            ? `${content.slice(0, MAX)}\n…（文件过长已截断，${content.length} 字符）`
+            : content;
+        }
+        case "write_file": {
+          if (!ctx.files) return "这部作品是快速模式，不能写文件。";
+          const path = String(args.path ?? "");
+          const content = typeof args.content === "string" ? args.content : "";
+          if (!path || path.includes("..") || path.startsWith("/") || !/^[A-Za-z0-9/._-]+$/.test(path)) {
+            return `路径不合法：${path}（只许相对路径，字母数字点横线斜杠）`;
+          }
+          if (content.length > 400000) return "单个文件太大了（上限 40 万字符），按模块拆开写。";
+          ctx.files.write(path, content);
+          filesChanged = true;
+          return `已写入 ${path}（${content.length} 字符）。`;
+        }
         case "read_skill": {
           const key = String(args.name ?? "");
           const pack = SKILL_PACKS[key];
@@ -400,6 +478,7 @@ export async function runAssistant(
         reply: message.content,
         config: configChanged ? config : undefined,
         designCard: designChanged ? designCard : undefined,
+        filesChanged,
         totalTokens,
       };
     }
@@ -415,6 +494,7 @@ export async function runAssistant(
           "再说一次你想要的效果，我接着做。",
     config: configChanged ? config : undefined,
     designCard: designChanged ? designCard : undefined,
+    filesChanged,
     totalTokens,
   };
 }

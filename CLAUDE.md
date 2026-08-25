@@ -39,7 +39,7 @@
 ## 验收门槛（做完必须跑）
 
 ```bash
-npm test                                  # 全绿（当前 81 passed / 1 skipped）
+npm test                                  # 全绿（当前 83 passed / 1 skipped）
 npx tsc --noEmit                          # 零错误
 npm run build                             # 通过
 TEMPLATE=xxx.json npx vitest run tests/adhoc-template.test.ts   # 改了模板才跑

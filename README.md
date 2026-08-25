@@ -51,7 +51,7 @@
 ```bash
 npm install
 npm run dev        # http://localhost:3000
-npm test           # 表达式/校验/引擎/存储/八款官方示例，81 例
+npm test           # 表达式/校验/引擎/存储/八款官方示例，83 例
 npm run build && npm start   # 生产模式
 ```
 

@@ -82,7 +82,7 @@
 
 ## 质量门槛（新内容上线前必须过）
 
-1. `npm test` 全绿（当前 **81 passed / 1 skipped**，10 个测试文件）
+1. `npm test` 全绿（当前 **83 passed / 1 skipped**，10 个测试文件）
 2. `TEMPLATE=xxx.json npx vitest run tests/adhoc-template.test.ts`：**零错误零警告**、600 局模拟
    全结局可达全卡片触发、**开局即死率 0**
 3. `npm run build` 通过、`npx tsc --noEmit` 零错误
@@ -102,3 +102,18 @@
 - **DeepSeek 的 `deepseek-chat` 已于 2026-07 下线**，默认模型改为 `deepseek-v4-flash`。
 - **每完成一段就提交推送**：容器会回收，未推送的工作会丢。
 - 微信内打开 Railway 域名容易被拦，内测期让用户复制链接到浏览器打开。
+
+## 已知待确认（拆分引擎时发现，尚未处理）
+
+这些都不是崩溃级问题，但接手的人应该知道它们存在。改动前先想清楚是不是有意为之：
+
+1. **`endTurn` 的结算循环里，条件结局用的是外层作用域**，读不到该次结算的 `row` 与 `compute` 局部量
+   （`src/lib/engine/settle.ts`）。想写「这场比赛净胜 20 分就触发结局」目前做不到。
+2. **排序规则有两份拷贝**：`internal.ts` 里 `rank()` 内置函数与 `leagues.ts` 的 `leagueStandings`
+   用的是同一套「胜场 → 净胜 → 名字」排序，改排名规则要改两处。
+3. **`searchKeyword` 在游戏没配检索台时直接抛错**，而同类只读查询（`notebookItems` / `pendingInput` /
+   `upcomingRows`）都是返回空值。调用方得自己先挡一道。
+4. **`advanceSimTime` 的非周期分支用 `turn > maxCycles` 判超时**（没有 `turnsPerCycle` 时把 maxCycles
+   当最大回合数用）。行为说得通，但字面读起来像单位错配。
+5. 卡片文案与兜底结局的插值用的是**进入这张卡时的作用域**，不是效果结算之后的。
+   多数情况看不出来，但作者若在同一张卡里「先加钱、再在文案里报余额」，报的是加之前的数。

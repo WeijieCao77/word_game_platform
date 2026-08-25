@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getStore } from "@/lib/store";
 import CodeGameFrame from "@/components/CodeGameFrame";
 import { GameConfig } from "@/lib/schema";
@@ -23,12 +24,15 @@ export default async function CodeGamePage({
   const store = getStore();
   const record = store.get(id);
 
-  if (!record || store.gameMode(id) !== "code") {
+  // 反过来：快速模式的作品被开到这儿，转回通用播放器，别让人看到一句「没有这部作品」
+  if (record && store.gameMode(id) !== "code") redirect(`/g/${id}`);
+
+  if (!record) {
     return (
       <div className="site" style={{ maxWidth: 520 }}>
         <h1 style={{ fontSize: 22, marginBottom: 10 }}>这里没有这部作品</h1>
         <p style={{ color: "var(--muted)", marginBottom: 16 }}>
-          它可能还没发布，或者是「快速模式」的作品——那种在 <code>/g/{id}</code>。
+          这个地址上没有作品——可能是链接错了，也可能它已经被作者删掉了。
         </p>
         <Link className="btn" href="/">
           返回游戏库

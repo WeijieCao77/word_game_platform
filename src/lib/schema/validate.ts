@@ -2,6 +2,7 @@ import { collectRefs, parseExpr, ExprError, Expr, PURE_FUNCTIONS } from "@/lib/e
 import { CardDef, Effect, GameConfig } from "./types";
 import { GameConfigSchema } from "./zod";
 import { normalizeKeyword } from "@/lib/keyword";
+import { auditProse } from "./prose";
 
 // 语义校验：结构合法之后，检查引用是否悬空、表达式与作用域是否正确、
 // 孤儿卡、不可达结局。错误信息要能直接报给作者/AI。
@@ -709,6 +710,44 @@ class Validator {
 
     this.auditChoices();
     this.auditPromises();
+    this.auditProseStyle();
+  }
+
+  /**
+   * 文笔体检：机检「AI 腔」。
+   *
+   * 恋爱与悬疑类靠文笔立命——玩家要的是「在读小说」的质感。「写得好」没法机检，
+   * 「写得像 AI」可以：模型写中文有一批极其稳定的坏习惯，密度一高读起来就假。
+   * 只报警告：文风是作者的自由，我们只负责把问题指出来。
+   */
+  private auditProseStyle(): void {
+    const c = this.config;
+    const texts: string[] = [];
+    const push = (t?: string): void => {
+      if (t) texts.push(t);
+    };
+    push(c.meta.intro);
+    push(c.meta.description);
+    for (const card of c.cards) {
+      push(card.text);
+      for (const tv of card.textVariants ?? []) push(tv);
+      for (const ch of card.choices ?? []) push(ch.text);
+      for (const a of card.input?.answers ?? []) push(a.text);
+      push(card.input?.fallbackText);
+    }
+    for (const e of c.endings) push(e.text);
+    for (const en of c.search?.entries ?? []) push(en.text);
+    for (const it of c.notebook?.items ?? []) push(it.text);
+    for (const st of c.settlements ?? []) for (const o of st.outcomes) push(o.text);
+    for (const a of c.actions ?? []) push(a.text);
+
+    for (const issue of auditProse(texts)) {
+      this.warn(
+        "文笔",
+        `${issue.kind}：${issue.message}` +
+          (issue.samples.length ? `\n例：${issue.samples.map((x) => `「${x}」`).join("　")}` : "")
+      );
+    }
   }
 
   /**

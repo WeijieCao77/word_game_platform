@@ -369,6 +369,22 @@ class Validator {
         }
       }
       if (c.search.fallbackText) this.checkTemplate(c.search.fallbackText, "search.fallbackText", {});
+
+      // 检索必须由玩家自己发起：把「检索『某某』」写成选项，等于替玩家想到了线索，
+      // 这类游戏的乐趣正是「我注意到了什么，所以我去查什么」。
+      const searchLabel = c.search.label ?? "检索";
+      const asChoice = /^\s*(检索|搜索|查档|查一?下|search)\s*[「『"'\[]|^\s*(检索|搜索|查档)\s*[:：]/;
+      for (const card of c.cards) {
+        for (const ch of card.choices ?? []) {
+          if (asChoice.test(ch.label) || ch.label.trim().startsWith(searchLabel + "「")) {
+            this.warn(
+              `cards(${card.id}).choices(${ch.id})`,
+              `选项「${ch.label}」把检索做成了选项。这个游戏配了检索台——` +
+                `关键词应该由玩家自己在检索框输入；选项请写成「去哪里、问谁、做什么」这类行动`
+            );
+          }
+        }
+      }
     }
 
     // 档案夹

@@ -198,3 +198,45 @@ describe("档案夹（config.notebook）", () => {
     expect(r.issues.some((i) => i.severity === "warning" && i.message.includes("随机函数"))).toBe(true);
   });
 });
+
+describe("检索不该做成选项", () => {
+  const withSearch = (label: string) => ({
+    schemaVersion: 1 as const,
+    meta: { title: "查案" },
+    driver: { kind: "story" as const, startCard: "开场" },
+    vars: [{ id: "线索", name: "线索", initial: 0 }],
+    cards: [
+      {
+        id: "开场",
+        text: "巷口贴着旧改公告。",
+        choices: [
+          { id: "a", label, goto: "开场" },
+          { id: "b", label: "去螺蛳巷 37 号看看", goto: "开场" },
+        ],
+      },
+    ],
+    endings: [{ id: "完", title: "完", kind: "neutral" as const, condition: "线索 >= 99" }],
+    search: {
+      label: "查档",
+      entries: [{ id: "e1", keywords: ["程小满"], text: "档案薄得只有几行。" }],
+    },
+  });
+
+  it("把「检索『程小满』」写成选项会收到警告", () => {
+    const r = validateGameConfig(withSearch("检索「程小满」"));
+    const hit = r.issues.filter((i) => i.severity === "warning" && i.message.includes("把检索做成了选项"));
+    expect(hit).toHaveLength(1);
+  });
+
+  it("换成行动式选项就没有这个警告", () => {
+    const r = validateGameConfig(withSearch("去报社资料室找小柯"));
+    expect(r.issues.filter((i) => i.message.includes("把检索做成了选项"))).toHaveLength(0);
+  });
+
+  it("「搜索:xxx」「查档「xxx」」这类写法同样会被点出来", () => {
+    for (const label of ["搜索：海国栋", "查档「螺蛳巷」", 'search "chengxiaoman"']) {
+      const r = validateGameConfig(withSearch(label));
+      expect(r.issues.some((i) => i.message.includes("把检索做成了选项"))).toBe(true);
+    }
+  });
+});

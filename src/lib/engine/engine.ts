@@ -410,6 +410,7 @@ export function initState(config: GameConfig, seed: number): GameState {
   }
   if (config.driver.kind === "sim") {
     state.turn = 1;
+    if (config.driver.actionPoints !== undefined) state.apLeft = config.driver.actionPoints;
     state.log.push({ kind: "header", text: simHeader(config, state, scope), turn: state.turn });
   }
   state.rngState = rng.state();
@@ -477,6 +478,8 @@ export interface ActionView {
   reason?: string;
   usesLeft: number | null;
   needsTarget: boolean;
+  /** 行动点消耗（driver.actionPoints 启用时有意义），默认 1 */
+  cost: number;
 }
 
 /** 当前回合各决策的可用状态（渲染操作面板用） */
@@ -484,12 +487,18 @@ export function availableActions(config: GameConfig, state: GameState): ActionVi
   if (config.driver.kind !== "sim" || state.ended) return [];
   const rng = createRng(state.rngState);
   const scope = new GameScope(config, state, rng);
+  const apBudget = config.driver.actionPoints;
   return (config.actions ?? []).map((a) => {
     const perTurn = a.usesPerTurn ?? 1;
     const used = state.actionsUsed?.[a.id] ?? 0;
     const usesLeft = perTurn === 0 ? null : Math.max(0, perTurn - used);
+    const cost = a.cost ?? 1;
     let available = usesLeft === null || usesLeft > 0;
     let reason = available ? undefined : "本回合次数已用完";
+    if (available && apBudget !== undefined && cost > (state.apLeft ?? apBudget)) {
+      available = false;
+      reason = `行动点不足（需 ${cost} 点）`;
+    }
     if (available && a.condition) {
       try {
         available = truthy(evaluate(a.condition, scope));
@@ -503,7 +512,7 @@ export function availableActions(config: GameConfig, state: GameState): ActionVi
       available = false;
       reason = "没有可选目标";
     }
-    return { id: a.id, name: a.name, description: a.description, available, reason, usesLeft, needsTarget: !!a.target };
+    return { id: a.id, name: a.name, description: a.description, available, reason, usesLeft, needsTarget: !!a.target, cost };
   });
 }
 
@@ -541,6 +550,13 @@ export function performAction(config: GameConfig, input: GameState, actionId: st
   const perTurn = action.usesPerTurn ?? 1;
   const used = state.actionsUsed?.[actionId] ?? 0;
   if (perTurn > 0 && used >= perTurn) throw new Error(`「${action.name}」本回合次数已用完`);
+  const apBudget = config.driver.actionPoints;
+  const cost = action.cost ?? 1;
+  if (apBudget !== undefined) {
+    const left = state.apLeft ?? apBudget;
+    if (cost > left) throw new Error(`「${action.name}」行动点不足（需 ${cost} 点，剩 ${left} 点）`);
+    state.apLeft = left - cost;
+  }
   if (action.condition && !truthy(evaluate(action.condition, scope))) {
     throw new Error(`「${action.name}」当前不可用`);
   }
@@ -667,6 +683,9 @@ function advanceSimTime(config: GameConfig, state: GameState, scope: GameScope):
     }
   }
   state.actionsUsed = {};
+  if (config.driver.kind === "sim" && config.driver.actionPoints !== undefined) {
+    state.apLeft = config.driver.actionPoints;
+  }
   state.log.push({ kind: "header", text: simHeader(config, state, scope), turn: state.turn });
 }
 

@@ -325,3 +325,50 @@ describe("模拟器", () => {
     expect(r.endings["小富"]?.count ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe("sim 行动点（actionPoints）", () => {
+  const AP_CONFIG = {
+    schemaVersion: 1,
+    meta: { title: "行动点测试" },
+    driver: { kind: "sim", time: { turnLabel: "周", maxCycles: 3 }, actionPoints: 2 },
+    vars: [{ id: "资金", name: "资金", initial: 10 }],
+    cards: [{ id: "填充", weight: 1, text: "平静的一周。" }],
+    endings: [{ id: "破产", title: "破产", kind: "defeat", condition: "资金 < -999" }],
+    text: { timeoutEnding: { title: "收官" } },
+    actions: [
+      { id: "轻活", name: "轻活", usesPerTurn: 0, effects: [{ ref: "资金", op: "add", value: "1" }] },
+      { id: "重活", name: "重活", cost: 2, usesPerTurn: 0, effects: [{ ref: "资金", op: "add", value: "3" }] },
+      { id: "免费活", name: "免费活", cost: 0, usesPerTurn: 0, effects: [{ ref: "资金", op: "add", value: "0" }] },
+    ],
+  } as unknown as import("@/lib/schema").GameConfig;
+
+  it("扣点、拦截超支、免费动作不耗点、结束回合重置", () => {
+    let s = initState(AP_CONFIG, 42);
+    expect(s.apLeft).toBe(2);
+
+    s = performAction(AP_CONFIG, s, "轻活");
+    expect(s.apLeft).toBe(1);
+    // 重活需要 2 点，只剩 1 点 → 拒绝，且 availableActions 给出原因
+    expect(() => performAction(AP_CONFIG, s, "重活")).toThrow(/行动点不足/);
+    const view = availableActions(AP_CONFIG, s).find((a) => a.id === "重活")!;
+    expect(view.available).toBe(false);
+    expect(view.reason).toContain("行动点不足");
+    // 免费动作不受限
+    s = performAction(AP_CONFIG, s, "免费活");
+    expect(s.apLeft).toBe(1);
+    s = performAction(AP_CONFIG, s, "轻活");
+    expect(s.apLeft).toBe(0);
+
+    s = endTurn(AP_CONFIG, s);
+    if (!s.ended) expect(s.apLeft).toBe(2);
+  });
+
+  it("不设 actionPoints 时行为不变（向后兼容）", () => {
+    const legacy = structuredClone(AP_CONFIG);
+    delete (legacy.driver as { actionPoints?: number }).actionPoints;
+    let s = initState(legacy, 42);
+    expect(s.apLeft).toBeUndefined();
+    for (let i = 0; i < 6; i++) s = performAction(legacy, s, "轻活");
+    expect(s.vars["资金"]).toBe(16);
+  });
+});

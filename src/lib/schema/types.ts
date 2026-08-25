@@ -88,6 +88,11 @@ export interface DriverSim {
   time: SimTimeModel;
   /** 每回合随机抽几张事件卡，默认 1 */
   drawsPerTurn?: number;
+  /**
+   * 每回合行动点预算：玩家一回合内能做的事有限，取舍才成立。
+   * 不填 = 不限（仅靠资源/次数约束）。经营类建议 2~4。
+   */
+  actionPoints?: number;
 }
 
 export type Driver = DriverStory | DriverLife | DriverSim;
@@ -151,6 +156,8 @@ export interface ActionDef {
   condition?: string;
   /** 每回合可用次数，默认 1；0 = 本回合不限次 */
   usesPerTurn?: number;
+  /** 行动点消耗（driver.actionPoints 启用时生效），默认 1；0 = 免费动作 */
+  cost?: number;
   effects: Effect[];
   /** 执行后的日志文案，可用 {target.name} 等插值 */
   text?: string;
@@ -337,6 +344,8 @@ export interface GameState {
   time?: number;
   /** sim：当前周期（1 起） */
   cycle?: number;
+  /** sim：本回合剩余行动点（driver.actionPoints 启用时维护） */
+  apLeft?: number;
   /** sim：实体状态 */
   entities?: Record<string, EntityState>;
   /** sim：本回合各决策已用次数 */

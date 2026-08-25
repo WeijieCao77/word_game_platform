@@ -67,6 +67,7 @@ export const DriverSchema = z.discriminatedUnion("kind", [
     kind: z.literal("sim"),
     time: SimTimeModelSchema,
     drawsPerTurn: z.number().int().min(0).max(3).optional(),
+    actionPoints: z.number().int().min(1).max(20).optional(),
   }),
 ]);
 
@@ -116,6 +117,7 @@ export const ActionDefSchema = z.object({
   target: z.object({ entityType: IdSchema, condition: ExprSchema.optional() }).optional(),
   condition: ExprSchema.optional(),
   usesPerTurn: z.number().int().min(0).max(99).optional(),
+  cost: z.number().int().min(0).max(10).optional(),
   effects: z.array(EffectSchema).max(20),
   text: z.string().max(2000).optional(),
 });

@@ -92,9 +92,11 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
 - driver: 三选一
   - { kind: "story", startCard: "卡id" } 分支叙事：从起始卡开始，靠 goto 跳转
   - { kind: "life", time: { label: "岁", start: 0, step: 1, max: 100 }, drawsPerTurn?: 1 } 随机成长：时间自动推进，每回合抽卡
-  - { kind: "sim", time: { turnLabel: "周", cycleLabel?: "赛季", turnsPerCycle?: 10, maxCycles: 3 }, drawsPerTurn?: 1 }
-    经营模拟：玩家每回合主动执行决策（可多个）→ 结束回合 → 结算 → 随机事件 → 曲线 → 周期滚动。
-    想要「玩家自己操作经营」的游戏（球队/宗门/餐厅/公司）必须选 sim，不要用 life 硬凑
+  - { kind: "sim", time: { turnLabel: "周", cycleLabel?: "赛季", turnsPerCycle?: 10, maxCycles: 3 }, drawsPerTurn?: 1,
+      actionPoints?: 3 } 经营模拟：玩家每回合主动执行决策（可多个）→ 结束回合 → 结算 → 随机事件 → 曲线 → 周期滚动。
+    想要「玩家自己操作经营」的游戏（球队/宗门/餐厅/公司）必须选 sim，不要用 life 硬凑。
+    **actionPoints（强烈建议设 2~4）**：每回合行动点预算——没有它玩家每周能把所有事都做一遍，
+    毫无取舍=设计错误；决策的 cost 默认 1，重操作（转会/大建设）设 2，免费小动作（查看类）设 0
 - vars: [{ id, name, initial, min?, max?, visible? }] 全局数值。id 可用中文。visible:false 表示对玩家隐藏
 - cards: 内容卡数组（核心！）：
   { id, title?, condition?, weight?, priority?, once?, text, effects?, choices?, goto?, ending? }
@@ -120,7 +122,7 @@ update_config 工具在状态到达「已确认」之前会拒绝执行——不
 - derived: [{ id, name, expr }] 派生值，如 战力 = "avg(\\"选手\\",\\"枪法\\",\\"主力\\") * 0.5 + 士气 * 0.2"
 - actions: 玩家每回合的主动决策（经营感的核心，至少 4~6 个）：
   [{ id, name, description?, target?: {entityType, condition?(self.*过滤)}, condition?("资金>=20"),
-     usesPerTurn?(默认1,0不限), effects, text?("{target.name}" 插值) }]
+     usesPerTurn?(默认1,0不限), cost?(行动点消耗,默认1,0免费), effects, text?("{target.name}" 插值) }]
 - settlements: 每回合自动结算（比赛/营业）：
   [{ id, name, every?(每N回合), condition?, data?: [{名称:"雷霆队",强度:60},…](按次数循环取行,row.字段 引用),
      compute?: [{id,expr}](中间量,后面的可引用前面的), outcomes: [{id,condition,effects,text}](取第一个为真,最后一个条件写 1 兜底) }]

@@ -351,6 +351,11 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                 : `第 ${state.turn} ${simTime.turnLabel}`}
             </span>
           )}
+          {isSim && config.driver.kind === "sim" && config.driver.actionPoints !== undefined && !state.ended && (
+            <span className="stat ap-stat" title="每回合行动点有限，想清楚这周做什么">
+              行动点 <b>{state.apLeft ?? config.driver.actionPoints}</b>/{config.driver.actionPoints}
+            </span>
+          )}
           {visibleVars.map((v) => (
             <span className="stat" key={v.id}>
               {v.name} <b>{formatNum(state.vars[v.id] ?? 0)}</b>
@@ -463,6 +468,9 @@ export default function GamePlayer({ config, gameId, author, mode }: Props): Rea
                       onClick={() => (a.needsTarget ? setTargetPick(a.id) : act(() => performAction(config, state, a.id)))}
                     >
                       {a.name}
+                      {config.driver.kind === "sim" && config.driver.actionPoints !== undefined && (
+                        <span className="uses">{a.cost === 0 ? "免费" : `${a.cost}点`}</span>
+                      )}
                       {a.usesLeft !== null && <span className="uses">×{a.usesLeft}</span>}
                     </button>
                   )

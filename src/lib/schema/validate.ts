@@ -157,8 +157,15 @@ class Validator {
     }
 
     // 决策
+    const apBudget = c.driver.kind === "sim" ? c.driver.actionPoints : undefined;
     for (const [i, a] of (c.actions ?? []).entries()) {
       const base = `actions[${i}](${a.id})`;
+      if (a.cost !== undefined && apBudget === undefined) {
+        this.warn(`${base}.cost`, `决策 "${a.name}" 设置了行动点消耗，但 driver.actionPoints 未启用，cost 会被忽略`);
+      }
+      if (apBudget !== undefined && (a.cost ?? 1) > apBudget) {
+        this.error(`${base}.cost`, `决策 "${a.name}" 的行动点消耗（${a.cost ?? 1}）超过每回合预算（${apBudget}），永远无法执行`);
+      }
       let entityCtx: ExprContext["entity"];
       if (a.target) {
         if (!this.typeAttrs.has(a.target.entityType)) {

@@ -123,6 +123,8 @@
 
 .game-card {
   background: var(--card);
+  perspective: 1100px;
+  min-height: 268px;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
@@ -147,7 +149,9 @@
 .game-card .desc {
   color: var(--muted);
   font-size: 13px;
-  flex: 1;
+  /* 固定两行：卡片高度是统一的，简介不跟着拉伸（拉伸会让 line-clamp 失效、切出半行字） */
+  flex: none;
+  max-height: 3.4em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -155,6 +159,7 @@
 }
 
 .game-card .meta {
+  margin-top: auto;
   color: var(--muted);
   font-size: 12px;
   display: flex;
@@ -222,56 +227,84 @@
   flex-wrap: wrap;
 }
 
-/* 卡片翻面：正面封面（标题）+ 卡身标签与两行简介；悬停翻到背面看完整简介 */
-.cover-wrap {
+/* 卡片翻面：整张卡翻转——正面是封面+标签+两行简介，背面用整卡高度放完整简介 */
+.card-flip {
   position: relative;
-  perspective: 1000px;
-}
-.cover-flip {
-  position: relative;
+  flex: 1;
   transform-style: preserve-3d;
   transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-.game-card:hover .cover-flip,
-.game-card:focus-within .cover-flip {
+.game-card:hover .card-flip,
+.game-card:focus-within .card-flip {
   transform: rotateY(180deg);
 }
-.cover-face {
+.card-face {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  border-radius: 6px 6px 0 0;
+  border-radius: 6px;
   overflow: hidden;
 }
-.cover-back {
+.card-front {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.card-back {
   position: absolute;
   inset: 0;
   transform: rotateY(180deg);
-  background: linear-gradient(160deg, #121a26 0%, #080c12 100%);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(160deg, #16202e 0%, #0a0f16 100%);
   color: #e8eef4;
-  padding: 11px 14px 10px;
+  padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
-.cover-back-title {
-  font-size: 14.5px;
+.card-back-title {
+  font-size: 15px;
   font-weight: 800;
-  line-height: 1.3;
+  line-height: 1.35;
 }
-.cover-back p {
+.card-back p {
   flex: 1;
   min-height: 0;
   font-size: 12.5px;
+  line-height: 1.65;
+  color: rgba(232, 238, 244, 0.88);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.card-back p::-webkit-scrollbar {
+  width: 4px;
+}
+.card-back p::-webkit-scrollbar-thumb {
+  background: rgba(232, 238, 244, 0.22);
+  border-radius: 2px;
+}
+.card-back p.md {
+  font-size: 12.2px;
+  line-height: 1.6;
+}
+.card-back p.sm {
+  font-size: 11.6px;
+  line-height: 1.58;
+}
+.card-back p.xs {
+  font-size: 11px;
   line-height: 1.55;
-  color: rgba(232, 238, 244, 0.86);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+.card-back p.xxs {
+  font-size: 10.4px;
+  line-height: 1.5;
+}
+.card-back-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .cover-flip {
+  .card-flip {
     transition: none;
   }
 }

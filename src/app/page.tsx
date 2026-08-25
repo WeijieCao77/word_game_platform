@@ -6,6 +6,16 @@ export const dynamic = "force-dynamic";
 
 const KIND_CN: Record<string, string> = { life: "随机成长", story: "分支叙事", sim: "经营模拟", unknown: "文字游戏" };
 
+/** 简介越长，背面字号收得越小——让整段话在卡片背面一次显示完 */
+function descClass(desc: string): string {
+  const n = (desc ?? "").length;
+  if (n > 190) return "xxs";
+  if (n > 130) return "xs";
+  if (n > 95) return "sm";
+  if (n > 65) return "md";
+  return "";
+}
+
 export default function HomePage(): React.ReactElement {
   const games = getStore().listPublished();
   const flagshipUrl = process.env.FLAGSHIP_URL;
@@ -71,31 +81,32 @@ export default function HomePage(): React.ReactElement {
             {games.map((g) => (
               <div className="game-card" key={g.id}>
                 <Link className="card-link" href={`/g/${g.id}`}>
-                  <div className="cover-wrap">
-                    <div className="cover-flip">
-                      <div className="cover-face cover-front">
-                        <GameCover
-                          id={g.id}
-                          title={g.title}
-                          kind={g.kind}
-                          preset={g.coverPreset}
-                          coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
-                        />
-                      </div>
-                      <div className="cover-face cover-back">
-                        <b className="cover-back-title">{g.title}</b>
-                        <p>{g.description || "作者还没写简介——点开试试手气。"}</p>
-                        <span className="cover-hover-cta">开始游玩 →</span>
+                  <div className="card-flip">
+                    <div className="card-face card-front">
+                      <GameCover
+                        id={g.id}
+                        title={g.title}
+                        kind={g.kind}
+                        preset={g.coverPreset}
+                        coverUrl={g.hasCover ? `/api/games/${g.id}/cover?v=${encodeURIComponent(g.updatedAt)}` : undefined}
+                      />
+                      <div className="game-card-body">
+                        <div className="desc">{g.description || "（暂无简介）"}</div>
+                        <div className="meta">
+                          <span className="tag">{KIND_CN[g.kind]}</span>
+                          <span>{g.author}</span>
+                          <span className="stat-chip" title="点赞">♡ {g.likes}</span>
+                          <span className="stat-chip" title="游玩次数">▶ {g.plays}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="game-card-body">
-                    <div className="desc">{g.description || "（暂无简介）"}</div>
-                    <div className="meta">
-                      <span className="tag">{KIND_CN[g.kind]}</span>
-                      <span>{g.author}</span>
-                      <span className="stat-chip" title="点赞">♡ {g.likes}</span>
-                      <span className="stat-chip" title="游玩次数">▶ {g.plays}</span>
+                    <div className="card-face card-back">
+                      <b className="card-back-title">{g.title}</b>
+                      <p className={descClass(g.description)}>{g.description || "作者还没写简介——点开试试手气。"}</p>
+                      <div className="card-back-foot">
+                        <span className="tag">{KIND_CN[g.kind]}</span>
+                        <span className="cover-hover-cta">开始游玩 →</span>
+                      </div>
                     </div>
                   </div>
                 </Link>

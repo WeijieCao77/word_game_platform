@@ -24,7 +24,7 @@ on:
         required: false
         default: "3"
       resume_game:
-        description: "接着搭已有的作品（填作品 id；留空则新建）"
+        description: "接着搭已有的作品（填作品 id，作品须归测试账号所有——无主的先在 /admin 划归；留空则新建）"
         required: false
         default: ""
 
@@ -68,18 +68,70 @@ jobs:
           echo "::error::等了 10 分钟线上还没跟上（要 $want）。先确认部署再重跑。"
           exit 1
 
+      # 额度规矩是老板定死的：游客 40 万/天、注册 200 万、管理员不限量。
+      # 实测一轮就要烧几百万 token，只能用平台自己的测试账号（管理员）跑——
+      # 以前靠把游客日额度放宽到 4000 万来跑，等于为了测试把对外的闸门拆了，不许再犯。
+      - name: 用平台测试账号登录（管理员＝不限量）
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$E2E_USERNAME" ] || [ -z "$E2E_PASSWORD" ]; then
+            echo "::error::缺少 Actions Secrets：E2E_USERNAME / E2E_PASSWORD。"
+            echo "::error::游客日额度是 40 万 token，撑不起实测；必须用平台的测试账号（管理员，不限量）。"
+            echo "::error::配置三步：1) 在网站上注册一个测试账号；2) 把它提为管理员（后台提拔，或把 Railway 变量 ADMIN_USERS 设成这个用户名，下次登录自动提升）；3) 把用户名密码存进本仓库 Actions Secrets 的 E2E_USERNAME / E2E_PASSWORD。"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]} —— 检查 E2E_USERNAME/E2E_PASSWORD（账号要先在网站上注册）。")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          # 会话 cookie 是凭据：先打码再写进 output
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          user = reply.get("user") or {}
+          print(f"已登录：{user.get('username')}（角色 {user.get('role')}）")
+          if user.get("role") != "admin":
+              raise SystemExit("::error::测试账号还不是管理员，按注册用户只有 200 万总额度，实测必然中途断。先提为管理员：后台提拔，或设 Railway 变量 ADMIN_USERS=这个用户名（登录时自动提升），再重跑。")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
+      # 新建的作品带着登录态创建，直接归测试账号所有——之后凭登录态就能编辑，
+      # 下次实测把作品 id 填进 resume_game 就能**接着上次的成果续搭**，全程不碰编辑钥匙
+      # （钥匙不能进 workflow 输入，那会留在公开运行日志里）。
+      # 更早的无主遗留（游客建的）要续搭，先在 /admin → 公开游戏库 → 「划归账号」划给测试账号。
       - name: 建作品并把真实数据传进去
         id: create
         env:
           RESUME: ${{ inputs.resume_game }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
         run: |
           set -e
           if [ -n "$RESUME" ]; then
-            echo "::error::接着搭已有作品需要那把编辑钥匙，而钥匙不该进 workflow 输入。请留空重跑。"
-            exit 1
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/games/$RESUME/files" -H "cookie: $COOKIE")
+            if [ "$CODE" != "200" ]; then
+              echo "::error::测试账号打不开这部作品（HTTP $CODE）。确认 id 没写错，且它已归属测试账号（无主的先在 /admin → 公开游戏库 → 划归账号）。"
+              exit 1
+            fi
+            echo "id=$RESUME" >> "$GITHUB_OUTPUT"
+            echo "key=" >> "$GITHUB_OUTPUT"
+            echo "接着搭已有作品：$BASE/edit/$RESUME（数据表沿用作品里已有的，不再上传）"
+            exit 0
           fi
           BODY=$(curl -sS -X POST "$BASE/api/games" \
-            -H 'content-type: application/json' \
+            -H 'content-type: application/json' -H "cookie: $COOKIE" \
             -d '{"title":"VAL MANAGER（平台复刻）","template":"blank-code"}')
           ID=$(echo "$BODY" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
           KEY=$(echo "$BODY" | sed -n 's/.*"editKey":"\([^"]*\)".*/\1/p')
@@ -97,13 +149,14 @@ jobs:
           python3 - <<'PY'
           import json, os, urllib.request
           BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          COOKIE = os.environ["COOKIE"]  # 作品归测试账号所有，授权凭登录态
           for name in ("teams", "players", "analysts"):
               path = f"templates/valmanager/data/{name}.csv"
               content = open(path, encoding="utf-8").read()
               req = urllib.request.Request(
                   f"{BASE}/api/games/{GID}/files", method="PUT",
                   data=json.dumps({"path": f"data/{name}.csv", "content": content}).encode(),
-                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+                  headers={"content-type": "application/json", "x-edit-key": GKEY, "cookie": COOKIE})
               with urllib.request.urlopen(req, timeout=120) as r:
                   r.read()
               print(f"  已传 data/{name}.csv（{len(content)} 字符）")
@@ -113,6 +166,7 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
           ROUNDS: ${{ inputs.rounds }}
         run: |
           set -e
@@ -120,6 +174,7 @@ jobs:
           import json, os, time, urllib.error, urllib.request
 
           BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          COOKIE = os.environ["COOKIE"]  # 测试账号（管理员）的会话，额度按不限量算
           rounds = int(os.environ.get("ROUNDS") or 12)
           spec = open("templates/valmanager/spec.md", encoding="utf-8").read()
 
@@ -148,7 +203,7 @@ jobs:
                       req = urllib.request.Request(
                           f"{BASE}{path}", method="POST",
                           data=json.dumps(payload).encode(),
-                          headers={"content-type": "application/json", "x-edit-key": GKEY})
+                          headers={"content-type": "application/json", "x-edit-key": GKEY, "cookie": COOKIE})
                       with urllib.request.urlopen(req, timeout=900) as r:
                           return json.loads(r.read().decode())
                   except urllib.error.HTTPError as e:
@@ -166,7 +221,7 @@ jobs:
           def snapshot(tag):
               try:
                   req = urllib.request.Request(f"{BASE}/api/games/{GID}/files",
-                                               headers={"x-edit-key": GKEY})
+                                               headers={"x-edit-key": GKEY, "cookie": COOKIE})
                   with urllib.request.urlopen(req, timeout=120) as r:
                       files = json.loads(r.read().decode()).get("files") or []
                   code = [f for f in files if not f["path"].startswith("data/")]
@@ -213,13 +268,15 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
         run: |
           set -e
           python3 - <<'PY'
           import json, os, urllib.parse, urllib.request
           BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          COOKIE = os.environ["COOKIE"]
 
-          req = urllib.request.Request(f"{BASE}/api/games/{GID}/files", headers={"x-edit-key": GKEY})
+          req = urllib.request.Request(f"{BASE}/api/games/{GID}/files", headers={"x-edit-key": GKEY, "cookie": COOKIE})
           with urllib.request.urlopen(req, timeout=120) as r:
               files = json.loads(r.read().decode()).get("files") or []
           code = [f for f in files if not f["path"].startswith("data/")]
@@ -230,7 +287,7 @@ jobs:
           def read(path):
               rq = urllib.request.Request(
                   f"{BASE}/api/games/{GID}/files?path={urllib.parse.quote(path)}",
-                  headers={"x-edit-key": GKEY})
+                  headers={"x-edit-key": GKEY, "cookie": COOKIE})
               with urllib.request.urlopen(rq, timeout=120) as resp:
                   return json.loads(resp.read().decode()).get("content") or ""
           whole = "".join(read(f["path"]) for f in code)
@@ -294,10 +351,11 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
         run: |
           set -e
           curl -sS -X POST "$BASE/api/games/$GID/publish" \
-            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -H "x-edit-key: $GKEY" -H "cookie: $COOKIE" -H 'content-type: application/json' \
             -d '{"published":true}' -o /dev/null
           npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
           npx playwright install --with-deps chromium >/dev/null
@@ -328,6 +386,7 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
           FIX_ROUNDS: ${{ inputs.fix_rounds }}
         run: |
           set -e
@@ -347,7 +406,8 @@ jobs:
               req = urllib.request.Request(
                   f"{BASE}/api/games/{GID}/assistant", method="POST",
                   data=json.dumps({"messages": [{"role": "user", "content": text}]}).encode(),
-                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+                  headers={"content-type": "application/json", "x-edit-key": GKEY,
+                           "cookie": os.environ.get("COOKIE", "")})
               with urllib.request.urlopen(req, timeout=900) as r:
                   return json.loads(r.read().decode())
 
@@ -408,9 +468,10 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
         run: |
           curl -sS -X POST "$BASE/api/games/$GID/publish" \
-            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -H "x-edit-key: $GKEY" -H "cookie: $COOKIE" -H 'content-type: application/json' \
             -d '{"published":false}' -o /dev/null || true
           echo "已从公开游戏库撤下（作者带钥匙仍可访问）"
 

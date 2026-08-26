@@ -43,6 +43,9 @@ const STARS = seq(21, 90);
 const PETALS = seq(35, 48);
 const WINDOWS = seq(49, 160);
 const CONFETTI = seq(63, 60);
+const WHEAT = seq(77, 72);
+const SNOW = seq(91, 70);
+const CROWD = seq(105, 40);
 
 interface PresetDef {
   label: string;
@@ -597,6 +600,457 @@ export const COVER_PRESETS: Record<string, PresetDef> = {
         <circle cx="560" cy="70" r="3.4" fill="#ff4655" />
         <circle cx="560" cy="70" r="10" fill="none" stroke="#ff4655" strokeWidth="2" opacity="0.5" />
         <circle cx="560" cy="70" r="18" fill="none" stroke="#ff4655" strokeWidth="1.4" opacity="0.25" />
+      </svg>
+    ),
+  },
+  // ---- 下面这批是按「卡通 / 风景 / 人物 / 徽标」四类扩充的，全部原创手绘 SVG。
+  // 不从网上抓图：来路不明的图有版权风险，位图也会把页面撑肥；SVG 零外部依赖、任意分辨率都清晰。
+  "cat-time": {
+    label: "卡通 · 猫咪时光",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-bg`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffe3c2" />
+            <stop offset="1" stopColor="#ffd0b8" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-bg)`} />
+        <circle cx="540" cy="70" r="34" fill="#ffb85c" opacity="0.7" />
+        <g>
+          <polygon points="180,120 210,58 246,116" fill="#f2ede4" />
+          <polygon points="330,116 362,58 392,120" fill="#f2ede4" />
+          <polygon points="192,112 212,72 236,110" fill="#ffb0a0" />
+          <polygon points="338,110 360,72 380,112" fill="#ffb0a0" />
+          <ellipse cx="286" cy="200" rx="130" ry="112" fill="#f2ede4" />
+          <path d="M156 200 a130 112 0 0 1 60 -94 l40 60 Z" fill="#e8b46a" />
+          <path d="M416 196 a130 112 0 0 0 -54 -92 l-38 58 Z" fill="#e8b46a" />
+          <path d="M236 196 q12 12 24 0" stroke="#4a3b30" strokeWidth="5" fill="none" strokeLinecap="round" />
+          <path d="M322 196 q12 12 24 0" stroke="#4a3b30" strokeWidth="5" fill="none" strokeLinecap="round" />
+          <path d="M278 226 q8 10 16 0 M286 226 l0 -10" stroke="#4a3b30" strokeWidth="4" fill="none" strokeLinecap="round" />
+          <ellipse cx="286" cy="218" rx="8" ry="6" fill="#ff8f7a" />
+          <circle cx="222" cy="228" r="12" fill="#ffb0a0" opacity="0.55" />
+          <circle cx="350" cy="228" r="12" fill="#ffb0a0" opacity="0.55" />
+          <path d="M180 214 L120 204 M182 228 L124 232 M186 242 L132 256" stroke="#4a3b30" strokeWidth="2.4" opacity="0.7" />
+          <path d="M392 214 L452 204 M390 228 L448 232 M386 242 L440 256" stroke="#4a3b30" strokeWidth="2.4" opacity="0.7" />
+        </g>
+        <g>
+          <circle cx="512" cy="270" r="40" fill="#ff8f7a" />
+          <path d="M478 258 q34 -22 68 8 M482 288 q30 -26 62 -4 M500 236 q-6 34 10 68" stroke="#e56a58" strokeWidth="4" fill="none" opacity="0.8" />
+          <path d="M548 288 q30 10 44 -6" stroke="#e56a58" strokeWidth="5" fill="none" strokeLinecap="round" />
+        </g>
+        <g fill="#e8a087" opacity="0.8">
+          <circle cx="96" cy="316" r="7" />
+          <circle cx="112" cy="300" r="5" />
+          <circle cx="128" cy="318" r="5" />
+          <circle cx="112" cy="330" r="4" />
+          <circle cx="180" cy="320" r="7" />
+          <circle cx="196" cy="304" r="5" />
+          <circle cx="212" cy="322" r="5" />
+        </g>
+      </svg>
+    ),
+  },
+  "cloud-town": {
+    label: "卡通 · 云上小镇",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-sky`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#7fc4f5" />
+            <stop offset="1" stopColor="#ffd9e8" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-sky)`} />
+        <path d="M40 150 a90 90 0 0 1 180 0" stroke="#ff9db0" strokeWidth="10" fill="none" opacity="0.75" />
+        <path d="M52 150 a78 78 0 0 1 156 0" stroke="#ffd98a" strokeWidth="10" fill="none" opacity="0.75" />
+        <path d="M64 150 a66 66 0 0 1 132 0" stroke="#8fe0c0" strokeWidth="10" fill="none" opacity="0.75" />
+        <g>
+          <ellipse cx="320" cy="280" rx="230" ry="54" fill="#ffffff" />
+          <ellipse cx="170" cy="262" rx="80" ry="36" fill="#ffffff" />
+          <ellipse cx="470" cy="262" rx="90" ry="38" fill="#ffffff" />
+          <ellipse cx="320" cy="250" rx="120" ry="40" fill="#f4f9ff" />
+        </g>
+        <g>
+          <rect x="240" y="190" width="64" height="60" rx="6" fill="#ffd98a" />
+          <polygon points="232,192 272,160 312,192" fill="#e5766a" />
+          <rect x="262" y="218" width="20" height="32" rx="3" fill="#8a5c3a" />
+          <rect x="330" y="200" width="52" height="50" rx="6" fill="#a5d8ff" />
+          <polygon points="324,202 356,176 388,202" fill="#5a8fc4" />
+          <rect x="344" y="216" width="18" height="16" rx="2" fill="#fff6cf" />
+          <rect x="410" y="212" width="44" height="40" rx="5" fill="#ffb0a0" />
+          <polygon points="404,214 432,192 460,214" fill="#c96a56" />
+        </g>
+        <g>
+          <path d="M540 170 a34 42 0 1 1 0.1 0" fill="#ff7d9c" />
+          <path d="M540 170 a34 42 0 1 1 0.1 0" fill="#ffffff" opacity="0.2" transform="translate(-8 -4)" />
+          <path d="M528 208 L540 236 L552 208" fill="none" stroke="#8a5c3a" strokeWidth="3" />
+          <rect x="531" y="234" width="18" height="14" rx="3" fill="#8a5c3a" />
+        </g>
+        <ellipse cx="90" cy="70" rx="44" ry="16" fill="#ffffff" opacity="0.9" />
+        <ellipse cx="580" cy="60" rx="38" ry="14" fill="#ffffff" opacity="0.85" />
+        {PETALS.slice(0, 18).map((p, i) => (
+          <circle key={i} cx={p * 640} cy={PETALS[(i + 9) % PETALS.length] * 140} r={2 + (i % 3)} fill="#ffffff" opacity="0.6" />
+        ))}
+      </svg>
+    ),
+  },
+  "pixel-quest": {
+    label: "卡通 · 8比特冒险",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <rect width="640" height="360" fill="#1a1c3a" />
+        <g fill="#ffd98a">
+          <rect x="500" y="48" width="16" height="16" />
+          <rect x="484" y="64" width="16" height="16" />
+          <rect x="500" y="64" width="16" height="16" />
+          <rect x="516" y="64" width="16" height="16" />
+          <rect x="500" y="80" width="16" height="16" />
+        </g>
+        {[
+          [0, 260, "#2e8b57"], [48, 236, "#2e8b57"], [96, 212, "#2e8b57"], [144, 188, "#37a06a"],
+          [192, 212, "#2e8b57"], [240, 236, "#2e8b57"], [288, 212, "#37a06a"], [336, 188, "#2e8b57"],
+          [384, 164, "#37a06a"], [432, 188, "#2e8b57"], [480, 212, "#2e8b57"], [528, 236, "#37a06a"], [576, 260, "#2e8b57"],
+        ].map(([x, y, f], i) => (
+          <g key={i} fill={f as string}>
+            <rect x={x as number} y={y as number} width="48" height={300 - (y as number)} />
+            <rect x={(x as number) + 8} y={(y as number) - 12} width="32" height="12" opacity="0.85" />
+          </g>
+        ))}
+        <rect x="0" y="300" width="640" height="60" fill="#5d4023" />
+        <rect x="0" y="300" width="640" height="14" fill="#7a5a30" />
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+          <rect key={i} x={i * 84} y={314} width="10" height="10" fill="#4a3218" />
+        ))}
+        <g>
+          <rect x="292" y="212" width="40" height="40" fill="#f2ede4" />
+          <rect x="300" y="222" width="8" height="8" fill="#1a1c3a" />
+          <rect x="318" y="222" width="8" height="8" fill="#1a1c3a" />
+          <rect x="300" y="240" width="26" height="6" fill="#e5766a" />
+          <rect x="284" y="252" width="56" height="30" fill="#3a6df0" />
+          <rect x="284" y="252" width="12" height="20" fill="#f2ede4" />
+          <rect x="328" y="252" width="12" height="20" fill="#f2ede4" />
+          <rect x="340" y="230" width="8" height="34" fill="#c9d4e6" />
+          <rect x="336" y="226" width="16" height="8" fill="#8a5c3a" />
+        </g>
+        <g fill="#ffd98a">
+          <rect x="120" y="120" width="8" height="8" />
+          <rect x="220" y="80" width="8" height="8" />
+          <rect x="420" y="100" width="8" height="8" />
+          <rect x="600" y="140" width="8" height="8" />
+          <rect x="60" y="60" width="8" height="8" />
+        </g>
+      </svg>
+    ),
+  },
+  "wheat-field": {
+    label: "风景 · 麦浪金秋",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-sky`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffdf9e" />
+            <stop offset="1" stopColor="#fff4d6" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-sky)`} />
+        <circle cx="150" cy="90" r="40" fill="#ff9d3c" opacity="0.9" />
+        <path d="M0 220 Q160 200 320 216 T640 210 L640 360 L0 360 Z" fill="#e8b13c" />
+        <path d="M0 262 Q180 242 360 258 T640 252 L640 360 L0 360 Z" fill="#d99a2b" />
+        <path d="M0 306 Q200 288 420 302 T640 298 L640 360 L0 360 Z" fill="#b57b1d" />
+        <g>
+          <rect x="470" y="120" width="12" height="110" fill="#6d4a24" />
+          <polygon points="446,232 508,232 496,214 458,214" fill="#8a5c3a" />
+          <g stroke="#4a3218" strokeWidth="7" strokeLinecap="round">
+            <path d="M476 128 L432 92" />
+            <path d="M476 128 L520 96" />
+            <path d="M476 128 L438 168" />
+            <path d="M476 128 L516 166" />
+          </g>
+          <circle cx="476" cy="128" r="8" fill="#e8b13c" />
+        </g>
+        {WHEAT.slice(0, 36).map((w, i) => (
+          <path
+            key={i}
+            d={`M${w * 640} 360 q${(i % 2 ? 6 : -6)} -26 ${(i % 2 ? 4 : -4)} -48`}
+            stroke={i % 3 ? "#f4c95d" : "#e8b13c"}
+            strokeWidth="3.4"
+            fill="none"
+            strokeLinecap="round"
+            opacity={0.5 + (i % 4) * 0.12}
+          />
+        ))}
+        <path d="M240 70 q9 -8 18 0 M270 84 q7 -6 14 0 M300 70 q7 -6 14 0" stroke="#8a6a3a" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.8" />
+      </svg>
+    ),
+  },
+  "cloud-falls": {
+    label: "风景 · 云谷飞瀑",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-sky`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#bfe6da" />
+            <stop offset="1" stopColor="#e8f4ec" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-sky)`} />
+        <path d="M0 120 L140 40 L280 150 L280 360 L0 360 Z" fill="#3d7a68" />
+        <path d="M280 150 L420 60 L640 170 L640 360 L280 360 Z" fill="#2c5d50" />
+        <path d="M0 210 L120 150 L260 226 L260 360 L0 360 Z" fill="#24493f" />
+        <g>
+          <rect x="330" y="120" width="46" height="160" fill="#f4fbf7" opacity="0.95" />
+          <path d="M336 130 v140 M348 124 v150 M362 132 v138" stroke="#cfe8e3" strokeWidth="4" opacity="0.8" />
+          <ellipse cx="353" cy="290" rx="70" ry="18" fill="#ffffff" opacity="0.85" />
+          <ellipse cx="353" cy="302" rx="110" ry="20" fill="#ffffff" opacity="0.5" />
+        </g>
+        <path d="M0 320 Q160 300 340 318 T640 312 L640 360 L0 360 Z" fill="#17332c" />
+        <g fill="#17332c">
+          <polygon points="80,270 96,232 112,270" />
+          <polygon points="110,282 128,238 146,282" />
+          <polygon points="530,270 548,228 566,270" />
+          <polygon points="566,282 582,244 598,282" />
+        </g>
+        <ellipse cx="150" cy="128" rx="60" ry="16" fill="#ffffff" opacity="0.75" />
+        <ellipse cx="480" cy="96" rx="70" ry="18" fill="#ffffff" opacity="0.7" />
+        <ellipse cx="300" cy="180" rx="50" ry="12" fill="#ffffff" opacity="0.5" />
+      </svg>
+    ),
+  },
+  "desert-bell": {
+    label: "风景 · 大漠驼铃",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-dusk`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#5a2a5c" />
+            <stop offset="0.5" stopColor="#c9552e" />
+            <stop offset="1" stopColor="#f0a44a" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-dusk)`} />
+        <circle cx="440" cy="170" r="52" fill="#ffd98a" opacity="0.95" />
+        <path d="M0 250 Q180 190 400 246 T640 236 L640 360 L0 360 Z" fill="#a3552a" />
+        <path d="M0 300 Q220 250 460 296 T640 286 L640 360 L0 360 Z" fill="#7a3a1e" />
+        <path d="M240 258 q60 -18 160 -6" stroke="#5d2a14" strokeWidth="3" fill="none" opacity="0.5" />
+        <g fill="#2c1410">
+          <path d="M300 262 q6 -20 22 -22 q4 -12 16 -10 q10 -14 24 -6 q14 -4 18 10 q14 4 12 20 l-8 26 l-8 -2 l4 -20 q-30 -8 -60 0 l4 22 l-8 2 Z" />
+          <rect x="304" y="278" width="5" height="26" />
+          <rect x="322" y="282" width="5" height="24" />
+          <rect x="352" y="282" width="5" height="24" />
+          <rect x="370" y="278" width="5" height="26" />
+          <path d="M376 236 q10 -8 12 -22 l6 2 q0 14 -10 24 Z" />
+        </g>
+        <circle cx="382" cy="252" r="4" fill="#ffd98a" />
+        {STARS.slice(0, 26).map((s, i) => (
+          <circle key={i} cx={s * 640} cy={STARS[(i + 13) % STARS.length] * 120} r={1.2 + (i % 2)} fill="#ffe9c9" opacity={0.4 + (i % 3) * 0.2} />
+        ))}
+      </svg>
+    ),
+  },
+  "aurora-night": {
+    label: "风景 · 冰原极光",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-night`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#04081c" />
+            <stop offset="1" stopColor="#0d1f3c" />
+          </linearGradient>
+          <linearGradient id={`${u}-aur`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#4ef0b8" stopOpacity="0" />
+            <stop offset="0.5" stopColor="#4ef0b8" stopOpacity="0.65" />
+            <stop offset="1" stopColor="#8f6bff" stopOpacity="0.2" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-night)`} />
+        <path d="M60 20 q30 120 -10 200 l60 6 q44 -110 16 -206 Z" fill={`url(#${u}-aur)`} />
+        <path d="M200 0 q40 130 -6 230 l70 8 q50 -120 12 -238 Z" fill={`url(#${u}-aur)`} opacity="0.9" />
+        <path d="M380 10 q36 110 -8 210 l64 6 q48 -110 14 -216 Z" fill={`url(#${u}-aur)`} opacity="0.7" />
+        <path d="M530 30 q26 90 -8 170 l52 6 q38 -90 12 -176 Z" fill={`url(#${u}-aur)`} opacity="0.55" />
+        {STARS.slice(0, 50).map((s, i) => (
+          <circle key={i} cx={s * 640} cy={STARS[(i + 7) % STARS.length] * 240} r={s > 0.9 ? 1.8 : 1} fill="#e8efff" opacity={0.3 + (i % 5) * 0.12} />
+        ))}
+        <path d="M0 300 Q160 280 320 296 T640 292 L640 360 L0 360 Z" fill="#dfe7f2" />
+        <path d="M0 322 Q200 306 420 320 T640 316 L640 360 L0 360 Z" fill="#b9c8dd" opacity="0.8" />
+        <g fill="#101b33">
+          <polygon points="120,300 138,258 156,300" />
+          <polygon points="150,306 166,270 182,306" />
+        </g>
+        {SNOW.slice(0, 30).map((s, i) => (
+          <circle key={i} cx={s * 640} cy={SNOW[(i + 11) % SNOW.length] * 300} r={1.6 + (i % 2)} fill="#ffffff" opacity="0.7" />
+        ))}
+      </svg>
+    ),
+  },
+  "window-tale": {
+    label: "人物 · 窗边物语",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-room`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#3a2c2a" />
+            <stop offset="1" stopColor="#241a19" />
+          </linearGradient>
+          <linearGradient id={`${u}-win`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#0d1f3c" />
+            <stop offset="1" stopColor="#27447a" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-room)`} />
+        <rect x="200" y="40" width="250" height="230" rx="8" fill="#171010" />
+        <rect x="212" y="52" width="226" height="206" fill={`url(#${u}-win)`} />
+        <rect x="320" y="52" width="8" height="206" fill="#171010" />
+        <rect x="212" y="150" width="226" height="8" fill="#171010" />
+        <circle cx="392" cy="102" r="26" fill="#f5efdc" opacity="0.95" />
+        {STARS.slice(0, 24).map((s, i) => (
+          <circle key={i} cx={216 + s * 216} cy={56 + STARS[(i + 5) % STARS.length] * 90} r="1.3" fill="#e8efff" opacity={0.4 + (i % 3) * 0.2} />
+        ))}
+        <path d="M212 258 h226" stroke="#4a3b30" strokeWidth="10" />
+        <g fill="#0d0908">
+          <path d="M260 258 q0 -52 34 -58 q-10 -16 4 -28 a16 16 0 1 1 22 6 q20 4 26 30 q22 10 22 50 Z" />
+          <path d="M318 214 q24 -10 44 4 l-6 12 q-18 -10 -36 -4 Z" />
+        </g>
+        <rect x="366" y="216" width="30" height="22" rx="2" fill="#e8dcc0" transform="rotate(-14 381 227)" />
+        <g>
+          <rect x="470" y="196" width="70" height="8" fill="#4a3b30" />
+          <rect x="498" y="204" width="14" height="60" fill="#3a2c22" />
+          <path d="M470 196 q-14 -34 10 -52 q4 24 -2 52 Z M540 196 q14 -34 -10 -52 q-4 24 2 52 Z" fill="#2e8b57" />
+        </g>
+        <rect x="120" y="40" width="46" height="280" fill="#5d2a20" rx="6" />
+        <path d="M120 40 q30 140 0 280" fill="#6d3526" />
+        <rect x="0" y="320" width="640" height="40" fill="#171010" />
+        <circle cx="586" cy="80" r="24" fill="#ffd98a" opacity="0.14" />
+      </svg>
+    ),
+  },
+  "moon-blade": {
+    label: "人物 · 月下独行",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-night`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#141830" />
+            <stop offset="1" stopColor="#2a2350" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-night)`} />
+        <circle cx="320" cy="170" r="110" fill="#f5efdc" opacity="0.95" />
+        <circle cx="286" cy="140" r="14" fill="#e5dcc2" opacity="0.8" />
+        <circle cx="352" cy="196" r="9" fill="#e5dcc2" opacity="0.7" />
+        <g stroke="#0d0a1c" strokeWidth="7" strokeLinecap="round" opacity="0.9">
+          <path d="M70 360 L82 130 M82 200 q30 -10 44 -34 M82 240 q26 6 46 -8" />
+          <path d="M580 360 L570 150 M570 210 q-28 -8 -40 -30 M570 250 q-24 6 -42 -6" />
+        </g>
+        <g fill="#0d0a1c">
+          <circle cx="322" cy="196" r="13" />
+          <path d="M310 208 q12 -8 24 0 l6 44 q-18 8 -36 0 Z" />
+          <path d="M314 250 l-8 60 l12 0 l8 -48 l8 48 l12 0 l-8 -60 Z" />
+          <path d="M332 216 L392 186 l4 8 L338 232 Z" />
+          <path d="M296 214 q-20 18 -18 42 l8 2 q2 -20 16 -34 Z" />
+          <path d="M392 186 l18 -10 l3 5 l-17 13 Z" fill="#8fa8d8" />
+        </g>
+        <path d="M0 330 Q160 316 320 326 T640 322 L640 360 L0 360 Z" fill="#0d0a1c" />
+        <ellipse cx="320" cy="332" rx="150" ry="10" fill="#8fa8d8" opacity="0.12" />
+        {STARS.slice(0, 30).map((s, i) => (
+          <circle key={i} cx={s * 640} cy={STARS[(i + 19) % STARS.length] * 130} r="1.3" fill="#e8efff" opacity={0.3 + (i % 4) * 0.15} />
+        ))}
+      </svg>
+    ),
+  },
+  "stage-light": {
+    label: "人物 · 舞台之光",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-beam`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#ffe9a8" stopOpacity="0.7" />
+            <stop offset="1" stopColor="#ffe9a8" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill="#120a1e" />
+        <rect x="0" y="0" width="640" height="26" fill="#080410" />
+        <circle cx="160" cy="20" r="10" fill="#2a2138" />
+        <circle cx="320" cy="20" r="10" fill="#2a2138" />
+        <circle cx="480" cy="20" r="10" fill="#2a2138" />
+        <polygon points="150,28 60,250 260,250" fill={`url(#${u}-beam)`} />
+        <polygon points="320,28 230,260 410,260" fill={`url(#${u}-beam)`} opacity="0.9" />
+        <polygon points="490,28 390,250 590,250" fill={`url(#${u}-beam)`} />
+        <g fill="#080410">
+          <path d="M148 250 q0 -30 18 -34 q-8 -12 2 -20 a11 11 0 1 1 16 4 q14 6 14 28 l-4 22 Z" />
+          <rect x="176" y="196" width="5" height="40" fill="#3a2c50" />
+          <path d="M300 244 q0 -34 20 -38 q-8 -12 2 -20 a11 11 0 1 1 16 4 q16 6 16 32 l-4 22 Z" />
+          <path d="M338 216 q18 -12 30 -28 l6 6 q-12 18 -30 30 Z" />
+          <path d="M472 250 q0 -30 18 -34 q-8 -12 2 -20 a11 11 0 1 1 16 4 q14 6 14 28 l-4 22 Z" />
+          <path d="M508 224 l26 -8 l3 8 l-26 10 Z" />
+        </g>
+        <path d="M368 176 a10 10 0 1 1 0.1 0 M366 186 q2 10 -4 18" stroke="#ffd98a" strokeWidth="3" fill="none" opacity="0.9" />
+        <rect x="0" y="250" width="640" height="14" fill="#241a38" />
+        <path
+          d={`M0 360 L0 300 ${CROWD.map((c, i) => `L${(i + 1) * 16} ${292 + c * 22}`).join(" ")} L640 300 L640 360 Z`}
+          fill="#05030c"
+        />
+        {CONFETTI.slice(0, 24).map((c, i) => (
+          <rect key={i} x={c * 640} y={CONFETTI[(i + 5) % CONFETTI.length] * 160 + 30} width="4" height="7" rx="1" fill={["#ff5d8f", "#5ad0ff", "#ffd98a"][i % 3]} opacity="0.75" transform={`rotate(${(c * 80) | 0} ${c * 640} ${CONFETTI[(i + 5) % CONFETTI.length] * 160 + 30})`} />
+        ))}
+      </svg>
+    ),
+  },
+  "griffin-crest": {
+    label: "徽标 · 狮鹫纹章",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <defs>
+          <linearGradient id={`${u}-bg`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#1d1330" />
+            <stop offset="1" stopColor="#33122a" />
+          </linearGradient>
+          <linearGradient id={`${u}-gold`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#f2cb66" />
+            <stop offset="1" stopColor="#b57b1d" />
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" fill={`url(#${u}-bg)`} />
+        <path d="M320 20 L500 60 L500 190 Q500 290 320 344 Q140 290 140 190 L140 60 Z" fill={`url(#${u}-gold)`} />
+        <path d="M320 38 L482 74 L482 188 Q482 276 320 326 Q158 276 158 188 L158 74 Z" fill="#251438" />
+        <path d="M320 38 L320 326 Q158 276 158 188 L158 74 Z" fill="#8f2b3c" />
+        <g fill="#f2cb66">
+          <path d="M290 120 q-30 4 -40 30 q16 -6 26 -2 q-16 12 -14 34 q12 -14 26 -14 q-6 20 8 34 l10 -18 q8 22 26 24 q-4 -14 2 -26 q14 8 30 2 q-12 -8 -14 -22 q16 2 26 -10 q-16 -6 -22 -16 q12 -18 4 -38 q-10 16 -24 20 q-2 -18 -18 -28 q4 14 -4 26 q-10 -2 -22 4 Z" />
+          <circle cx="338" cy="128" r="5" fill="#251438" />
+        </g>
+        <path d="M180 300 q140 54 280 0 l-10 22 q-130 44 -260 0 Z" fill={`url(#${u}-gold)`} />
+        <g stroke="#f2cb66" strokeWidth="5" fill="none" opacity="0.9">
+          <path d="M120 96 q-24 60 8 128" />
+          <path d="M520 96 q24 60 -8 128" />
+        </g>
+        <g fill="#f2cb66" opacity="0.9">
+          <circle cx="118" cy="88" r="6" />
+          <circle cx="522" cy="88" r="6" />
+          <circle cx="126" cy="234" r="6" />
+          <circle cx="514" cy="234" r="6" />
+        </g>
+      </svg>
+    ),
+  },
+  "geo-mark": {
+    label: "徽标 · 极简几何",
+    render: (u) => (
+      <svg {...VB} style={abs} aria-hidden>
+        <rect width="640" height="360" fill="#f4f1ea" />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <line key={i} x1={i * 106} y1="0" x2={i * 106} y2="360" stroke="#e0dbd0" strokeWidth="1" />
+        ))}
+        {[1, 2].map((i) => (
+          <line key={i} x1="0" y1={i * 120} x2="640" y2={i * 120} stroke="#e0dbd0" strokeWidth="1" />
+        ))}
+        <circle cx="292" cy="170" r="86" fill="#1e3a8a" />
+        <circle cx="292" cy="170" r="86" fill="none" stroke="#10245c" strokeWidth="4" />
+        <polygon points="330,96 452,256 208,256" fill="#e5484d" opacity="0.88" />
+        <rect x="376" y="120" width="30" height="136" fill="#f0b429" />
+        <circle cx="256" cy="150" r="20" fill="#f4f1ea" />
+        <rect x="180" y="292" width="130" height="10" rx="5" fill="#1e3a8a" />
+        <rect x="324" y="292" width="60" height="10" rx="5" fill="#e5484d" />
+        <rect x="398" y="292" width="30" height="10" rx="5" fill="#f0b429" />
       </svg>
     ),
   },

@@ -82,6 +82,10 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             if (store.gameMode(id) !== "code") store.gameSetMode(id, "code");
           },
         },
+        // 回切（自由 → 快速）：创作者点头后由 AI 触发，文件保留但不再执行
+        setMode: (m) => {
+          if (store.gameMode(id) !== m) store.gameSetMode(id, m);
+        },
         errors: {
           list: () => store.errorList(id),
           clear: () => store.errorClear(id),

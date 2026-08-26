@@ -1,5 +1,6 @@
 import { GameStore, UserRecord } from "@/lib/store/types";
 import { defaultGrant } from "@/lib/store/sqlite";
+import { fmtWan } from "@/lib/format";
 
 // AI 额度：三种身份三套算法。
 //
@@ -57,9 +58,6 @@ export function noOutputLimit(): number {
   return Number(process.env.AI_NO_OUTPUT_TOKENS ?? 300_000);
 }
 
-const wan = (n: number): string =>
-  n >= 10_000_000 ? `${Math.round(n / 100_000) / 100} 亿` : n >= 10_000 ? `${Math.round(n / 1000) / 10} 万` : `${n}`;
-
 export function kindOf(user: UserRecord | null): QuotaKind {
   if (!user) return "guest";
   return user.role === "admin" ? "admin" : "user";
@@ -79,7 +77,7 @@ export function checkQuota(
       allowed: false,
       code: "no_output",
       reason:
-        `这个作品已经用掉 ${wan(store.gameAiTokens(args.gameId))} token，但一张卡片都还没有。` +
+        `这个作品已经用掉 ${fmtWan(store.gameAiTokens(args.gameId))} token，但一张卡片都还没有。` +
         `AI 策划是用来做游戏的——先让它把方案落成配置（跟它说「按这个方案开搭」），` +
         `或者新建一个作品重新开始。如果确实卡住了，来找管理员。`,
     };
@@ -94,7 +92,7 @@ export function checkQuota(
         allowed: false,
         code: "user_exhausted",
         reason:
-          `你的 AI 额度用完了（${wan(grant)} token）。已经自动给管理员发了一条申请，` +
+          `你的 AI 额度用完了（${fmtWan(grant)} token）。已经自动给管理员发了一条申请，` +
           `批下来就能接着用——你的作品和聊天记录都在，不会丢。`,
       };
     }
@@ -107,8 +105,8 @@ export function checkQuota(
       allowed: false,
       code: "guest_daily",
       reason:
-        `游客每天可以用 ${wan(guestDailyTokens())} token，今天用完了（零点后重置）。` +
-        `注册一个账号就能一次拿到 ${wan(userGrantDefault())} token，作品也不会因为换设备而丢。`,
+        `游客每天可以用 ${fmtWan(guestDailyTokens())} token，今天用完了（零点后重置）。` +
+        `注册一个账号就能一次拿到 ${fmtWan(userGrantDefault())} token，作品也不会因为换设备而丢。`,
     };
   }
   return { allowed: true };

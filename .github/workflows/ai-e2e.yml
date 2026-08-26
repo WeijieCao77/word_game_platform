@@ -72,6 +72,42 @@ jobs:
           echo "::error::等了 10 分钟线上还没跟上（要 $want）。别在会动的靶子上测——先确认部署再重跑。"
           exit 1
 
+      # 额度规矩：游客 40 万/天、注册 200 万、管理员不限量（老板定的）。
+      # 实测烧得多，必须用平台测试账号（管理员）跑，配置方式见 valmanager-e2e.yml 里同名步骤。
+      - name: 用平台测试账号登录（管理员＝不限量）
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$E2E_USERNAME" ] || [ -z "$E2E_PASSWORD" ]; then
+            echo "::error::缺少 Actions Secrets：E2E_USERNAME / E2E_PASSWORD（配置三步见 valmanager-e2e.yml 的同名步骤注释）。"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]}")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          user = reply.get("user") or {}
+          print(f"已登录：{user.get('username')}（角色 {user.get('role')}）")
+          if user.get("role") != "admin":
+              raise SystemExit("::error::测试账号还不是管理员——先提拔（后台，或 Railway 变量 ADMIN_USERS=这个用户名）再重跑。")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
       - name: 建一个空作品
         id: create
         env:
@@ -96,6 +132,7 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
           BRIEF: ${{ inputs.brief }}
           ROUNDS: ${{ inputs.rounds }}
           FOLLOWUPS: ${{ inputs.followups }}
@@ -113,7 +150,8 @@ jobs:
               req = urllib.request.Request(
                   f"{BASE}{path}", method="POST",
                   data=json.dumps(payload).encode(),
-                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+                  headers={"content-type": "application/json", "x-edit-key": GKEY,
+                           "cookie": os.environ.get("COOKIE", "")})
               with urllib.request.urlopen(req, timeout=timeout) as r:
                   return json.loads(r.read().decode())
 

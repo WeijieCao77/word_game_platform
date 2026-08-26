@@ -65,7 +65,15 @@ const TOOLS: ToolDef[] = [
         "以完整 GameConfig JSON 替换当前游戏配置。会自动做结构+语义校验：有错误则不落盘并返回错误清单，请修正后重试；只有警告则落盘成功。",
       parameters: {
         type: "object",
-        properties: { config: { type: "object", description: "完整的 GameConfig 对象" } },
+        properties: {
+          config: { type: "object", description: "完整的 GameConfig 对象" },
+          switchToEngine: {
+            type: "boolean",
+            description:
+              "仅当这部作品现在是自由模式、创作者明确同意切回快速模式时才带 true。" +
+              "切回去之后页面文件不再执行（文件仍然保留），游戏改由通用引擎按配置渲染。",
+          },
+        },
         required: ["config"],
       },
     },
@@ -92,6 +100,11 @@ const TOOLS: ToolDef[] = [
             enum: ["append", "replace"],
           },
           items: { type: "array", description: "该分节的条目数组", items: { type: "object" } },
+          switchToEngine: {
+            type: "boolean",
+            description:
+              "仅当这部作品现在是自由模式、创作者明确同意切回快速模式时才带 true（含义同 update_config）。",
+          },
         },
         required: ["section", "items"],
       },
@@ -294,6 +307,8 @@ export interface AgentContext {
     read: (path: string) => string | null;
     write: (path: string, content: string) => void;
   };
+  /** 切轨：自由模式写文件时切到 code，创作者同意回切时切回 engine。不传则形态不变 */
+  setMode?: (mode: GameMode) => void;
   /**
    * 作品在浏览器里抛过的异常。自由模式版的「校验器」——
    * 快速模式写错了会被三级校验当场打回，自由模式原本 AI 一无所知。
@@ -369,6 +384,8 @@ export async function runAssistant(
   let filesChanged = false;
   let designChanged = ctx.designCard !== designCard;
   let totalTokens = 0;
+  // 一轮里只切一次轨，别每次写配置都再宣布一遍
+  let switchedToEngine = false;
 
   const mode: GameMode = ctx.mode ?? "engine";
   const configJson = JSON.stringify(config);
@@ -388,14 +405,35 @@ export async function runAssistant(
       list.map((f) => `- ${f.path}（${f.size} 字符）`).join("\n")
     );
   };
+  // 切轨之后的「进度」：换了轨道不等于前面白干。
+  //
+  // 一部作品从快速模式切过来，卡片/变量/结局还原样躺在配置里；反过来切回去，
+  // 页面文件也还在。但上下文原来只发当前轨道那一半，AI 看不见另一半，
+  // 只能凭空重编——「切换等于推倒重来」就是这么来的，不是数据丢了，是它瞎了。
+  // 两边都把另一半的目录摆出来，AI 就能照着翻译（全文按需 read_config / read_file 取）。
+  const carriedFromEngine =
+    config.cards.length > 0 || config.vars.length > 0 || config.endings.length > 0;
+  const legacyEngineBlock = carriedFromEngine
+    ? `\n\n【快速模式攒下的素材·目录】（这部作品在快速模式里已经做出这些东西，没有丢。\n` +
+      `**照着翻译，不要重编**：卡片文案 → 页面上的正文，变量 → 存档里的字段，\n` +
+      `结局 → 结局判定，实体/联赛 → 数据与赛程。要看某条的全文用 read_config 按 id 取。\n` +
+      `它们不再由通用引擎执行，最终得由你的代码把它们呈现出来。）\n${summarizeConfig(config)}`
+    : "";
+  const hasFiles = (ctx.files?.list() ?? []).length > 0;
+  const legacyFilesBlock = hasFiles
+    ? `\n\n${fileBlock().replace("【当前文件】", "【自由模式留下的文件】（这部作品写过页面，文件都还在。\n" +
+        "要把里面的内容搬回配置，用 read_file 读原文，别凭印象编。这些文件在快速模式下不再执行。）\n")}`
+    : "";
   const contextMsg =
     mode === "code"
       ? `【当前设计卡】\n${designCard}\n\n` +
         `【游戏信息】${JSON.stringify(config.meta)}\n\n` +
-        fileBlock()
+        fileBlock() +
+        legacyEngineBlock
       : `【当前设计卡】\n${designCard}\n\n` +
         `${configBlock}\n\n` +
-        `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}`;
+        `【当前校验结果】\n${issuesToText(validateGameConfig(config).issues)}` +
+        legacyFilesBlock;
 
   const messages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt(config, mode) },
@@ -454,6 +492,53 @@ export async function runAssistant(
       messages.push({ role: "tool", content: result, tool_call_id: call.id });
     }
 
+    /**
+     * 回切闸门（自由 → 快速），对称于 write_file 那道 switchToCode 闸门。
+     *
+     * 自由模式的作品，界面就是它的全部。往配置里写卡片等于宣布「以后由通用引擎渲染」，
+     * 那些页面立刻不再执行——这是创作者才能做的决定，不能由 AI 顺手完成。
+     * 只拦「写真游戏内容」；改 meta（标题、题材、封面）在自由模式下本来就是正常操作。
+     */
+    function switchBackGuard(candidate: unknown, agreed: boolean, what: string): string | null {
+      if (mode !== "code" || agreed) return null;
+      const c = candidate as { cards?: unknown[]; endings?: unknown[]; vars?: unknown[] } | null;
+      const substantial =
+        (c?.cards?.length ?? 0) > 0 || (c?.endings?.length ?? 0) > 0 || (c?.vars?.length ?? 0) > 0;
+      if (!substantial) return null;
+      const files = ctx.files?.list() ?? [];
+      return (
+        `已拒绝（${what}）：这部作品现在是自由模式，界面由它自己的 ${files.length} 个文件决定。` +
+        "往配置里写卡片会把它切回快速模式——页面从此不再执行（文件仍然保留），" +
+        "游戏改由通用引擎渲染，界面会变成所有作品通用的那一套。" +
+        "先把这个代价告诉创作者，得到他明确同意后，再带 switchToEngine: true 调用。" +
+        "如果他只是想改标题/题材/封面，那只动 meta 就行，不必回切。"
+      );
+    }
+
+    /**
+     * 自由模式下改配置，别把从快速模式带过来的内容顺手抹了。
+     * 只有创作者点头回切（switchToEngine）时，才让新配置整份说了算。
+     */
+    function keepCarriedContent(candidate: unknown, agreed: boolean): unknown {
+      if (mode !== "code" || agreed || !carriedFromEngine) return candidate;
+      const next = (candidate ?? {}) as Record<string, unknown>;
+      const cur = config as unknown as Record<string, unknown>;
+      const incomingHasContent =
+        ((next.cards as unknown[])?.length ?? 0) > 0 ||
+        ((next.vars as unknown[])?.length ?? 0) > 0 ||
+        ((next.endings as unknown[])?.length ?? 0) > 0;
+      if (incomingHasContent) return candidate; // 真在写内容（且已过闸门），按它说的来
+      return { ...cur, ...next, cards: cur.cards, vars: cur.vars, endings: cur.endings };
+    }
+
+    /** 创作者点头之后真正切回快速模式；文件一个都不删，只是不再执行 */
+    function switchBackApply(agreed: boolean): string {
+      if (mode !== "code" || !agreed || switchedToEngine) return "";
+      switchedToEngine = true;
+      ctx.setMode?.("engine");
+      return "\n（已切回快速模式：现在由通用引擎按配置渲染，原来的页面文件仍然保留但不再执行。）";
+    }
+
     function runTool(name: string, args: Record<string, unknown>): string {
       switch (name) {
         case "update_design_card": {
@@ -471,7 +556,13 @@ export async function runAssistant(
             return rejectWrite("生成配置");
           }
           const raw = typeof args.config === "string" ? JSON.parse(args.config) : args.config;
-          const check = validateGameConfig(raw);
+          const back = switchBackGuard(raw, args.switchToEngine === true, "update_config");
+          if (back) return back;
+          // 自由模式下守则叫 AI「配置只维护 meta」，于是改个标题它就整份重发一个
+          // 只有 meta 的配置——那会把从快速模式带过来的卡片一次抹掉，
+          // 「切换不丢进度」当场变成空话。所以这里只收 meta/theme，其余原样留着。
+          const payload = keepCarriedContent(raw, args.switchToEngine === true);
+          const check = validateGameConfig(payload);
           const errors = check.issues.filter((i) => i.severity === "error");
           if (errors.length > 0) {
             return `配置未通过校验（未落盘），请修正后重新提交完整配置：\n${issuesToText(errors)}`;
@@ -479,10 +570,13 @@ export async function runAssistant(
           config = check.config!;
           configChanged = true;
           ctx.persist?.({ config });
+          const switched = switchBackApply(args.switchToEngine === true);
           const warnings = check.issues.filter((i) => i.severity === "warning");
-          return warnings.length > 0
-            ? `配置已更新。有 ${warnings.length} 个警告可酌情处理：\n${issuesToText(warnings)}`
-            : "配置已更新，校验全部通过。";
+          return (
+            (warnings.length > 0
+              ? `配置已更新。有 ${warnings.length} 个警告可酌情处理：\n${issuesToText(warnings)}`
+              : "配置已更新，校验全部通过。") + switched
+          );
         }
         case "patch_config": {
           if (!writeAllowed()) {
@@ -493,6 +587,13 @@ export async function runAssistant(
           if (!allowed.includes(section)) return `不支持的分节「${section}」，可用：${allowed.join(" / ")}`;
           const raw = typeof args.items === "string" ? JSON.parse(args.items) : args.items;
           if (!Array.isArray(raw)) return "参数错误：items 必须是数组";
+          // 分批写也可能是在回切：拿这一批往对应分节上一比，同样要过闸门
+          const back = switchBackGuard(
+            { [section]: raw } as Record<string, unknown>,
+            args.switchToEngine === true,
+            "分批写入配置"
+          );
+          if (back) return back;
           const mode = args.mode === "replace" ? "replace" : "append";
 
           const current = config as unknown as Record<string, unknown>;
@@ -521,10 +622,14 @@ export async function runAssistant(
           configChanged = true;
           ctx.persist?.({ config });
           const semantic = validateGameConfig(config).issues.filter((i) => i.severity === "error");
-          return semantic.length > 0
-            ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
+          const switchedBack = switchBackApply(args.switchToEngine === true);
+          return (
+            (semantic.length > 0
+              ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
                 `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
-            : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
+              : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`) +
+            switchedBack
+          );
         }
         case "read_errors": {
           if (!ctx.errors) return "这部作品是快速模式，运行时报错走的是三级校验，不在这里。";

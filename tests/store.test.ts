@@ -143,3 +143,26 @@ describe("SqliteGameStore 图片素材", () => {
     expect(store.libraryAssetGet(`${id}:女主立绘`)).not.toBeNull();
   });
 });
+
+describe("SqliteGameStore 管理员收编（gameAssignOwner）", () => {
+  it("无主作品能划归账号；已有归属的划不走——那是创作者的财产", () => {
+    const store = newStore();
+    const u1 = store.userCreate({ username: "test1", passwordHash: "h", salt: "s" });
+    const u2 = store.userCreate({ username: "别人", passwordHash: "h", salt: "s" });
+
+    // 游客建的（无主）：可以划归，划归后归属生效
+    const guest = store.create({ config: MINI_CONFIG });
+    expect(store.gameOwner(guest.id)).toBeNull();
+    expect(store.gameAssignOwner(guest.id, u1.id)).toBe(true);
+    expect(store.gameOwner(guest.id)).toBe(u1.id);
+
+    // 已归属的：管理员也不能拿走
+    expect(store.gameAssignOwner(guest.id, u2.id)).toBe(false);
+    expect(store.gameOwner(guest.id)).toBe(u1.id);
+
+    // 登录建的（自带归属）：同样划不走
+    const owned = store.create({ config: MINI_CONFIG, ownerId: u2.id });
+    expect(store.gameAssignOwner(owned.id, u1.id)).toBe(false);
+    expect(store.gameOwner(owned.id)).toBe(u2.id);
+  });
+});

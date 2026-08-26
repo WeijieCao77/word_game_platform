@@ -2,6 +2,7 @@
 
 import { ROLE_CLASS, STAGE_STEPS, STAGE_VIEW } from "./stages";
 import { ChatMsg } from "./types";
+import { fmtWan } from "@/lib/format";
 
 // 工作台左半边：和 AI 驻场工作室对话的地方，也是整个产品的主入口。
 // 从上到下三块——阶段条（走到哪一步、谁在服务你）、消息流（按【职能】拆段带徽章）、输入框。
@@ -78,8 +79,6 @@ export interface QuotaInfo {
   maxRequests: number;
 }
 
-const fmtTok = (n: number): string =>
-  n >= 10_000_000 ? `${(n / 10_000_000).toFixed(2)} 千万` : n >= 10_000 ? `${(n / 10_000).toFixed(1)} 万` : String(n);
 
 /**
  * 输入框下面的额度计数器。
@@ -89,7 +88,7 @@ const fmtTok = (n: number): string =>
 function QuotaMeter({ quota }: { quota: QuotaInfo | null }): React.ReactElement | null {
   if (!quota) return null;
   if (quota.unlimited) {
-    return <div className="quota-meter">管理员 · 不限量　累计已用 {fmtTok(quota.used)} tokens</div>;
+    return <div className="quota-meter">管理员 · 不限量　累计已用 {fmtWan(quota.used)} tokens</div>;
   }
   const pct = quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : 0;
   const low = quota.limit > 0 && quota.remaining <= quota.limit * 0.1;
@@ -99,8 +98,8 @@ function QuotaMeter({ quota }: { quota: QuotaInfo | null }): React.ReactElement 
         <span className="quota-bar-fill" style={{ width: `${pct}%` }} />
       </span>
       <span>
-        {quota.kind === "guest" ? "今日额度" : "AI 额度"} {fmtTok(quota.used)} / {fmtTok(quota.limit)}
-        　剩 {fmtTok(quota.remaining)}
+        {quota.kind === "guest" ? "今日额度" : "AI 额度"} {fmtWan(quota.used)} / {fmtWan(quota.limit)}
+        　剩 {fmtWan(quota.remaining)}
       </span>
       {quota.kind === "guest" && <span className="quota-note">注册后额度大得多</span>}
       {low && quota.kind === "user" && <span className="quota-note">用完会自动向管理员申请</span>}

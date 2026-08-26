@@ -3,6 +3,7 @@
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 import { useCallback, useEffect, useState } from "react";
+import { fmtWan } from "@/lib/format";
 
 // 平台开发者后台（暗链，不进导航）：全站数据汇总，只对管理员账号开放。
 // 管理员 = 平台第一个注册的账号，之后可由管理员提拔别人。
@@ -31,11 +32,6 @@ interface QuotaReq {
   handledAt: string | null;
 }
 
-function fmtTokens(n: number): string {
-  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(2)} 亿`;
-  if (n >= 10_000) return `${(n / 10_000).toFixed(1)} 万`;
-  return String(n);
-}
 
 /**
  * 估算花费。单价走 NEXT_PUBLIC_AI_PRICE_PER_M（元/百万 token），没配就不显示——
@@ -198,7 +194,7 @@ export default function AdminPage(): React.ReactElement {
         <div className="admin-tile"><b>{stats.games.total}</b><span>作品总数（{stats.games.published} 已发布 / {stats.games.drafts} 草稿）</span></div>
         <div className="admin-tile"><b>{stats.totals.likes}</b><span>总点赞</span></div>
         <div className="admin-tile"><b>{fmtHours(stats.totals.playSeconds)}</b><span>总游玩时长</span></div>
-        <div className="admin-tile"><b>{stats.ai.todayRequests}</b><span>今日 AI 请求（累计 {stats.ai.totalRequests} 次 / {fmtTokens(stats.ai.totalTokens)} tokens{fmtCost(stats.ai.totalTokens) ? ` · ${fmtCost(stats.ai.totalTokens)}` : ""}）</span></div>
+        <div className="admin-tile"><b>{stats.ai.todayRequests}</b><span>今日 AI 请求（累计 {stats.ai.totalRequests} 次 / {fmtWan(stats.ai.totalTokens)} tokens{fmtCost(stats.ai.totalTokens) ? ` · ${fmtCost(stats.ai.totalTokens)}` : ""}）</span></div>
         <div className="admin-tile"><b>{stats.library.cards}</b><span>内容库卡片</span></div>
         <div className="admin-tile"><b>{stats.library.assets}</b><span>公共素材</span></div>
       </div>
@@ -213,7 +209,7 @@ export default function AdminPage(): React.ReactElement {
       </h2>
       {quotaReqs.length === 0 ? (
         <p style={{ color: "var(--muted)", fontSize: 13 }}>
-          还没有人把额度用光。注册账号默认发 {fmtTokens(defaultGrant)} tokens，用完会自动出现在这里。
+          还没有人把额度用光。注册账号默认发 {fmtWan(defaultGrant)} tokens，用完会自动出现在这里。
         </p>
       ) : (
         <div className="roster-scroll">
@@ -226,13 +222,13 @@ export default function AdminPage(): React.ReactElement {
                 <tr key={r.id}>
                   <td>{r.username}</td>
                   <td>{r.createdAt.slice(0, 16).replace("T", " ")}</td>
-                  <td>{fmtTokens(r.used)}{fmtCost(r.used) ? ` · ${fmtCost(r.used)}` : ""}</td>
-                  <td>{fmtTokens(r.grantAtRequest)}</td>
+                  <td>{fmtWan(r.used)}{fmtCost(r.used) ? ` · ${fmtCost(r.used)}` : ""}</td>
+                  <td>{fmtWan(r.grantAtRequest)}</td>
                   <td>
                     {r.status === "pending" ? (
                       <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="linklike" disabled={busyReq === r.id} onClick={() => void resolveReq(r.id, defaultGrant)}>
-                          再批 {fmtTokens(defaultGrant)}
+                          再批 {fmtWan(defaultGrant)}
                         </button>
                         <button className="linklike" disabled={busyReq === r.id} onClick={() => void resolveReq(r.id, Math.round(defaultGrant / 2))}>
                           批一半
@@ -243,7 +239,7 @@ export default function AdminPage(): React.ReactElement {
                       </span>
                     ) : (
                       <span style={{ color: "var(--muted)" }}>
-                        {r.status === "granted" ? `已批 ${fmtTokens(r.granted)}` : "已拒绝"}
+                        {r.status === "granted" ? `已批 ${fmtWan(r.granted)}` : "已拒绝"}
                       </span>
                     )}
                   </td>

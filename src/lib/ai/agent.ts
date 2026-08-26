@@ -311,6 +311,14 @@ export interface AgentContext {
   /** 切轨：自由模式写文件时切到 code，创作者同意回切时切回 engine。不传则形态不变 */
   setMode?: (mode: GameMode) => void;
   /**
+   * 单轮墙钟预算的覆盖值（毫秒）。
+   *
+   * 默认值是被**网关的耐心**逼出来的：同步请求超过几分钟必然 502，
+   * 所以只能压到 240 秒，AI 一轮干不完一件事。异步任务没有这个约束——
+   * 请求早就返回了，活在后台跑——所以那条路会传一个大得多的值进来。
+   */
+  budgetMs?: number;
+  /**
    * 作品在浏览器里抛过的异常。自由模式版的「校验器」——
    * 快速模式写错了会被三级校验当场打回，自由模式原本 AI 一无所知。
    */
@@ -464,7 +472,7 @@ export async function runAssistant(
     if (blockedTimes >= 2) break;
     // 时间到了就别再开新一轮：宁可把这一轮做完的东西交出去，
     // 也不要让整个请求死在网关上（那样创作者什么都看不到）
-    if (round > 0 && Date.now() - startedAt > roundBudgetMs(mode)) {
+    if (round > 0 && Date.now() - startedAt > (ctx.budgetMs ?? roundBudgetMs(mode))) {
       outOfTime = true;
       break;
     }

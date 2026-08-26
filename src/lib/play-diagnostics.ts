@@ -58,9 +58,26 @@ const BOOT = `<script>(function(){
     flush();
     setTimeout(flush, 400); setTimeout(flush, 1200); setTimeout(flush, 3000);
   }
+
+  // 不是这部作品的错，一概不管。
+  //
+  // 上线第一天就踩到了：一个**全新的空作品**顶上挂着一条血红的
+  // 「这部作品有一个没被处理的异步错误：Failed to connect to MetaMask」——
+  // 那是玩家浏览器里的加密钱包插件在喊，跟作品一点关系都没有。
+  // 误报比不报还坏：它会让作者以为平台坏了，也会把垃圾塞进 AI 的 read_errors，
+  // 让它去修一个根本不存在的 bug。宁可漏掉一条，也不许冤枉作品。
+  var NOISE = /(metamask|ethereum|web3|solana|phantom|coinbase|walletconnect|chrome-extension|moz-extension|safari-web-extension|ResizeObserver loop|Non-Error promise rejection captured)/i;
+  function foreign(msg, file){
+    if (NOISE.test(String(msg||""))) return true;
+    // 插件注入的脚本有自己的协议前缀，明确不是我们的文件
+    if (/^(chrome|moz|safari-web)-extension:/i.test(String(file||""))) return true;
+    return false;
+  }
+
   window.addEventListener("error", function(e){
     if(!e) return;
     var msg = (e.error && e.error.message) || e.message || "未知错误";
+    if (foreign(msg, e.filename)) return;
     var where = e.filename ? (e.filename.split("/").pop() + ":" + e.lineno + ":" + e.colno) : "";
     // Script error. = 浏览器把跨域脚本的详情抹掉了。真出现就说清楚是怎么回事，
     // 别让人以为平台在藏信息。
@@ -72,10 +89,14 @@ const BOOT = `<script>(function(){
     }
     post(msg, e.error && e.error.stack, where);
   }, true);
+
+  // 没被处理的 Promise 拒绝：**只记录，不弹横幅**。
+  // 它拿不到文件名，归不了因；而且十有八九来自插件或第三方脚本，
+  // 作品本身照样跑得好好的。真炸了的话上面那条 error 会管。
   window.addEventListener("unhandledrejection", function(e){
     var r = e && e.reason;
     var msg = (r && r.message) || String(r);
-    bar("这部作品有一个没被处理的异步错误。", msg);
+    if (foreign(msg, "")) return;
     post(msg, r && r.stack, "Promise");
   });
 })();</script>`;

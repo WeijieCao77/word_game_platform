@@ -5,7 +5,38 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
-import { ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
+import { AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
+
+/** ai_jobs 表的一行 */
+interface AiJobRow {
+  id: string;
+  game_id: string;
+  status: string;
+  note: string;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function toJob(r: AiJobRow): AiJobRecord {
+  let result: unknown = null;
+  try {
+    result = r.result ? JSON.parse(r.result) : null;
+  } catch {
+    result = null; // 结果坏了不该让轮询整个失败
+  }
+  return {
+    id: r.id,
+    gameId: r.game_id,
+    status: r.status === "done" ? "done" : r.status === "error" ? "error" : "running",
+    note: r.note,
+    result,
+    error: r.error,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
 
 function newId(): string {
   return randomBytes(6).toString("base64url").replace(/[-_]/g, "a").toLowerCase();
@@ -222,6 +253,21 @@ export class SqliteGameStore implements GameStore {
         source TEXT NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_game_errors ON game_errors(game_id, at);
+      -- AI 任务：一轮对话在后台跑，前端轮询要结果。
+      -- 原来是同步请求干等，最重的那一轮必然被网关掐成 502，
+      -- 所以单轮预算只能压到 240 秒——AI 一轮干不完一件事，只能靠轮次堆。
+      -- 落库而不是放内存：容器随时可能重启，重启后前端还得问得到「那一轮怎么样了」。
+      CREATE TABLE IF NOT EXISTS ai_jobs (
+        id TEXT PRIMARY KEY,
+        game_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        result TEXT NOT NULL DEFAULT '',
+        error TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_jobs_game ON ai_jobs(game_id, created_at);
       CREATE TABLE IF NOT EXISTS library_assets (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -882,6 +928,65 @@ export class SqliteGameStore implements GameStore {
 
   errorClear(gameId: string): void {
     this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(gameId);
+  }
+
+  /**
+   * AI 任务：开一条。
+   *
+   * 同一部作品同时只允许一条在跑——两轮并发改同一份配置只会互相覆盖，
+   * 而且创作者也只可能在等一个回复。
+   */
+  jobCreate(gameId: string, id: string): boolean {
+    if (this.jobRunning(gameId)) return false;
+    const now = new Date().toISOString();
+    this.db
+      .prepare("INSERT INTO ai_jobs (id, game_id, status, created_at, updated_at) VALUES (?, ?, 'running', ?, ?)")
+      .run(id, gameId, now, now);
+    // 一部作品只留最近 20 条，别让这张表无限长
+    this.db
+      .prepare(
+        "DELETE FROM ai_jobs WHERE game_id = ? AND id NOT IN " +
+          "(SELECT id FROM ai_jobs WHERE game_id = ? ORDER BY created_at DESC LIMIT 20)"
+      )
+      .run(gameId, gameId);
+    return true;
+  }
+
+  /** 这部作品有没有还在跑的任务（超过 30 分钟的当成已经死了，别把作者永久锁住） */
+  jobRunning(gameId: string): AiJobRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM ai_jobs WHERE game_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1")
+      .get(gameId) as AiJobRow | undefined;
+    if (!row) return null;
+    if (Date.now() - Date.parse(row.updated_at) > 30 * 60_000) {
+      this.jobFail(row.id, "这一轮超过 30 分钟没有动静，按失败处理（服务可能重启过）。");
+      return null;
+    }
+    return toJob(row);
+  }
+
+  jobGet(id: string): AiJobRecord | null {
+    const row = this.db.prepare("SELECT * FROM ai_jobs WHERE id = ?").get(id) as AiJobRow | undefined;
+    return row ? toJob(row) : null;
+  }
+
+  /** 干活途中报个进度，顺便刷新心跳（jobRunning 靠它判断任务还活着） */
+  jobNote(id: string, note: string): void {
+    this.db
+      .prepare("UPDATE ai_jobs SET note = ?, updated_at = ? WHERE id = ? AND status = 'running'")
+      .run(String(note).slice(0, 500), new Date().toISOString(), id);
+  }
+
+  jobDone(id: string, result: unknown): void {
+    this.db
+      .prepare("UPDATE ai_jobs SET status = 'done', result = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(result ?? null), new Date().toISOString(), id);
+  }
+
+  jobFail(id: string, error: string): void {
+    this.db
+      .prepare("UPDATE ai_jobs SET status = 'error', error = ?, updated_at = ? WHERE id = ?")
+      .run(String(error).slice(0, 2000), new Date().toISOString(), id);
   }
 
   gameMode(id: string): "engine" | "code" {

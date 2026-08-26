@@ -109,6 +109,13 @@ export interface GameStore {
   setPublished(id: string, published: boolean): void;
   /** 作品归属：游客作品 ownerId 为空，登录后可用编辑钥匙认领 */
   gameOwner(id: string): string | null;
+  /** AI 任务（异步跑一轮对话）：开、查、报进度、收尾 */
+  jobCreate(gameId: string, id: string): boolean;
+  jobRunning(gameId: string): AiJobRecord | null;
+  jobGet(id: string): AiJobRecord | null;
+  jobNote(id: string, note: string): void;
+  jobDone(id: string, result: unknown): void;
+  jobFail(id: string, error: string): void;
   claimGames(userId: string, keys: { id: string; editKey: string }[]): number;
   /** 管理员收编：把「无主」作品划归某账号（不验钥匙）。已有归属的一律不动，返回 false */
   gameAssignOwner(id: string, userId: string): boolean;
@@ -193,4 +200,25 @@ export interface GameStore {
   /** 内容库 */
   libraryAdd(entry: import("@/lib/library").LibraryEntry): void;
   libraryList(filter?: { category?: string; tag?: string; q?: string; limit?: number }): import("@/lib/library").LibraryEntry[];
+}
+
+/**
+ * 一次 AI 对话在后台的进度。
+ *
+ * 为什么要有：原来一轮对话是同步请求干等，最重的那一轮必然被网关掐成 502，
+ * 所以单轮预算只能压到 240 秒——AI 一轮干不完一件事，只能靠轮次堆，
+ * 复刻一个大作品要 12 轮一个小时。异步之后请求立刻返回，活在后台跑，
+ * 前端轮询要结果，单轮时间不再受网关脸色。
+ */
+export interface AiJobRecord {
+  id: string;
+  gameId: string;
+  status: "running" | "done" | "error";
+  /** 干到哪一步了（给创作者看的一句话） */
+  note: string;
+  /** status=done 时是这一轮的完整结果 */
+  result: unknown;
+  error: string;
+  createdAt: string;
+  updatedAt: string;
 }

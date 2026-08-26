@@ -5,6 +5,19 @@ on:
     branches: [main, claude/text-game-platform-handoff-op7cmd]
   workflow_dispatch:
 
+# 同一条分支的部署排成一队，**只留最新的那个在等**。
+#
+# 今天真踩到了两个坑，都是这一条治的：
+# 1. 账号的 Actions 容量被占满时，一堆部署一起挤着排队，谁也上不去，
+#    排够十几分钟被 GitHub 取消——线上于是一直是旧代码，修复推了等于没推。
+# 2. 更危险的是**旧 commit 回滚**：排在队里的那条部署的是几十分钟前的 commit，
+#    真轮到它执行就会把后面所有修复覆盖掉。
+# cancel-in-progress: false = 不打断正在跑的那次（半截部署更糟），
+# 但 GitHub 只保留最新一个 pending，旧的自动取消——正好同时解决上面两条。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,13 +32,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 过期的 run 不许上线（安全带，配合上面的 concurrency 双保险）。
+      #
+      # concurrency 只管「还在排队的」；万一一条旧 run 已经开跑了（比如它先抢到
+      # runner，而更新的 commit 随后合并），它照样会把线上覆盖成旧版本。
+      # 所以动手之前先问一句：我手上这个 commit 还是分支最新的吗？不是就直接不部署。
+      - name: 我是不是已经过期了
+        id: fresh
+        run: |
+          set -e
+          git fetch origin "$GITHUB_REF_NAME" --depth=1 -q
+          TIP="$(git rev-parse FETCH_HEAD)"
+          echo "这次的 commit：$GITHUB_SHA"
+          echo "分支最新：      $TIP"
+          if [ "$GITHUB_SHA" = "$TIP" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::这条 run 拿的是旧 commit，分支上已经有更新的了——跳过部署，免得把线上回滚。"
+          fi
+
       # 测试与构建前置：坏提交不进生产
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+        if: steps.fresh.outputs.stale != 'true'
       - run: npm ci
+        if: steps.fresh.outputs.stale != 'true'
       - run: npm test
+        if: steps.fresh.outputs.stale != 'true'
 
       # 把这次的 commit 写进构建产物。
       #
@@ -33,14 +69,16 @@ jobs:
       # RAILWAY_GIT_COMMIT_SHA 是空的——健康检查就只能报 unknown，
       # 于是「等部署跟上」的 gate 永远等不到（第 10 次实测就白等了十分钟）。
       - name: 把 commit 写进构建产物
+        if: steps.fresh.outputs.stale != 'true'
         run: |
           printf '{"commit":"%s"}\n' "${GITHUB_SHA:0:7}" > public/build.json
           cat public/build.json
 
       - run: npm run build
+        if: steps.fresh.outputs.stale != 'true'
 
       - name: Deploy
-        if: env.HAS_TOKEN != ''
+        if: env.HAS_TOKEN != '' && steps.fresh.outputs.stale != 'true'
         env:
           TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }}

@@ -105,6 +105,41 @@ textarea {
   flex: 1;
 }
 
+/* 手机上顶栏会横着溢出——实测 390px 宽的屏幕上「＋ 开始创作」被推到 431px，
+   整页因此能横向拖动，看起来就是「排版坏了」。
+   窄屏改成：间距收紧、允许换行、右边的按钮不再被压扁。 */
+@media (max-width: 560px) {
+  .topnav-inner {
+    height: auto;
+    min-height: 52px;
+    padding: 8px 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .topnav-spacer {
+    /* 换行之后这个撑开器会把按钮顶到下一行的最右边，反而更乱——窄屏不要它 */
+    flex-basis: 0;
+    flex: 0;
+  }
+  .topnav-inner .btn.small {
+    margin-left: auto;
+  }
+  .brand {
+    font-size: 17px;
+    letter-spacing: 1px;
+  }
+}
+
+/* 任何页面都不该能横向拖动——一处漏了就是整页「排版坏了」的观感。
+   兜底放在最外层，作品自己的横向滚动容器（表格外套的 overflow-x:auto）不受影响。 */
+@media (max-width: 560px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
+
 /* ---------- 布局与按钮 ---------- */
 
 .store {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { SqliteGameStore } from "@/lib/store/sqlite";
@@ -164,5 +164,40 @@ describe("SqliteGameStore 管理员收编（gameAssignOwner）", () => {
     const owned = store.create({ config: MINI_CONFIG, ownerId: u2.id });
     expect(store.gameAssignOwner(owned.id, u1.id)).toBe(false);
     expect(store.gameOwner(owned.id)).toBe(u2.id);
+  });
+});
+
+describe("官方示例归到平台主人名下", () => {
+  // 示例入库时是无主的，而无主作品只认那把随机生成的编辑钥匙——谁也没有。
+  // 结果是「平台自己的示例，平台主人反而改不了」，跟「所有游戏都要能用平台做出来」直接冲突。
+  it("有管理员时，启动就把官方示例归给第一个管理员；已归属的不碰", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "wgp-demo-"));
+    const dbPath = path.join(dir, "test.db");
+    const store = new SqliteGameStore(dbPath);
+    const admin = store.userCreate({ username: "boss", passwordHash: "h", salt: "s" });
+    store.userSetRole(admin.id, "admin");
+    const other = store.userCreate({ username: "别人", passwordHash: "h", salt: "s" });
+
+    // 造一个「官方示例」和一个已经归属别人的同名作品
+    const demoDir = mkdtempSync(path.join(tmpdir(), "wgp-tpl-"));
+    writeFileSync(path.join(demoDir, "life-demo.json"), JSON.stringify(MINI_CONFIG));
+    store.seedDemos(demoDir);
+    expect(store.gameOwner("xiuxian")).toBe(admin.id);
+
+    // 已归属别人的示例不许被抢走
+    (store as unknown as { db: { prepare: (q: string) => { run: (...a: unknown[]) => void } } }).db
+      .prepare("UPDATE games SET owner_id = ? WHERE id = ?")
+      .run(other.id, "xiuxian");
+    store.seedDemos(demoDir);
+    expect(store.gameOwner("xiuxian")).toBe(other.id);
+  });
+
+  it("还没有管理员时什么都不做，不报错", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "wgp-demo2-"));
+    const store = new SqliteGameStore(path.join(dir, "test.db"));
+    const demoDir = mkdtempSync(path.join(tmpdir(), "wgp-tpl2-"));
+    writeFileSync(path.join(demoDir, "life-demo.json"), JSON.stringify(MINI_CONFIG));
+    expect(() => store.seedDemos(demoDir)).not.toThrow();
+    expect(store.gameOwner("xiuxian")).toBeNull();
   });
 });

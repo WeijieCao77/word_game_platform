@@ -315,6 +315,27 @@ export class SqliteGameStore implements GameStore {
         // 模板缺失不阻塞启动（romance-demo 在内容上线前不存在，属预期）
       }
     }
+    this.adoptDemosToAdmin(demos.map((d) => d.id));
+  }
+
+  /**
+   * 官方示例归到平台主人（第一个管理员）名下。
+   *
+   * 为什么要有：示例入库时是**无主**的，而无主作品只认编辑钥匙——那把钥匙是入库时
+   * 随机生成的，谁也没有。结果就是**平台自己的示例，平台主人反而改不了**：
+   * 想用工作台调一调官方示例，或者干脆用平台的 AI 去改进它，都无从下手。
+   * 这跟「所有游戏都必须能用平台做出来」是直接冲突的。
+   *
+   * 只认第一个管理员（平台主人），且只动**无主**的——已经归属谁的一律不碰。
+   * 每次启动跑一次，幂等；管理员还没注册时什么也不做，下次启动再说。
+   */
+  private adoptDemosToAdmin(ids: string[]): void {
+    const admin = this.db
+      .prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1")
+      .get() as { id: string } | undefined;
+    if (!admin) return;
+    const claim = this.db.prepare("UPDATE games SET owner_id = ? WHERE id = ? AND owner_id IS NULL");
+    for (const id of ids) claim.run(admin.id, id);
   }
 
   create(input: { config: unknown; designCard?: string; author?: string; ownerId?: string }): { id: string; editKey: string } {

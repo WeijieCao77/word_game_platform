@@ -127,6 +127,22 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setEditKey(localStorage.getItem(`wgp_key_${id}`));
   }, [id]);
 
+  // 打开工作台就把这部作品收进账号（登录着才有效，没登录会被 401 挡掉）。
+  //
+  // 老板定的规矩：登录状态下的作品直接归账号；游客做到一半才注册的，
+  // 得把本机的作品收录进去。原来这一步只在 /mine 上有个按钮——
+  // **漏点一次，换设备就什么都找不回来，而且没有任何提示**。
+  // 作者真正待着的地方是工作台，所以在这儿也补一次。
+  // 安全：服务端只认领当前无主的作品，且必须出示正确的编辑钥匙。
+  useEffect(() => {
+    if (!editKey) return;
+    void fetch("/api/auth/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keys: [{ id, editKey }] }),
+    }).catch(() => null);
+  }, [id, editKey]);
+
   useEffect(() => {
     if (mode === "code" && files === null) void reloadFiles();
   }, [mode, files, reloadFiles]);

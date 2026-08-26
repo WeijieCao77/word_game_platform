@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import GameCover from "@/components/GameCover";
 import BrandMark from "@/components/BrandMark";
@@ -55,9 +55,33 @@ export default function MinePage(): React.ReactElement {
   const [notice, setNotice] = useState("");
 
   const [lockedCount, setLockedCount] = useState(0);
+  // 账号那一路到底拿到几部、有没有出错——把它显示出来，
+  // 「什么都没有」和「没取到」是两件完全不同的事，不能长得一样
+  const [accountCount, setAccountCount] = useState<number | null>(null);
+  const [accountNote, setAccountNote] = useState("");
+  const [localCount, setLocalCount] = useState(0);
+
+  // 自动收录只做一次，别每次刷新都发一遍
+  const autoClaimed = useRef(false);
 
   const refresh = useCallback(async (): Promise<void> => {
     const keys = localKeys();
+
+    // 登录着 + 本机还有钥匙 = 先悄悄收录一次，再列清单。
+    //
+    // 老板定的规矩就是这样：「登录状态下的作品直接归账号，游客状态下有密钥
+    // 然后做到一半决定注册账号的，得把当前电脑里的作品收录到账号下」。
+    // 原来这一步要人去点那个按钮——**漏点一次，换设备就什么都找不回来，
+    // 而且没有任何提示**。这种事不该靠人记得点。
+    // 收录本身是安全的：只认领当前无主的作品，且必须出示正确的编辑钥匙。
+    if (!autoClaimed.current && keys.length > 0) {
+      autoClaimed.current = true;
+      await fetch("/api/auth/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ keys: keys.map((k) => ({ id: k.id, editKey: k.key })) }),
+      }).catch(() => null); // 没登录会被 401 挡掉，正常，不用管
+    }
 
     // 本机编辑钥匙持有的作品
     const byKey = await Promise.all(
@@ -112,9 +136,21 @@ export default function MinePage(): React.ReactElement {
     );
 
     // 账号名下的作品（换设备登录也能看到，本机没钥匙也算）
+    //
+    // 这一路**必须把结果说出来**。老板换手机登录后看不到收录的作品，
+    // 而这里原来是「拿不到就静悄悄只显示本机那部分」——于是屏幕上是
+    // 「这台浏览器上还没有任何作品」，一个字都没提账号那一路发生了什么。
+    // 排查了一晚上最缺的就是这个数。
     let byAccount: MineEntry[] = [];
+    let accountNote = "";
     try {
       const res = await fetch("/api/auth/games");
+      if (!res.ok) {
+        accountNote =
+          res.status === 401
+            ? "没读到登录状态（会话可能过期了）——重新登录一次再看。"
+            : `账号名下的作品没取到（HTTP ${res.status}）。`;
+      }
       if (res.ok) {
         const body = (await res.json()) as { games?: { id: string; title: string; kind: string; updatedAt: string; hasCover?: boolean; coverPreset?: string; likes?: number; plays?: number }[] };
         byAccount = (body.games ?? []).map((g) => ({
@@ -131,11 +167,14 @@ export default function MinePage(): React.ReactElement {
         }));
       }
     } catch {
-      // 未登录或网络问题：只显示本机钥匙的部分
+      accountNote = "账号名下的作品没取到（网络问题）——刷新一次再看。";
     }
+    setAccountCount(byAccount.length);
+    setAccountNote(accountNote);
 
     const usable = byKey.filter((e) => !e.lockedByOther);
     setLockedCount(byKey.filter((e) => e.lockedByOther).length);
+    setLocalCount(usable.length);
 
     // 合并去重：本机钥匙的条目信息更全（含发布状态与统计），优先保留
     const merged = new Map<string, MineEntry>();
@@ -277,6 +316,19 @@ export default function MinePage(): React.ReactElement {
         )}
       </div>
       {notice && <div className="notice" style={{ marginBottom: 16 }}>{notice}</div>}
+      {/* 登录之后把两路的数目摆出来。
+          「账号名下 0 部」和「这台浏览器没有钥匙」是两件完全不同的事，
+          原来它们长得一模一样，出了问题谁也说不清是哪一路断了。 */}
+      {me && entries !== null && (
+        <div className="notice" style={{ marginBottom: 16 }}>
+          账号 <b>{me.username}</b> 名下 <b>{accountCount ?? "—"}</b> 部
+          　这台浏览器的钥匙 <b>{localCount}</b> 部
+          {accountNote && <>　⚠ {accountNote}</>}
+          {accountCount === 0 && localCount > 0 && !accountNote && (
+            <>　—— 本机这 {localCount} 部还没收进账号，点上面那个「把本机作品收进账号」，换设备才找得回来。</>
+          )}
+        </div>
+      )}
       {lockedCount > 0 && (
         <div className="notice" style={{ marginBottom: 16 }}>
           这台浏览器上还有 {lockedCount} 部作品已经绑定到别的账号——作品一旦收进账号，

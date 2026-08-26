@@ -364,6 +364,10 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 - 单个文件上限 40 万字符，一部作品最多 60 个文件。
 - 工具一览：list_files 看有什么、read_file 看原文、write_file 建新文件、
   **patch_file 改已有文件（日常改动的默认选择）**。
+- **文件大了 read_file 会给目录而不是全文**（每一节在第几行），这不是出错——
+  照着目录用 read_file(path, from: 行号, lines: 行数) 看那一段就行。
+  要改某处之前，先 read_file(path, find: "一小段原文") 确认它在哪、唯不唯一，
+  这一步能省掉一次 patch_file 失败。**文件再大都改得动，不要因为看不到全文就整份重写。**
 
 **运行环境（重要，写错了游戏直接白屏）**
 游戏跑在 sandbox="allow-scripts" 的 iframe 里，拿到的是**不透明源**：

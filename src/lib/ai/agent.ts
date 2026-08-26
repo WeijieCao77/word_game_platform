@@ -5,6 +5,7 @@ import { SKILL_PACKS, buildSystemPrompt } from "./prompt";
 import { GameMode } from "@/lib/store/types";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 import { LibraryEntry } from "@/lib/library";
+import { viewFile } from "./file-view";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -96,10 +97,21 @@ const TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "read_file",
-      description: "读一个文件的全文（自由模式）。要改哪个文件就先读哪个，不要凭印象重写。",
+      description:
+        "读文件（自由模式）。要改哪个文件就先读哪个，不要凭印象重写。" +
+        "文件小就直接给全文；**大文件给的是目录**（每一节在第几行），再用 from/lines 看某一段。" +
+        "改之前想确认某段原文在不在、唯不唯一，用 find 搜——patch_file 的 find 必须唯一，这一步能省一次失败。",
       parameters: {
         type: "object",
-        properties: { path: { type: "string", description: "相对路径，如 index.html" } },
+        properties: {
+          path: { type: "string", description: "相对路径，如 game.js" },
+          from: { type: "number", description: "从第几行开始读（1 起）。大文件先看目录再决定读哪段。" },
+          lines: { type: "number", description: "读多少行，默认 140，最多 400。" },
+          find: {
+            type: "string",
+            description: "搜一小段原文，返回它出现在第几行、出现几次、以及上下文。",
+          },
+        },
         required: ["path"],
       },
     },
@@ -488,10 +500,13 @@ export async function runAssistant(
           const path = String(args.path ?? "");
           const content = ctx.files.read(path);
           if (content === null) return `没有这个文件：${path}`;
-          const MAX = 30000;
-          return content.length > MAX
-            ? `${content.slice(0, MAX)}\n…（文件过长已截断，${content.length} 字符）`
-            : content;
+          // 大文件不再粗暴截断——截断等于「三万字之后的代码永远改不动」，
+          // 那样作品长到一半就卡死了。改成给目录 / 给某一段 / 给搜索结果。
+          return viewFile(path, content, {
+            from: typeof args.from === "number" ? args.from : undefined,
+            lines: typeof args.lines === "number" ? args.lines : undefined,
+            find: typeof args.find === "string" && args.find ? args.find : undefined,
+          });
         }
         case "write_file": {
           if (!ctx.files) return "这部作品是快速模式，不能写文件。";

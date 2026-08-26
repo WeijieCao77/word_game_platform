@@ -10,7 +10,9 @@
  * 额度不够）每一个都得真的会走到，不然连续搭建就成了一个烧额度的黑盒。
  */
 
-export type Turn = { role: "user" | "assistant"; content: string };
+import { Turn, trimHistory } from "./history";
+
+export type { Turn };
 
 /**
  * 一次最多跑几轮。
@@ -45,8 +47,11 @@ export interface AutoBuildOptions {
   alive?: () => boolean;
   /** 额度还够不够再跑一轮；返回一句原因表示不够 */
   quotaBlocked?: () => string | null;
-  /** 历史最多留几条（跟路由的 MAX_HISTORY 对齐） */
-  maxHistory?: number;
+  /**
+   * 每轮之间怎么裁历史。默认按字符预算裁（见 history.ts）——
+   * 连续搭建一次跑二十轮，历史每轮都重发一遍，按条数裁会烧掉一大笔冤枉钱。
+   */
+  trim?: (turns: Turn[]) => Turn[];
 }
 
 export interface AutoBuildResult extends Record<string, unknown> {
@@ -61,7 +66,7 @@ export interface AutoBuildResult extends Record<string, unknown> {
  * 返回**最后一轮**的结果（前端要显示的就是它），外加实际跑了几轮、为什么停。
  */
 export async function runRounds(opts: AutoBuildOptions): Promise<AutoBuildResult> {
-  const maxHistory = opts.maxHistory ?? 24;
+  const trim = opts.trim ?? trimHistory;
   let hist = opts.history;
   let last: Record<string, unknown> = {};
   let ran = 0;
@@ -84,11 +89,11 @@ export async function runRounds(opts: AutoBuildOptions): Promise<AutoBuildResult
     last = await opts.runOne(hist, i + 1, opts.rounds);
     ran += 1;
     // 下一轮接着这一轮说：把 AI 的回复和一句「接着做」续到历史里
-    hist = [
+    hist = trim([
       ...hist,
       { role: "assistant" as const, content: String(last.reply ?? "") },
       { role: "user" as const, content: KEEP_GOING },
-    ].slice(-maxHistory);
+    ]);
   }
 
   return { ...last, roundsRun: ran, ...(stoppedBecause ? { stoppedBecause } : {}) };

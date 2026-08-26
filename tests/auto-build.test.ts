@@ -102,13 +102,26 @@ describe("连续搭建：AI 照剩余清单自己往下跑", () => {
     await runRounds({
       rounds: 20,
       history: start,
-      maxHistory: 8,
+      trim: (h) => h.slice(-8),
       runOne: async (h) => {
         longest = Math.max(longest, h.length);
         return { reply: "ok" };
       },
     });
     expect(longest).toBeLessThanOrEqual(8);
+  });
+
+  it("默认就按字符预算裁——二十轮下来历史不该无限膨胀", async () => {
+    let longestChars = 0;
+    await runRounds({
+      rounds: 20,
+      history: start,
+      runOne: async (h) => {
+        longestChars = Math.max(longestChars, h.reduce((n, t) => n + t.content.length, 0));
+        return { reply: "回".repeat(6000) }; // 每轮都吐一大段
+      },
+    });
+    expect(longestChars).toBeLessThan(60_000);
   });
 
   it("轮数会夹住：不合法的、负的、超上限的都要变成能跑的数", () => {

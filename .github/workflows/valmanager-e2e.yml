@@ -281,8 +281,19 @@ jobs:
             -d '{"published":true}' -o /dev/null
           npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
           npx playwright install --with-deps chromium >/dev/null
-          CHROME_PATH="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")" \
-            node scripts/smoke-freemode.mjs "$BASE" "$GID"
+          CHROME="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")"
+          echo "$CHROME" > /tmp/chrome-path
+          CHROME_PATH="$CHROME" node scripts/smoke-freemode.mjs "$BASE" "$GID"
+
+      # 源码里出现「阵容」两个字太容易了——写个导航按钮就有。
+      # 这一步问的是**点进去之后有没有东西**：每一页的字数、可点元素、表格行数、报错。
+      - name: 界面体检（每一页点进去有没有真东西）
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+        run: |
+          CHROME_PATH="$(cat /tmp/chrome-path 2>/dev/null || true)" \
+            node scripts/screens-freemode.mjs "$BASE" "$GID" || true
 
       - name: 留个地址
         if: always()

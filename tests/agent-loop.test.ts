@@ -204,14 +204,17 @@ describe("工具轮次上限按形态分档", () => {
     expect(calls.length).toBe(7);
   });
 
-  it("自由模式给到 16 轮——不然一轮里连一件事都干不完", async () => {
+  // 自由模式这个数从 16 提到 40：该管住一轮的是**时间**（budgetMs），不是次数。
+  // 异步化之后一轮有 12 分钟，16 次说话在时间用满之前就被数完了——
+  // 于是每轮只长一千来字符，一部一万三千行的作品永远搭不完。
+  it("自由模式给到 40 轮：闸门交给时间，别让次数先把人数完", async () => {
     scripted = (_round, tools) =>
       tools ? toolCall("read_file", { path: "game.js" }) : textReply("交代一下现状");
     await runAssistant(
       { config: builtConfig, designCard: "状态：调优中", mode: "code", files },
       [{ role: "user", content: "接着做" }]
     );
-    expect(calls.length).toBe(17);
+    expect(calls.length).toBe(41);
   });
 });
 

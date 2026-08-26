@@ -57,3 +57,41 @@ describe("技能包按需加载", () => {
     }
   });
 });
+
+/**
+ * 提示里那句「一轮对话有时间上限（默认 40 秒）」是个真 bug。
+ * 异步化之后自由模式一轮有 12 分钟，可提示里还写着 40 秒——
+ * 模型照着那句话把活切成一小口一小口，每轮只长一千来字符，
+ * 一部一万三千行的作品永远搭不完。差距不在表达力，在这句假话。
+ */
+describe("一轮的预算要如实告诉模型", () => {
+  const cfg = {
+    schemaVersion: 1,
+    meta: { title: "t" },
+    driver: { kind: "story", startCard: "a" },
+    vars: [],
+    cards: [],
+    endings: [],
+  } as unknown as GameConfig;
+
+  it("占位符一定被换掉——漏了就等于把 __ROUND_BUDGET__ 发给模型看", () => {
+    expect(buildSystemPrompt(cfg, "code", 720_000)).not.toContain("__ROUND_BUDGET__");
+    expect(buildSystemPrompt(cfg, "engine")).not.toContain("__ROUND_BUDGET__");
+  });
+
+  it("12 分钟就写「约 12 分钟」，不是「40 秒」", () => {
+    const p = buildSystemPrompt(cfg, "code", 720_000);
+    expect(p).toContain("约 12 分钟");
+    expect(p).not.toContain("默认 40 秒");
+  });
+
+  it("短预算照实说成秒", () => {
+    expect(buildSystemPrompt(cfg, "code", 40_000)).toContain("40 秒");
+  });
+
+  it("自由模式要带上「剩余清单」——没有它，AI 每轮只做想起来的那件事", () => {
+    const p = buildSystemPrompt(cfg, "code", 720_000);
+    expect(p).toContain("剩余清单");
+    expect(p).toContain("清单没清空");
+  });
+});

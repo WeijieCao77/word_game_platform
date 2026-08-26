@@ -415,14 +415,21 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 - **文笔守则同样适用**——自由模式不是放弃文字质量的借口
 
 **分轮搭建的纪律（大作品能不能做成，全看这一条）**
-一轮对话有时间上限（默认 40 秒），超了平台会把你手上的东西存好、把话交代给创作者，
-下一轮接着来。所以**不要试图一轮写完一个大作品**——那只会每轮都被打断在半路。
-正确的节奏是**每一轮都交付一个能跑的东西**：
+一轮对话有时间上限（这一轮是 __ROUND_BUDGET__），超了平台会把你手上的东西存好、
+把话交代给创作者，下一轮接着来。
+
+注意这个数——**它比你以为的宽得多**。一轮跑在服务端后台，不受网页连接的限制，
+所以一轮里可以连着调用十几次工具：读三个文件、写两个新界面、再打五处补丁，
+都在预算之内。**把预算用满**：一轮只加一个小功能然后停下来问「要继续吗」，
+是在浪费创作者的时间和额度——他要的是作品长大，不是被反复请示。
+
+真正的纪律不是「每轮少做」，而是**每轮结束时作品处于能玩的状态**：
 
 - 第一轮：写 index.html，一个能打开、能点、能走到结尾的**最小闭环**（哪怕只有三段剧情）。
   宁可小而完整，不要大而半截——创作者要能立刻在预览里看到东西。
-- 之后每一轮加一层：拆出 style.css 把界面做像样、拆出 game.js 放逻辑、
-  再往 data.js 里加内容。每轮结束时作品都**处于能玩的状态**。
+- 之后每一轮加一层，而且**一层要够厚**：一轮做完一个完整的界面（含它的数据、
+  交互、返回路径），或者一次做掉两三个小界面。拆出 style.css 把界面做像样、
+  拆出 game.js 放逻辑、再往 data.js 里加内容。
 - **改东西用 patch_file，不要用 write_file 整份重写**。这是自由模式最重要的省钱纪律：
   重写一份一万字符的 game.js，等于把全文再吐一遍；改十次就是十遍，创作者的额度
   是这么烧光的。patch_file 只发「原文片段 → 新片段」，改一行就只花一行的钱。
@@ -441,12 +448,27 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 它每一轮都原样发给你，所以它就是你的建造日志。**每轮动完手就用 update_design_card
 把这三样记进去**（放在设计卡末尾的「建造日志」板块，没有就新建一个）：
 
+- **剩余清单**：这部作品说好要有的东西，一行一条，做完的打勾。
+  这是四样里最重要的一样——**没有它，你每一轮都只会做「想起来的那件事」，
+  永远不知道离说好的样子还差多远**。创作者一开始描述的规模（多少个界面、
+  多少类事务、比赛怎么打）当场就拆成条目写进来，例如：
+
+      [x] 选队界面：分赛区列表、点队进详情
+      [x] 阵容页：可排序表格 + 点行开详情
+      [ ] 赛程页：整赛季日历，点某天看当天的比赛
+      [ ] 比赛直播：逐回合推进，中途可叫暂停改战术
+      [ ] 转会市场：报价 → 对方考虑 → 答复
+
+  条目要具体到「点进去能看到什么」，不要写「做转会系统」这种量不出来的话。
+  每一轮先看这张清单挑没打勾的做，做完当场打勾。**清单没清空，就别问创作者
+  「还要加什么吗」**——照着往下做就是了。
 - **已完成**：一行一条，写清做了什么（「阵容页：可排序表格 + 点行开详情」）
 - **下一步**：接下来打算做的两三件事
 - **文件地图**：哪个文件放什么（「screens-squad.js：阵容页与选手详情」）。
   作品文件一多，没有这张图你就会在另一个文件里重复造一遍已有的东西
 
-这三样加起来别超过一屏。它不是给创作者看的报告，是给下一轮的你自己看的交接。
+除了剩余清单，其余三样加起来别超过一屏。它不是给创作者看的报告，
+是给下一轮的你自己看的交接。
 
 **不许写占位页（铁律，违反一次整部作品就废了）**
 一个页面如果你还没做，就**不要把它挂进导航**。绝对不许出现这种东西：
@@ -745,8 +767,14 @@ export function pickSkills(config: GameConfig, mode: GameMode = "engine"): strin
   return [...picked];
 }
 
+/** 把毫秒说成人话：提示里写「40 秒」而模型实际有 12 分钟，它会自己把活切碎 */
+function budgetText(ms: number): string {
+  const sec = Math.round(ms / 1000);
+  return sec >= 90 ? `约 ${Math.round(sec / 60)} 分钟` : `${sec} 秒`;
+}
+
 /** 组装这次请求要发的系统提示 */
-export function buildSystemPrompt(config: GameConfig, mode: GameMode = "engine"): string {
+export function buildSystemPrompt(config: GameConfig, mode: GameMode = "engine", budgetMs?: number): string {
   const picked = pickSkills(config, mode);
   const rest = Object.keys(SKILL_PACKS).filter((k) => !picked.includes(k));
   const index =
@@ -756,7 +784,11 @@ export function buildSystemPrompt(config: GameConfig, mode: GameMode = "engine")
         "下面这些没有随本次对话发给你。需要哪一个，用 read_skill 工具取全文（不要凭印象猜写法）：\n" +
         rest.map((k) => `- **${k}**：${SKILL_PACKS[k].desc}`).join("\n") +
         "\n";
-  return (mode === "code" ? CORE_CODE : CORE) + picked.map((k) => SKILL_PACKS[k].body).join("") + index;
+  const body = (mode === "code" ? CORE_CODE : CORE) + picked.map((k) => SKILL_PACKS[k].body).join("") + index;
+  // 预算写死在文案里是个真 bug：异步化之后自由模式一轮有 12 分钟，
+  // 提示里却还写着「默认 40 秒」——模型照着那句话把活切成一小口一小口，
+  // 于是每轮只长一千来字符，一部一万三千行的作品永远搭不完。
+  return body.replace(/__ROUND_BUDGET__/g, budgetText(budgetMs ?? (mode === "code" ? 180_000 : 40_000)));
 }
 
 /** 全量提示：测试与调试用；线上走 buildSystemPrompt */

@@ -19,8 +19,16 @@ const MAX_ROUNDS = 6;
  * 而复刻 VAL MANAGER 那个体量（13,132 行）靠的正是「一轮里多干几件事」。
  * 真正的刹车是墙钟预算（roundBudgetMs），轮次上限只是个兜底，不该由它当瓶颈。
  */
+/**
+ * 一轮对话里最多让模型说几次话（每次可以带若干工具调用）。
+ *
+ * 自由模式这个数从 16 提到 40：**该管住一轮的是时间，不是次数**。
+ * 异步化之后一轮有 12 分钟，16 次说话在时间用满之前就被数完了——
+ * 于是每轮只长一千来字符，一部一万三千行的作品永远搭不完。
+ * 真正的闸门是下面的 budgetMs，到点就收尾、把做完的存下来。
+ */
 function maxToolRounds(mode: GameMode): number {
-  if (mode === "code") return Number(process.env.AI_MAX_TOOL_ROUNDS_CODE ?? 16);
+  if (mode === "code") return Number(process.env.AI_MAX_TOOL_ROUNDS_CODE ?? 40);
   return Number(process.env.AI_MAX_TOOL_ROUNDS ?? MAX_ROUNDS);
 }
 /**
@@ -445,7 +453,8 @@ export async function runAssistant(
         legacyFilesBlock;
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(config, mode) },
+    // 预算要如实告诉模型：提示里写「40 秒」而实际有 12 分钟，它会自己把活切碎
+    { role: "system", content: buildSystemPrompt(config, mode, ctx.budgetMs ?? roundBudgetMs(mode)) },
     { role: "system", content: contextMsg },
     ...history.map((m): ChatMessage => ({ role: m.role, content: m.content })),
   ];

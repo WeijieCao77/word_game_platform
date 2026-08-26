@@ -22,7 +22,12 @@ const MAX_ROUNDS = 6;
  * 交代清楚返回。配置是改一次存一次的，所以「分几轮搭完」不会丢东西——
  * 这也正是搭一个大作品该有的样子：一口气搭完本来就不现实。
  */
-function roundBudgetMs(): number {
+function roundBudgetMs(mode: GameMode): number {
+  // 自由模式要宽得多：实测一次「写一份上万字符的文件」的模型调用要 2~3 分钟
+  // （流式，连接是活的，只是内容多）。40 秒的预算等于每轮只写得动一个文件，
+  // 后面几轮全是「先交个底」——那不是在保护请求，是在拦着 AI 干活。
+  // 上限仍留在工作台那 5 分钟的等待上限之内。
+  if (mode === "code") return Number(process.env.AI_ROUND_BUDGET_CODE_MS ?? 180_000);
   return Number(process.env.AI_ROUND_BUDGET_MS ?? 40_000);
 }
 
@@ -104,7 +109,8 @@ const TOOLS: ToolDef[] = [
     function: {
       name: "write_file",
       description:
-        "写入一个文件（自由模式），已存在则整份覆盖。入口必须叫 index.html。" +
+        "写入一个文件（自由模式），已存在则整份覆盖。**新建文件用它；改已有文件请用 patch_file**" +
+        "（整份重写会把全文再吐一遍，额度烧得飞快）。入口必须叫 index.html。" +
         "文件较大时按模块拆开（index.html / game.js / style.css），别把几千行塞进一个文件。" +
         "注意：快速模式的作品一旦写文件就切到自由模式，配置里的卡片不再生效——" +
         "那种情况必须先取得创作者明确同意，再带 switchToCode: true 调用。",
@@ -119,6 +125,37 @@ const TOOLS: ToolDef[] = [
           },
         },
         required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "patch_file",
+      description:
+        "改一个已有文件的局部（自由模式）。**改东西优先用它，不要用 write_file 整份重写**——" +
+        "重写一份一万字符的 game.js 要把全文再吐一遍，改十次就是十遍，额度烧得飞快。" +
+        "一次可以带多处改动，按顺序应用。每个 find 必须在文件里**只出现一次**（要改多处相同的写 all: true），" +
+        "所以 find 要带够上下文（连着上下几行一起写），不要只写一个变量名。",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "相对路径，如 game.js" },
+          edits: {
+            type: "array",
+            description: "这一批改动，按顺序应用",
+            items: {
+              type: "object",
+              properties: {
+                find: { type: "string", description: "要被替换的原文，必须与文件内容逐字一致" },
+                replace: { type: "string", description: "替换成什么；写空字符串就是删掉这一段" },
+                all: { type: "boolean", description: "原文出现多次时是否全部替换，默认只允许唯一匹配" },
+              },
+              required: ["find", "replace"],
+            },
+          },
+        },
+        required: ["path", "edits"],
       },
     },
   },
@@ -339,7 +376,7 @@ export async function runAssistant(
     if (blockedTimes >= 2) break;
     // 时间到了就别再开新一轮：宁可把这一轮做完的东西交出去，
     // 也不要让整个请求死在网关上（那样创作者什么都看不到）
-    if (round > 0 && Date.now() - startedAt > roundBudgetMs()) {
+    if (round > 0 && Date.now() - startedAt > roundBudgetMs(mode)) {
       outOfTime = true;
       break;
     }
@@ -476,6 +513,62 @@ export async function runAssistant(
           ctx.files.write(path, content);
           filesChanged = true;
           return `已写入 ${path}（${content.length} 字符）。`;
+        }
+        case "patch_file": {
+          if (!ctx.files) return "这部作品是快速模式，不能改文件。";
+          const path = String(args.path ?? "");
+          const original = ctx.files.read(path);
+          if (original === null) {
+            return `文件不存在：${path}。新文件用 write_file 创建，patch_file 只改已有的。`;
+          }
+          const edits = Array.isArray(args.edits) ? args.edits : [];
+          if (edits.length === 0) return "edits 是空的，没有要改的东西。";
+
+          let next = original;
+          const done: string[] = [];
+          for (const [i, raw] of edits.entries()) {
+            const e = raw as { find?: unknown; replace?: unknown; all?: unknown };
+            const find = typeof e.find === "string" ? e.find : "";
+            const replace = typeof e.replace === "string" ? e.replace : "";
+            if (!find) return `第 ${i + 1} 处改动的 find 是空的——要新增内容请把它锚在一段已有的原文上。`;
+
+            // 数一数出现几次：不唯一就退回去让模型带更多上下文重来，
+            // 别猜它想改哪一个（猜错会悄悄改坏代码，比报错糟得多）
+            let count = 0;
+            let from = 0;
+            for (;;) {
+              const at = next.indexOf(find, from);
+              if (at === -1) break;
+              count += 1;
+              from = at + find.length;
+              if (count > 50) break;
+            }
+            if (count === 0) {
+              return (
+                `第 ${i + 1} 处改动没找到原文（前 ${i} 处未生效，文件没动）。\n` +
+                `find 必须与文件里的内容逐字一致（含缩进与换行）。先 read_file 看一眼当前原文再改。\n` +
+                `没找到的是：${find.slice(0, 120)}${find.length > 120 ? "…" : ""}`
+              );
+            }
+            if (count > 1 && e.all !== true) {
+              return (
+                `第 ${i + 1} 处改动的 find 在文件里出现了 ${count} 次，不知道该改哪一个（文件没动）。\n` +
+                `要么把 find 写长一点、带上前后几行让它唯一，要么确认这几处都要改、加上 all: true。`
+              );
+            }
+            next = e.all === true ? next.split(find).join(replace) : next.replace(find, replace);
+            done.push(`第 ${i + 1} 处${count > 1 ? `（${count} 处）` : ""}`);
+          }
+
+          if (next === original) return "改完之后内容和原来一样，没有实际变化。";
+          if (next.length > 400000) return "改完超过单文件上限（40 万字符），把这个文件拆开。";
+          ctx.files.write(path, next);
+          filesChanged = true;
+          const delta = next.length - original.length;
+          return (
+            `已改 ${path}：${done.join("、")}生效。` +
+            `文件 ${original.length} → ${next.length} 字符（${delta >= 0 ? "+" : ""}${delta}）。`
+          );
         }
         case "read_skill": {
           const key = String(args.name ?? "");

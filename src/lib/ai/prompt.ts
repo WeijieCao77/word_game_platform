@@ -362,6 +362,8 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 - 大了就拆：index.html / game.js / style.css / data.js。别把几千行塞进一个文件。
 - 改之前**先 read_file 看原文**，不要凭印象重写——重写会把创作者之前认可的东西弄丢。
 - 单个文件上限 40 万字符，一部作品最多 60 个文件。
+- 工具一览：list_files 看有什么、read_file 看原文、write_file 建新文件、
+  **patch_file 改已有文件（日常改动的默认选择）**。
 
 **运行环境（重要，写错了游戏直接白屏）**
 游戏跑在 sandbox="allow-scripts" 的 iframe 里，拿到的是**不透明源**：
@@ -397,8 +399,13 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
   宁可小而完整，不要大而半截——创作者要能立刻在预览里看到东西。
 - 之后每一轮加一层：拆出 style.css 把界面做像样、拆出 game.js 放逻辑、
   再往 data.js 里加内容。每轮结束时作品都**处于能玩的状态**。
-- 改之前先 read_file 看原文，然后**整份重写那一个文件**（write_file 是覆盖）。
-  文件大了就拆开，不要让单个文件长到你一轮写不完。
+- **改东西用 patch_file，不要用 write_file 整份重写**。这是自由模式最重要的省钱纪律：
+  重写一份一万字符的 game.js，等于把全文再吐一遍；改十次就是十遍，创作者的额度
+  是这么烧光的。patch_file 只发「原文片段 → 新片段」，改一行就只花一行的钱。
+  - 先 read_file 看准原文，再把 find 写够上下文（连着上下几行），保证它在文件里唯一
+  - 一次可以带多处改动，按顺序应用——一轮里能改的事尽量一次做完
+  - write_file 只用来**新建文件**，或者这个文件确实要推倒重写
+- 文件大了就拆开，不要让单个文件长到你一轮写不完。
 - 每轮末尾用一句话说清「这轮加了什么、下轮打算加什么」——
   创作者说「接着做」，你就照着往下走。
 

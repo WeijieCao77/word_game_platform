@@ -512,6 +512,22 @@ jobs:
               q = body.get("quota") or {}
               print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}")
 
+              # **改完必须重新发布再玩**——平台的规矩是「作者看草稿、玩家看最近
+              # 一次发布的快照」，而冒烟检查是以玩家身份（不带钥匙）去玩的。
+              # 上一次实测就栽在这儿：发布只做过一次，之后三轮补丁全落在草稿上，
+              # 每一轮玩的都是同一份冻住的旧代码，于是报错一模一样，
+              # AI 最后判定「这是旧记录」不改了。三轮、八十万 token 全白烧。
+              try:
+                  rq = urllib.request.Request(
+                      f"{BASE}/api/games/{GID}/publish", method="POST",
+                      data=json.dumps({"published": True}).encode(),
+                      headers={"content-type": "application/json", "x-edit-key": GKEY,
+                               "cookie": os.environ.get("COOKIE", "")})
+                  urllib.request.urlopen(rq, timeout=60).read()
+                  print("  · 已把这一轮的改动重新发布，再玩一遍")
+              except Exception as e:
+                  print(f"::warning::重新发布失败：{e}——这一轮玩的可能还是旧快照")
+
               time.sleep(3)
               scode, sout = play("scripts/smoke-freemode.mjs")
               ncode, nout = play("scripts/screens-freemode.mjs")

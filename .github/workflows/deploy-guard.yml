@@ -1,0 +1,82 @@
+name: 线上版本自愈守卫
+
+# 治的是这一类事故：**线上悄悄退回了旧版本，而没有人知道。**
+#
+# 今天真踩到了一次的前半段：15:24 有一条部署 run 卡在 queued 状态两个多小时，
+# API 还拒绝取消（「Cannot cancel a workflow run that has not been queued yet」）。
+# 它拿的是几小时前的 commit——真轮到它执行，就会把后面所有修复一次性覆盖掉，
+# 而且是在半夜没人看着的时候。
+#
+# 部署工作流里那道「我是不是已经过期了」的守卫拦不住它：那条 run 用的是
+# **加守卫之前**的工作流文件。所以需要这一层在外面兜底。
+#
+# 做法很笨但很可靠：每 20 分钟问一次线上跑的是哪个 commit，跟分支最新的对一遍。
+# 对不上就重新部署一次，把线上顶回最新版本。
+#
+# **故意回滚的时候怎么办**：建一条名为 rollback/HOLD 的分支，这个守卫就完全不动手
+# （见 docs/ROLLBACK.md）。不然你刚踩下刹车，它二十分钟后就把你顶回去了。
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+      BRANCH: claude/text-game-platform-handoff-op7cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/text-game-platform-handoff-op7cmd
+          fetch-depth: 1
+
+      - name: 有人按了刹车吗
+        id: hold
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if git ls-remote --exit-code --heads origin rollback/HOLD >/dev/null 2>&1; then
+            echo "rollback/HOLD 分支在——有人在故意回滚，这一轮不动手。"
+            echo "hold=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hold=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 线上是不是最新的
+        if: steps.hold.outputs.hold != 'true'
+        id: check
+        run: |
+          set -e
+          TIP="$(git rev-parse HEAD)"
+          SHORT="${TIP:0:7}"
+          LIVE="$(curl -sS --max-time 20 "$BASE/api/health" \
+            | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+          echo "分支最新：$SHORT"
+          echo "线上跑的：${LIVE:-（取不到）}"
+          if [ -z "$LIVE" ]; then
+            echo "::warning::健康检查取不到 commit，这一轮跳过（服务可能正在重启）"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          elif [ "$LIVE" = "$SHORT" ]; then
+            echo "一致 ✓"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::线上跑的是 $LIVE，分支最新是 $SHORT——把它顶回去"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 顶回最新版本
+        if: steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run railway.yml --ref "$BRANCH" \
+            --repo "${{ github.repository }}"
+          echo "已触发重新部署。"

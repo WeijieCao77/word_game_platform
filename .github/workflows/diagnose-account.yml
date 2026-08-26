@@ -75,7 +75,11 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # playwright 不是项目依赖（跟 valmanager-e2e 一样按需装），
+      # 直接 require('playwright') 会 MODULE_NOT_FOUND
+      - run: |
+          npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
 
       - name: 手机上真打开一遍线上网站
         run: |

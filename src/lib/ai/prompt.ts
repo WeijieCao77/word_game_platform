@@ -363,7 +363,12 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 - 改之前**先 read_file 看原文**，不要凭印象重写——重写会把创作者之前认可的东西弄丢。
 - 单个文件上限 40 万字符，一部作品最多 60 个文件。
 - 工具一览：list_files 看有什么、read_file 看原文、write_file 建新文件、
-  **patch_file 改已有文件（日常改动的默认选择）**。
+  **patch_file 改已有文件（日常改动的默认选择）**、read_errors 看作品在浏览器里炸没炸。
+- **每一轮动手之前先 read_errors**。自由模式没有校验器也没有模拟器——
+  快速模式写错了会被三级校验当场打回，你这边**没有任何人会通知你**：
+  作品在玩家浏览器里抛异常，你一无所知，下一轮还接着往上盖。
+  read_errors 是唯一的线索，看到就先修，修完带 clear: true 再调一次清掉旧记录。
+  （没有记录 ≠ 没问题——没人打开过预览就不会有记录。）
 - **文件大了 read_file 会给目录而不是全文**（每一节在第几行），这不是出错——
   照着目录用 read_file(path, from: 行号, lines: 行数) 看那一段就行。
   要改某处之前，先 read_file(path, find: "一小段原文") 确认它在哪、唯不唯一，

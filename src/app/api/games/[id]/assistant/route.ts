@@ -82,6 +82,10 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             if (store.gameMode(id) !== "code") store.gameSetMode(id, "code");
           },
         },
+        errors: {
+          list: () => store.errorList(id),
+          clear: () => store.errorClear(id),
+        },
         searchLibrary: (q, category) =>
           rankLibraryEntries(store.libraryList({ q, category, limit: 32 }), record.config as GameConfig)
             .slice(0, 8)

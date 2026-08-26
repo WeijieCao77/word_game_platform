@@ -18,7 +18,7 @@
   "use strict";
   if (window.WGP) return;
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
 
   /* ── 一、存档：沙箱里唯一能落盘的路 ───────────────────────────────
    * iframe 是不透明源，浏览器自带的那几种本地存储读不到、也不该读（换设备就没了）。
@@ -51,8 +51,42 @@
         fns[i](loadedData);
       } catch (e) {
         console.error("[WGP] ready 回调出错：", e);
+        reportCaught(e, "WGP.ready");
       }
     }
+  }
+
+  /* ── 报错回流 ───────────────────────────────────────────────────
+   * 快速模式的作品写错了会被三级校验当场打回；自由模式原本一条护栏都没有——
+   * 作品在玩家浏览器里抛异常，AI 那边一无所知，下一轮还接着往上盖。
+   * 所以运行库在沙箱里装上全局处理，把异常送回外壳；外壳记下来，
+   * AI 用 read_errors 就读得到。这是自由模式版的校验器。
+   *
+   * 同一条错误只报一次（很多异常是每帧都抛的，不去重会把通道刷爆）。
+   */
+  var reported = {};
+  var reportedCount = 0;
+  function report(message, stack, source) {
+    var key = String(message || "").slice(0, 200);
+    if (!key || reported[key] || reportedCount >= 20) return;
+    reported[key] = 1;
+    reportedCount += 1;
+    post("wgp:error", { message: key, stack: String(stack || "").slice(0, 2000), source: String(source || "") });
+  }
+
+  window.addEventListener("error", function (e) {
+    if (!e) return;
+    var where = e.filename ? e.filename.split("/").pop() + ":" + e.lineno + ":" + e.colno : "";
+    report((e.error && e.error.message) || e.message, e.error && e.error.stack, where);
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e && e.reason;
+    report((r && r.message) || String(r), r && r.stack, "Promise");
+  });
+
+  /** 我们自己 try/catch 掉的错误也要报——不然它就只留在控制台里没人看见 */
+  function reportCaught(e, where) {
+    report((e && e.message) || String(e), e && e.stack, where);
   }
 
   window.addEventListener("message", function (e) {
@@ -281,6 +315,7 @@
       if (out !== undefined && out !== host) append(host, out);
     } catch (e) {
       console.error("[WGP] 画界面 " + top.name + " 出错：", e);
+      reportCaught(e, "界面 " + top.name);
       append(host, el("div", { class: "wgp-error", text: "这一页出错了：" + (e && e.message) }));
     }
     syncNav();

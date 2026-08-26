@@ -16,6 +16,7 @@ import { usePlayStats } from "@/components/player/hooks";
  *   parent.postMessage({ type: "wgp:save", data }, "*")    存档（data 会被 JSON 序列化）
  *   parent.postMessage({ type: "wgp:load" }, "*")           要存档
  *   parent.postMessage({ type: "wgp:ready" }, "*")          告诉外壳自己起来了
+ *   parent.postMessage({ type: "wgp:error", data: {…} }, "*") 报一条运行时异常（运行库自动发）
  *   window.addEventListener("message", e => e.data.type === "wgp:loaded" && ...)
  */
 export default function CodeGameFrame({
@@ -72,11 +73,26 @@ export default function CodeGameFrame({
         } catch {
           /* 同上 */
         }
+      } else if (data?.type === "wgp:error") {
+        // 作品在浏览器里抛异常了。快速模式有三级校验当场打回，自由模式原本一条
+        // 护栏都没有——AI 写完就交差，玩家看到白屏，作者看到的是「AI 说做好了」。
+        // 送回服务端存起来，AI 下一轮用 read_errors 就读得到。
+        const e2 = (data.data ?? {}) as { message?: string; stack?: string; source?: string };
+        if (e2.message) {
+          void fetch(`/api/games/${gameId}/errors`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(e2),
+            keepalive: true,
+          }).catch(() => {
+            /* 报错通道自己出错不该再惊动玩家 */
+          });
+        }
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [post, readSave, saveKey]);
+  }, [post, readSave, saveKey, gameId]);
 
   // 竞态兜底：iframe 常常在 React 水合之前就 load 完，游戏那一句 wgp:ready 与
   // wgp:load 发出来时外壳还没挂上监听——两条都会石沉大海，结果是遮罩不散、

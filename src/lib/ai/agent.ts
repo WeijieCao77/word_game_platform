@@ -100,6 +100,22 @@ const TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "read_errors",
+      description:
+        "看这部作品在浏览器里抛过什么异常（自由模式）。**每一轮动手之前先看一眼**——" +
+        "自由模式没有校验器，作品炸了不会有人通知你，这里就是唯一的线索。" +
+        "修完之后带 clear: true 再调一次，把旧错清掉，免得下一轮被它误导。",
+      parameters: {
+        type: "object",
+        properties: {
+          clear: { type: "boolean", description: "读完就清空（确认修好了再用）" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_files",
       description: "列出这部作品当前有哪些文件（自由模式）。改代码之前先看一眼有什么。",
       parameters: { type: "object", properties: {} },
@@ -277,6 +293,14 @@ export interface AgentContext {
     list: () => { path: string; size: number }[];
     read: (path: string) => string | null;
     write: (path: string, content: string) => void;
+  };
+  /**
+   * 作品在浏览器里抛过的异常。自由模式版的「校验器」——
+   * 快速模式写错了会被三级校验当场打回，自由模式原本 AI 一无所知。
+   */
+  errors?: {
+    list: () => { at: string; message: string; stack: string; source: string }[];
+    clear: () => void;
   };
 }
 
@@ -501,6 +525,30 @@ export async function runAssistant(
             ? `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条。` +
                 `当前还有 ${semantic.length} 处语义错误（分批途中正常，全部写完后用 validate 收尾修掉）。`
             : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`;
+        }
+        case "read_errors": {
+          if (!ctx.errors) return "这部作品是快速模式，运行时报错走的是三级校验，不在这里。";
+          const list = ctx.errors.list();
+          if (args.clear === true) {
+            ctx.errors.clear();
+            return list.length === 0
+              ? "本来就没有报错记录，已清空。"
+              : `已清空 ${list.length} 条报错记录。下次预览如果还抛，会重新记上。`;
+          }
+          if (list.length === 0) {
+            return "没有报错记录。（注意：这不等于没问题——没人打开过预览就不会有记录。）";
+          }
+          return (
+            `这部作品最近抛过 ${list.length} 条异常，最新的在最前面：\n` +
+            list
+              .slice(0, 10)
+              .map((e, i) => {
+                const where = e.source ? `（${e.source}）` : "";
+                const stack = e.stack ? `\n    ${e.stack.split("\n").slice(0, 3).join("\n    ")}` : "";
+                return `${i + 1}. ${e.message}${where}${stack}`;
+              })
+              .join("\n")
+          );
         }
         case "list_files": {
           if (!ctx.files) return "这部作品是快速模式（配置 + 通用引擎），没有文件可列。";

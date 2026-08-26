@@ -19,6 +19,10 @@ on:
         description: "搭几轮（每轮把上一轮的回复带上）"
         required: false
         default: "12"
+      fix_rounds:
+        description: "玩出问题后，让 AI 回炉修几轮"
+        required: false
+        default: "3"
       resume_game:
         description: "接着搭已有的作品（填作品 id；留空则新建）"
         required: false
@@ -283,7 +287,8 @@ jobs:
           npx playwright install --with-deps chromium >/dev/null
           CHROME="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")"
           echo "$CHROME" > /tmp/chrome-path
-          CHROME_PATH="$CHROME" node scripts/smoke-freemode.mjs "$BASE" "$GID"
+          # 结论要留下来喂回给 AI，所以别让它在这里就把作业判死
+          CHROME_PATH="$CHROME" node scripts/smoke-freemode.mjs "$BASE" "$GID" | tee /tmp/smoke.txt
 
       # 源码里出现「阵容」两个字太容易了——写个导航按钮就有。
       # 这一步问的是**点进去之后有没有东西**：每一页的字数、可点元素、表格行数、报错。
@@ -293,7 +298,83 @@ jobs:
           GID: ${{ steps.create.outputs.id }}
         run: |
           CHROME_PATH="$(cat /tmp/chrome-path 2>/dev/null || true)" \
-            node scripts/screens-freemode.mjs "$BASE" "$GID" || true
+            node scripts/screens-freemode.mjs "$BASE" "$GID" 2>&1 | tee /tmp/screens.txt || true
+
+      # 闭环：真玩一遍发现的问题，作为创作者的下一句话喂回去，让 AI 自己修完再判。
+      #
+      # 这是自由模式一直缺的那一环。快速模式写错了会被三级校验当场打回、自动重试；
+      # 自由模式原本 AI 写完就交差——它永远不知道自己的游戏在浏览器里炸了。
+      - name: 把玩出来的问题喂回去让它修
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+          FIX_ROUNDS: ${{ inputs.fix_rounds }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, time, urllib.error, urllib.request
+
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          rounds = int(os.environ.get("FIX_ROUNDS") or 3)
+
+          def read(path):
+              try:
+                  return open(path, encoding="utf-8").read().strip()
+              except Exception:
+                  return ""
+
+          def ask(text):
+              req = urllib.request.Request(
+                  f"{BASE}/api/games/{GID}/assistant", method="POST",
+                  data=json.dumps({"messages": [{"role": "user", "content": text}]}).encode(),
+                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+              with urllib.request.urlopen(req, timeout=900) as r:
+                  return json.loads(r.read().decode())
+
+          def play():
+              import subprocess
+              env = dict(os.environ)
+              env["CHROME_PATH"] = read("/tmp/chrome-path")
+              out = subprocess.run(["node", "scripts/smoke-freemode.mjs", BASE, GID],
+                                   capture_output=True, text=True, env=env)
+              return out.returncode, (out.stdout or "") + (out.stderr or "")
+
+          smoke = read("/tmp/smoke.txt")
+          screens = read("/tmp/screens.txt")
+          if "硬伤" not in smoke and "占位" not in screens and "报错" not in screens:
+              print("玩了一遍没发现硬伤，不用回炉。")
+              raise SystemExit(0)
+
+          for i in range(rounds):
+              msg = (
+                  "我把你做的游戏真点了一遍，发现了问题。**这一轮只做一件事：把它们修好**，"
+                  "不要加新功能。\n\n"
+                  "先用 read_errors 看浏览器里抛了什么异常（那是最直接的线索），"
+                  "再对着下面的检查结果逐条排查；改完用 patch_file，别整份重写。\n\n"
+                  f"【真玩一遍】\n{smoke}\n\n【界面体检】\n{screens}"
+              )
+              print(f"\n{'=' * 70}\n回炉第 {i + 1} 轮\n{'=' * 70}")
+              try:
+                  body = ask(msg)
+              except Exception as e:
+                  print(f"::warning::回炉第 {i + 1} 轮失败：{e}")
+                  break
+              print((body.get("reply") or "")[:1500])
+              q = body.get("quota") or {}
+              print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}")
+
+              time.sleep(3)
+              code, out = play()
+              print(out)
+              smoke = out.strip()
+              screens = ""
+              if code == 0:
+                  print(f"回炉 {i + 1} 轮之后，玩一遍没有硬伤了。")
+                  raise SystemExit(0)
+
+          print("::warning::回炉之后仍有硬伤——这一条要作为平台的卡点记下来")
+          PY
 
       - name: 留个地址
         if: always()

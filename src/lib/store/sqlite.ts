@@ -189,6 +189,18 @@ export class SqliteGameStore implements GameStore {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (game_id, path)
       );
+      -- 自由模式作品在浏览器里抛出来的异常。
+      -- 快速模式有三级校验 + 600 局模拟兜着，写错了当场打回；自由模式一条都没有，
+      -- AI 写完就交差，永远不知道自己的游戏炸了。运行库把异常送回来，存在这儿，
+      -- AI 用 read_errors 读得到——这就是自由模式版的校验器。
+      CREATE TABLE IF NOT EXISTS game_errors (
+        game_id TEXT NOT NULL,
+        at TEXT NOT NULL,
+        message TEXT NOT NULL,
+        stack TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS idx_game_errors ON game_errors(game_id, at);
       CREATE TABLE IF NOT EXISTS library_assets (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -335,6 +347,7 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("DELETE FROM game_stats_daily WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_assets WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_files WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
 
@@ -726,6 +739,38 @@ export class SqliteGameStore implements GameStore {
 
   fileDelete(gameId: string, path: string): void {
     this.db.prepare("DELETE FROM game_files WHERE game_id = ? AND path = ?").run(gameId, path);
+  }
+
+  /**
+   * 记一条运行时报错。
+   *
+   * 同一条错误反复抛（比如每帧一次）不该把表撑爆，也不该把真正不同的问题挤掉——
+   * 所以同一条消息只留最新的一次，每个作品最多留 30 条。
+   */
+  errorAdd(gameId: string, e: { message: string; stack?: string; source?: string }): void {
+    // 先 trim 再判空：全是空格的「报错」记下来只会占位置、还会误导下一轮
+    const message = String(e.message ?? "").trim().slice(0, 500);
+    if (!message) return;
+    this.db.prepare("DELETE FROM game_errors WHERE game_id = ? AND message = ?").run(gameId, message);
+    this.db
+      .prepare("INSERT INTO game_errors (game_id, at, message, stack, source) VALUES (?, ?, ?, ?, ?)")
+      .run(gameId, new Date().toISOString(), message, String(e.stack ?? "").slice(0, 2000), String(e.source ?? "").slice(0, 200));
+    this.db
+      .prepare(
+        "DELETE FROM game_errors WHERE game_id = ? AND rowid NOT IN " +
+          "(SELECT rowid FROM game_errors WHERE game_id = ? ORDER BY at DESC LIMIT 30)"
+      )
+      .run(gameId, gameId);
+  }
+
+  errorList(gameId: string): { at: string; message: string; stack: string; source: string }[] {
+    return this.db
+      .prepare("SELECT at, message, stack, source FROM game_errors WHERE game_id = ? ORDER BY at DESC")
+      .all(gameId) as { at: string; message: string; stack: string; source: string }[];
+  }
+
+  errorClear(gameId: string): void {
+    this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(gameId);
   }
 
   gameMode(id: string): "engine" | "code" {

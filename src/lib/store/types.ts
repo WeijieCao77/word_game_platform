@@ -147,6 +147,16 @@ export interface GameStore {
   fileRead(gameId: string, path: string): string | null;
   fileWrite(gameId: string, path: string, content: string): void;
   fileDelete(gameId: string, path: string): void;
+  /**
+   * 自由模式作品在浏览器里抛的异常。
+   *
+   * 这是自由模式版的「校验器」：快速模式写错了会被三级校验当场打回、自动重试，
+   * 自由模式原本一条都没有——AI 写完就交差，永远不知道自己的游戏炸了，
+   * 玩家看到白屏，作者看到的是「AI 说做好了」。
+   */
+  errorAdd(gameId: string, e: { message: string; stack?: string; source?: string }): void;
+  errorList(gameId: string): { at: string; message: string; stack: string; source: string }[];
+  errorClear(gameId: string): void;
   /** 作品形态：engine=配置 + 通用引擎；code=自带页面 */
   gameMode(id: string): GameMode;
   gameSetMode(id: string, mode: GameMode): void;

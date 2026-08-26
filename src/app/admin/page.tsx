@@ -108,10 +108,8 @@ export default function AdminPage(): React.ReactElement {
   }, []);
 
   /**
-   * 把一部作品从公开库撤下来。
-   *
-   * 只撤不删：删是作者的权利，平台不该替他毁掉作品。撤下只是让它不出现在
-   * 公开列表里，作者带着钥匙照样能看能改能重新发布。
+   * 把一部作品从公开库撤下来。撤下只是让它不出现在公开列表里，
+   * 作者带着钥匙照样能看能改能重新发布。
    */
   const takeDown = useCallback(
     async (id: string, published: boolean): Promise<void> => {
@@ -121,6 +119,29 @@ export default function AdminPage(): React.ReactElement {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id, published }),
+        });
+        await loadLibrary();
+      } finally {
+        setBusyGame("");
+      }
+    },
+    [loadLibrary]
+  );
+
+  /**
+   * 彻底删除（清理实测遗留用）。不可恢复——文件、版本、聊天记录一起没，
+   * 所以要打全名二次确认。正常创作者的作品别用这个删。
+   */
+  const removeGame = useCallback(
+    async (g: LibraryGame): Promise<void> => {
+      const size = g.mode === "code" ? `${g.codeFiles} 个文件 · ${(g.codeBytes / 1000).toFixed(1)}k 字符` : "快速模式";
+      if (!window.confirm(`确定彻底删除「${g.title}」（${size}）？\n删除不可恢复，作者带钥匙也找不回来。`)) return;
+      setBusyGame(g.id);
+      try {
+        await fetch("/api/admin/games", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: g.id }),
         });
         await loadLibrary();
       } finally {
@@ -286,7 +307,8 @@ export default function AdminPage(): React.ReactElement {
       <h2 className="section-title">公开游戏库（{library.length}）</h2>
       <p className="pane-note" style={{ marginBottom: 10 }}>
         这里列的是玩家在首页能看到的全部作品。撤下只是让它不再出现在公开列表里——
-        作者带着编辑钥匙照样能看能改，也能自己重新发布。删除是作者的权利，平台不代劳。
+        作者带着编辑钥匙照样能看能改，也能自己重新发布。删除是彻底清掉（实测遗留的
+        半成品用这个），不可恢复，正常创作者的作品别碰。
       </p>
       <div className="roster-scroll">
         <table className="admin-table">
@@ -309,6 +331,15 @@ export default function AdminPage(): React.ReactElement {
                 <td>
                   <button className="linklike" disabled={busyGame === g.id} onClick={() => void takeDown(g.id, false)}>
                     {busyGame === g.id ? "处理中…" : "撤下"}
+                  </button>
+                  {" "}
+                  <button
+                    className="linklike"
+                    style={{ color: "var(--danger, #e5484d)" }}
+                    disabled={busyGame === g.id}
+                    onClick={() => void removeGame(g)}
+                  >
+                    删除
                   </button>
                 </td>
               </tr>

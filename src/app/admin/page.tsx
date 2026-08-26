@@ -59,6 +59,8 @@ interface LibraryGame {
   updatedAt: string;
   codeFiles: number;
   codeBytes: number;
+  /** 是否已归属某个账号；无主（游客建的）才允许「划归账号」 */
+  owned: boolean;
 }
 
 export default function AdminPage(): React.ReactElement {
@@ -143,6 +145,31 @@ export default function AdminPage(): React.ReactElement {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: g.id }),
         });
+        await loadLibrary();
+      } finally {
+        setBusyGame("");
+      }
+    },
+    [loadLibrary]
+  );
+
+  /**
+   * 收编：把无主作品（游客建的、钥匙已丢）划归某个账号。
+   * 实测遗留的作品钥匙只存在于那次 run 里，不划归就永远没人能再编辑。
+   */
+  const assignOwner = useCallback(
+    async (g: LibraryGame): Promise<void> => {
+      const username = window.prompt(`把「${g.title}」划归哪个账号？（只对无主作品有效）`, "test1");
+      if (!username?.trim()) return;
+      setBusyGame(g.id);
+      try {
+        const res = await fetch("/api/admin/games", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: g.id, username: username.trim() }),
+        });
+        const body = await res.json();
+        setError(res.ok ? "" : body.error ?? "划归失败");
         await loadLibrary();
       } finally {
         setBusyGame("");
@@ -332,6 +359,14 @@ export default function AdminPage(): React.ReactElement {
                   <button className="linklike" disabled={busyGame === g.id} onClick={() => void takeDown(g.id, false)}>
                     {busyGame === g.id ? "处理中…" : "撤下"}
                   </button>
+                  {!g.owned && (
+                    <>
+                      {" "}
+                      <button className="linklike" disabled={busyGame === g.id} onClick={() => void assignOwner(g)}>
+                        划归账号
+                      </button>
+                    </>
+                  )}
                   {" "}
                   <button
                     className="linklike"

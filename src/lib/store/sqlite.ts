@@ -577,6 +577,12 @@ export class SqliteGameStore implements GameStore {
   }
 
   /** 用编辑钥匙把游客作品收归账号；只认领当前无主的，返回成功条数 */
+  gameAssignOwner(id: string, userId: string): boolean {
+    // 只划无主的：有归属的作品是别人的财产，管理员也不能拿走
+    const r = this.db.prepare("UPDATE games SET owner_id = ? WHERE id = ? AND owner_id IS NULL").run(userId, id);
+    return r.changes > 0;
+  }
+
   claimGames(userId: string, keys: { id: string; editKey: string }[]): number {
     const check = this.db.prepare("SELECT edit_key, owner_id FROM games WHERE id = ?");
     const claim = this.db.prepare("UPDATE games SET owner_id = ? WHERE id = ? AND owner_id IS NULL");

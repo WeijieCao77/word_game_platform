@@ -49,6 +49,8 @@ export function GET(req: NextRequest): NextResponse {
       updatedAt: g.updatedAt,
       codeFiles: files.filter((f) => !f.path.startsWith("data/")).length,
       codeBytes,
+      // 无主 = 游客建的、只有钥匙认人。实测遗留全是这种，「划归账号」只对它们开放
+      owned: store.gameOwner(g.id) !== null,
     };
   });
   return NextResponse.json({ games });
@@ -72,6 +74,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const published = body.published === true;
   store.setPublished(id, published);
   return NextResponse.json({ ok: true, id, published });
+}
+
+/**
+ * 收编：把「无主」作品划归某个账号。
+ *
+ * 为什么要有：实测是游客身份跑的，作品无主、钥匙只存在于那次 run 里（日志里已打码），
+ * 谁都拿不回来——不划归，这些作品永远没人能再编辑，「接着上次的成果往下盖」就无从谈起。
+ * 边界：只划无主的。有归属的作品是创作者的财产，管理员也不能拿走。
+ */
+export async function PATCH(req: NextRequest): Promise<NextResponse> {
+  const bad = guard(req);
+  if (bad) return bad;
+
+  let body: { id?: unknown; username?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "请求体不是合法 JSON" }, { status: 400 });
+  }
+  const id = String(body.id ?? "");
+  const username = String(body.username ?? "").trim();
+  const store = getStore();
+  if (!id || !store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  const target = username ? store.userByName(username) : null;
+  if (!target) return NextResponse.json({ error: `没有这个账号：${username}` }, { status: 404 });
+  if (!store.gameAssignOwner(id, target.id)) {
+    return NextResponse.json({ error: "这部作品已有归属，不能划走" }, { status: 409 });
+  }
+  return NextResponse.json({ ok: true, id, owner: target.username });
 }
 
 /** 彻底删除一部作品（管理员清理实测遗留用，不可恢复） */

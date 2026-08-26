@@ -110,6 +110,8 @@ export interface GameStore {
   /** 作品归属：游客作品 ownerId 为空，登录后可用编辑钥匙认领 */
   gameOwner(id: string): string | null;
   claimGames(userId: string, keys: { id: string; editKey: string }[]): number;
+  /** 管理员收编：把「无主」作品划归某账号（不验钥匙）。已有归属的一律不动，返回 false */
+  gameAssignOwner(id: string, userId: string): boolean;
   listByOwner(userId: string): GameSummary[];
   /** 账号：注册（首个用户自动成为管理员）、登录查询、会话 */
   userCreate(input: { username: string; passwordHash: string; salt: string }): UserRecord;

@@ -139,6 +139,7 @@ jobs:
           ]
 
           msgs = [{"role": "user", "content": spec}]
+          fails = 0
 
           def post_retry(path, payload, tries=3):
               last = None
@@ -185,8 +186,18 @@ jobs:
               try:
                   body = post_retry(f"/api/games/{GID}/assistant", {"messages": msgs})
               except Exception as e:
+                  # 单轮失败**不能**打死全场。第 2 次实测就栽在这儿：第 1 轮撞了三次 502
+                  # 就 break 出去，14 轮一轮没跑，最后还报了绿。
+                  # 服务端是「改一次存一次」的，那一轮的活其实做了，只是回信丢在网关上——
+                  # 所以跳过它接着往下走才对。连着三轮都失败才是真的不对劲。
                   print(f"::warning::第 {i + 1} 轮失败：{e}")
-                  break
+                  fails += 1
+                  if fails >= 3:
+                      print("::error::连着三轮都失败，线上多半出问题了，不再往下跑")
+                      break
+                  msgs.append({"role": "user", "content": steps[i] if i < len(steps) else "接着做，往下搭。"})
+                  continue
+              fails = 0
               reply = body.get("reply", "")
               q = body.get("quota") or {}
               print(f"[{time.time() - t0:.0f}s] AI 回复：\n{reply[:1800]}")
@@ -289,6 +300,7 @@ jobs:
           echo "$CHROME" > /tmp/chrome-path
           # 结论要留下来喂回给 AI，所以别让它在这里就把作业判死
           CHROME_PATH="$CHROME" node scripts/smoke-freemode.mjs "$BASE" "$GID" | tee /tmp/smoke.txt
+          echo "${PIPESTATUS[0]}" > /tmp/smoke.code
 
       # 源码里出现「阵容」两个字太容易了——写个导航按钮就有。
       # 这一步问的是**点进去之后有没有东西**：每一页的字数、可点元素、表格行数、报错。
@@ -298,7 +310,9 @@ jobs:
           GID: ${{ steps.create.outputs.id }}
         run: |
           CHROME_PATH="$(cat /tmp/chrome-path 2>/dev/null || true)" \
-            node scripts/screens-freemode.mjs "$BASE" "$GID" 2>&1 | tee /tmp/screens.txt || true
+            node scripts/screens-freemode.mjs "$BASE" "$GID" 2>&1 | tee /tmp/screens.txt
+          echo "${PIPESTATUS[0]}" > /tmp/screens.code
+          exit 0
 
       # 闭环：真玩一遍发现的问题，作为创作者的下一句话喂回去，让 AI 自己修完再判。
       #
@@ -332,18 +346,22 @@ jobs:
               with urllib.request.urlopen(req, timeout=900) as r:
                   return json.loads(r.read().decode())
 
-          def play():
+          def play(script):
               import subprocess
               env = dict(os.environ)
               env["CHROME_PATH"] = read("/tmp/chrome-path")
-              out = subprocess.run(["node", "scripts/smoke-freemode.mjs", BASE, GID],
+              out = subprocess.run(["node", script, BASE, GID],
                                    capture_output=True, text=True, env=env)
               return out.returncode, (out.stdout or "") + (out.stderr or "")
 
           smoke = read("/tmp/smoke.txt")
           screens = read("/tmp/screens.txt")
-          if "硬伤" not in smoke and "占位" not in screens and "报错" not in screens:
-              print("玩了一遍没发现硬伤，不用回炉。")
+          # 用退出码判，不要靠在输出里猜关键词。第 2 次实测就是这么放过去的：
+          # 界面体检明明说「找不到任何导航——只有一屏」，可那句话里没有「硬伤/占位/报错」
+          # 任何一个词，条件没命中，回炉一轮都没跑，然后报了绿。
+          bad = read("/tmp/smoke.code") != "0" or read("/tmp/screens.code") != "0"
+          if not bad:
+              print("玩了一遍没发现问题，不用回炉。")
               raise SystemExit(0)
 
           for i in range(rounds):
@@ -365,16 +383,44 @@ jobs:
               print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}")
 
               time.sleep(3)
-              code, out = play()
-              print(out)
-              smoke = out.strip()
-              screens = ""
-              if code == 0:
-                  print(f"回炉 {i + 1} 轮之后，玩一遍没有硬伤了。")
+              scode, sout = play("scripts/smoke-freemode.mjs")
+              ncode, nout = play("scripts/screens-freemode.mjs")
+              print(sout)
+              print(nout)
+              smoke, screens = sout.strip(), nout.strip()
+              if scode == 0 and ncode == 0:
+                  print(f"回炉 {i + 1} 轮之后，玩一遍和界面体检都过了。")
                   raise SystemExit(0)
 
           print("::warning::回炉之后仍有硬伤——这一条要作为平台的卡点记下来")
           PY
+
+      # 实测的半成品不该挂在公开游戏库里。
+      # 老板的原话是「不是现在游戏库里的那种垃圾」——那正是要避免的观感。
+      # 发布只是为了让冒烟检查能不带钥匙进去，测完就撤下来；作者带钥匙照样能看能改。
+      - name: 从公开游戏库撤下来
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          curl -sS -X POST "$BASE/api/games/$GID/publish" \
+            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -d '{"published":false}' -o /dev/null || true
+          echo "已从公开游戏库撤下（作者带钥匙仍可访问）"
+
+      # 一条明面上的门槛：达不到就判红，别再出现「19k 字符一屏也算 success」。
+      - name: 够不够格（硬门槛）
+        if: always()
+        run: |
+          set -e
+          smoke="$(cat /tmp/smoke.code 2>/dev/null || echo 1)"
+          screens="$(cat /tmp/screens.code 2>/dev/null || echo 1)"
+          echo "冒烟检查退出码 $smoke / 界面体检退出码 $screens"
+          fail=0
+          [ "$smoke" = "0" ] || { echo "::error::真玩一遍没过"; fail=1; }
+          [ "$screens" = "0" ] || { echo "::error::界面体检没过——有界面是空的、坏的，或者压根没有多界面结构"; fail=1; }
+          exit $fail
 
       - name: 留个地址
         if: always()

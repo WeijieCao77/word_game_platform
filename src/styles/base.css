@@ -197,6 +197,54 @@ textarea {
   border-color: var(--accent);
 }
 
+/* 两条路的选择器：这不是「11 个模板里的两个」，是先选做法再选起点，
+   所以它比模板卡更大、更有分量，一眼看得见有两条路可走 */
+.track-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.track {
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  color: var(--fg);
+  transition: border-color 0.12s, background 0.12s;
+}
+.track:hover { background: var(--card-hover); }
+.track.selected {
+  border-color: var(--cta);
+  box-shadow: 0 0 0 1px var(--cta);
+}
+.track b {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+.track b em {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--cta);
+}
+.track span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.track small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.85;
+}
+
 .tile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

@@ -184,3 +184,33 @@ describe("单轮墙钟预算：别让一次请求死在网关上", () => {
     expect(r.reply).toContain("卡在哪");
   });
 });
+
+describe("工具轮次上限按形态分档", () => {
+  // 复刻 VAL MANAGER（13,132 行）靠的是「一轮里多干几件事」：
+  // 看目录 → 读那一段 → 改三处 → 再核一遍。快速模式改配置是一次写一整节，
+  // 六次够用；自由模式六次刚够干一件事，所以这两档必须不一样。
+  const files = {
+    list: () => [{ path: "game.js", size: 10, updatedAt: "now" }],
+    read: () => "var a = 1;",
+    write: () => {},
+    remove: () => {},
+  };
+
+  it("快速模式仍是 6 轮带工具 + 1 轮收尾", async () => {
+    scripted = (_round, tools) => (tools ? toolCall("validate", {}) : textReply("交代一下现状"));
+    await runAssistant({ config: builtConfig, designCard: "状态：调优中" }, [
+      { role: "user", content: "继续" },
+    ]);
+    expect(calls.length).toBe(7);
+  });
+
+  it("自由模式给到 16 轮——不然一轮里连一件事都干不完", async () => {
+    scripted = (_round, tools) =>
+      tools ? toolCall("read_file", { path: "game.js" }) : textReply("交代一下现状");
+    await runAssistant(
+      { config: builtConfig, designCard: "状态：调优中", mode: "code", files },
+      [{ role: "user", content: "接着做" }]
+    );
+    expect(calls.length).toBe(17);
+  });
+});

@@ -11,6 +11,18 @@ import { viewFile } from "./file-view";
 
 const MAX_ROUNDS = 6;
 /**
+ * 一次对话里最多让 AI 连着用多少次工具。
+ *
+ * 快速模式 6 次够了：改配置是一次写一整节。自由模式不一样——它要
+ * 「看目录 → 读那一段 → 改三处 → 再核一遍」，六次刚够干一件事。
+ * 而复刻 VAL MANAGER 那个体量（13,132 行）靠的正是「一轮里多干几件事」。
+ * 真正的刹车是墙钟预算（roundBudgetMs），轮次上限只是个兜底，不该由它当瓶颈。
+ */
+function maxToolRounds(mode: GameMode): number {
+  if (mode === "code") return Number(process.env.AI_MAX_TOOL_ROUNDS_CODE ?? 16);
+  return Number(process.env.AI_MAX_TOOL_ROUNDS ?? MAX_ROUNDS);
+}
+/**
  * 一轮对话最多占用多久（毫秒）。
  *
  * 线上实测两次都撞在同一个地方：第 1 轮（纯聊方案）32 秒稳过，第 2 轮
@@ -384,7 +396,8 @@ export async function runAssistant(
 
   const startedAt = Date.now();
   let outOfTime = false;
-  for (let round = 0; round < MAX_ROUNDS; round++) {
+  const roundCap = maxToolRounds(mode);
+  for (let round = 0; round < roundCap; round++) {
     if (blockedTimes >= 2) break;
     // 时间到了就别再开新一轮：宁可把这一轮做完的东西交出去，
     // 也不要让整个请求死在网关上（那样创作者什么都看不到）
@@ -667,7 +680,7 @@ export async function runAssistant(
     content:
       (blockedTimes >= 2
         ? `你连续被流程门禁拒绝。${blockedReason}\n`
-        : `工具调用轮次已用尽（上限 ${MAX_ROUNDS} 轮）。\n`) +
+        : `工具调用轮次已用尽（上限 ${roundCap} 轮）。\n`) +
       "现在不要再调用任何工具，直接用中文回答创作者：" +
       "①这一轮你实际改了什么（没改就直说没改）；②卡在哪、为什么；" +
       "③需要创作者做什么决定或补什么信息。不要重复套话。",
@@ -691,7 +704,7 @@ export async function runAssistant(
     reply:
       blockedTimes >= 2
         ? `${blockedReason}\n\n你可以直接回我「按这个方案开搭」，我就把设计卡状态推进到「已确认」再动手。`
-        : `这一轮工具用满了 ${MAX_ROUNDS} 轮还没收尾。` +
+        : `这一轮工具用满了 ${roundCap} 轮还没收尾。` +
           (configChanged ? "已经写入的改动都生效了，" : "配置没有产生改动，") +
           "再说一次你想要的效果，我接着做。",
     config: configChanged ? config : undefined,

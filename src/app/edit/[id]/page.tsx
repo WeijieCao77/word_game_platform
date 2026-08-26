@@ -572,13 +572,14 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         setDirty(false);
       }
       if (typeof body.designCard === "string") setDesignCard(body.designCard);
-      // AI 动过文件：把形态与清单同步过来，并让预览重挂载——
-      // 「说生效却没看到变化」多半就是这里没刷
+      // 形态可能被这一轮切走（两个方向都可能：写文件切到自由，创作者点头切回快速）。
+      // 服务端报的 mode 是这一轮之后的真实形态，以它为准，别只认「切到 code」那一半——
+      // 回切之后页签还停在自由模式，作者会以为没切成功。
+      if (body.mode === "code" || body.mode === "engine") setMode(body.mode);
       if (body.mode === "code" || body.filesChanged) {
-        setMode("code");
         void reloadFiles();
-        setPreviewNonce((n) => n + 1);
       }
+      if (body.mode || body.filesChanged) setPreviewNonce((n) => n + 1);
       if (body.quota) {
         setQuota(body.quota);
         setStatusMsg(quotaText(body.quota));

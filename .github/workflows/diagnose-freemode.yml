@@ -1,0 +1,30 @@
+name: 自由模式作品语法体检
+
+# 一部自由模式的作品打开是黑屏，多半是 js 里有语法错误——浏览器解析失败，
+# 游戏脚本一行都没执行。可沙箱 iframe 是不透明源，错误传回平台只剩一句
+# `Script error.`，谁也看不出错在哪个文件第几行。
+#
+# 这条流水线把作品的代码从线上抓下来逐个解析，直接指出**文件 + 行号 + 那一行原文**。
+# 容器出口够不到 railway.app，所以这活只能在 Actions 的 runner 上干。
+#
+# 前提：作品要处于「已发布」状态（/play/:id/ 才公开可读）。没发布就只能作者自己带钥匙看。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "要体检的作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 语法体检
+        run: node scripts/syntax-freemode.mjs "$BASE" "${{ inputs.game_id }}"

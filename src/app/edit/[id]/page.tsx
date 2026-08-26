@@ -521,8 +521,15 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     })();
   }, [dirty, editKey, id, libCategory, libQ, loadLibrary, save, shareCardId, shareCategory, shareTags]);
 
-  const sendChat = useCallback(async (): Promise<void> => {
-    const text = chatInput.trim();
+  /**
+   * 发一句给 AI。
+   *
+   * rounds > 1 = **连续搭建**：服务端一轮接一轮地跑，中间替作者说「接着做」。
+   * 差距的大头是「没跑够」——靠人一句句催，一次坐下最多几轮，
+   * 而一部一万三千行的作品要三四十轮。
+   */
+  const sendChat = useCallback(async (rounds = 1): Promise<void> => {
+    const text = chatInput.trim() || (rounds > 1 ? "接着做，照剩余清单往下搭。" : "");
     if (!text || chatBusy || !editKey) return;
     const nextChat: ChatMsg[] = [...chat, { role: "user", content: text }];
     setChat(nextChat);
@@ -540,7 +547,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       const res = await fetch(`/api/games/${id}/assistant`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-edit-key": editKey },
-        body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system"), async: true }),
+        body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system"), async: true, rounds }),
         signal: controller.signal,
       }).finally(() => clearTimeout(kill));
       // 网关超时/请求体过大这类失败返回的是 HTML，不是 JSON——别让真正的原因被吞掉
@@ -583,12 +590,14 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       } else if (!res.ok) {
         throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
       }
-      // 202 + jobId = 后台开跑了，接下来靠轮询。轮询本身很轻（一条 SQL），
-      // 所以 2 秒一次；上限 40 分钟，比服务端 30 分钟的任务超时还宽一点。
+      // 202 + jobId = 后台开跑了，接下来靠轮询。轮询本身很轻（一条 SQL），所以 2 秒一次。
+      // 上限跟着轮数走：连续搭 20 轮可能跑几个小时，按 1200 次（40 分钟）掐掉，
+      // 页面会误报「跑了太久」而后台其实还在好好地搭。
       if (body.jobId) {
         const jobId = body.jobId;
+        const maxPolls = 1200 * Math.max(1, rounds);
         let done: typeof body | null = null;
-        for (let i = 0; i < 1200 && !done; i++) {
+        for (let i = 0; i < maxPolls && !done; i++) {
           await new Promise((r) => setTimeout(r, 2000));
           const p = await fetch(`/api/games/${id}/assistant?job=${encodeURIComponent(jobId)}`, {
             headers: { "x-edit-key": editKey },
@@ -739,6 +748,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save]);
 
+  // 连续搭建的轮数。10 轮是个有依据的默认：实测最好的一次就是 12 轮到 4,500 行。
+  const [autoRounds, setAutoRounds] = useState(10);
+
   /**
    * 放弃当前这一轮。
    *
@@ -867,6 +879,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           chatInput={chatInput}
           onChatInput={setChatInput}
           onSend={() => void sendChat()}
+          autoRounds={autoRounds}
+          onAutoRounds={setAutoRounds}
+          onAutoBuild={() => void sendChat(autoRounds)}
           chatEndRef={chatEndRef}
           quota={quota}
         />

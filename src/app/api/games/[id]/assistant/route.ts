@@ -6,6 +6,7 @@ import { GameConfig } from "@/lib/schema";
 import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
 import { rankLibraryEntries } from "@/lib/library";
+import { clampRounds, runRounds } from "@/lib/ai/auto-build";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     return NextResponse.json({ error: verdict.reason, code: verdict.code }, { status: 429 });
   }
 
-  let body: { messages?: { role: string; content: string }[]; async?: boolean };
+  let body: { messages?: { role: string; content: string }[]; async?: boolean; rounds?: number };
   try {
     body = await req.json();
   } catch {
@@ -82,13 +83,25 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   }
 
   const asyncMode = body.async === true;
+  // 连续搭建：一次请求让 AI 照着剩余清单连跑几轮，中间不用作者一句句催。
+  //
+  // 差距的大头是「没跑够」——最好的一次 12 轮搭到 4,500 行，而 VAL MANAGER 是
+  // 13,132 行。作者在工作台里一句句说「继续」，一次坐下最多几轮，那个体量永远到不了。
+  const rounds = asyncMode ? clampRounds(body.rounds ?? 1) : 1;
   // 一轮的活抽成一个函数：同步模式直接 await，异步模式丢到后台跑。
   // 两条路跑的是同一段代码，不会出现「异步那条忘了记额度」这种事。
-  const runOneRound = async (onNote?: (note: string) => void): Promise<Record<string, unknown>> => {
+  //
+  // 每一轮都重新从库里取配置与设计卡：上一轮刚改过，用闭包里那份旧的
+  // 等于让第二轮在过时的世界上干活（连续搭建时这会直接把上一轮的成果盖掉）。
+  const runOneRound = async (
+    hist: { role: "user" | "assistant"; content: string }[],
+    onNote?: (note: string) => void
+  ): Promise<Record<string, unknown>> => {
+    const fresh = store.get(id) ?? record;
     const result = await runAssistant(
       {
-        config: record.config as GameConfig,
-        designCard: record.designCard,
+        config: fresh.config as GameConfig,
+        designCard: fresh.designCard,
         mode: store.gameMode(id),
         // 异步任务不受网关脸色，单轮可以放开跑（默认 12 分钟）——
         // 这正是异步化要换来的东西：AI 一轮能干完一整块，而不是刚起头就被叫停。
@@ -121,7 +134,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             .slice(0, 8)
             .map((r) => r.entry),
       },
-      history
+      hist
     );
     const patch: { config?: unknown; designCard?: string } = {};
     if (result.config) patch.config = result.config;
@@ -129,7 +142,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     if (Object.keys(patch).length > 0) store.update(id, patch);
     // 对话落库：关掉页面再回来，聊天记录还在
     store.appendChat(id, [
-      { role: "user", content: history[history.length - 1].content },
+      { role: "user", content: hist[hist.length - 1].content },
       { role: "assistant", content: result.reply || "（无回复）" },
     ]);
     recordSpend(store, { user, quotaKey, gameId: id, tokens: result.totalTokens });
@@ -173,7 +186,24 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     // 让 jobRunning 能凭「静默超过三分钟」把尸体判死，而不是把作者锁在那儿干等。
     const beat = setInterval(() => store.jobHeartbeat(jobId), 20_000);
     if (typeof beat.unref === "function") beat.unref();
-    void runOneRound((note) => store.jobNote(jobId, note))
+    void runRounds({
+      rounds,
+      history,
+      maxHistory: MAX_HISTORY,
+      // 作者按了「放弃这一轮」→ 任务不再是 running → 下一轮不开
+      alive: () => store.jobGet(jobId)?.status === "running",
+      quotaBlocked: () => {
+        const v = checkQuota(store, {
+          user,
+          quotaKey,
+          gameId: id,
+          cardsCount: ((store.get(id)?.config ?? record.config) as GameConfig).cards?.length ?? 0,
+        });
+        return v.allowed ? null : (v.reason ?? "额度用完了");
+      },
+      runOne: (hist, n, total) =>
+        runOneRound(hist, (note) => store.jobNote(jobId, total > 1 ? `第 ${n}/${total} 轮 · ${note}` : note)),
+    })
       .then((payload) => store.jobDone(jobId, payload))
       .catch((err: unknown) => {
         const detail = err instanceof Error ? err.message : String(err);
@@ -181,11 +211,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
         store.jobFail(jobId, explainAiFailure(detail));
       })
       .finally(() => clearInterval(beat));
-    return NextResponse.json({ jobId }, { status: 202 });
+    return NextResponse.json({ jobId, rounds }, { status: 202 });
   }
 
   try {
-    return NextResponse.json(await runOneRound());
+    return NextResponse.json(await runOneRound(history));
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     // 服务端日志留全文，方便按时间点回查（Railway 的 Logs 里能看到）

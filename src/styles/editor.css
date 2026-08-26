@@ -521,3 +521,24 @@ body.splitting * {
   font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
   tab-size: 2;
 }
+
+/* 连续搭建那一条：按钮 + 轮数 + 一句说明，排在输入框和额度条之间 */
+.chat-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px 0;
+  font-size: 12px;
+}
+.chat-auto select {
+  background: var(--panel, #1b1f27);
+  color: inherit;
+  border: 1px solid var(--line, #333a45);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.chat-auto-hint {
+  color: var(--muted, #8b93a1);
+}

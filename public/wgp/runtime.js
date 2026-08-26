@@ -18,7 +18,7 @@
   "use strict";
   if (window.WGP) return;
 
-  var VERSION = "1.0.0";
+  var VERSION = "1.1.0";
 
   /* ── 一、存档：沙箱里唯一能落盘的路 ───────────────────────────────
    * iframe 是不透明源，浏览器自带的那几种本地存储读不到、也不该读（换设备就没了）。
@@ -439,6 +439,16 @@
               "tr",
               {
                 class: opts.onRow ? "clickable" : null,
+                // 能点的行也要能用键盘走到、回车按下去——不然只有鼠标用户玩得了
+                tabindex: opts.onRow ? "0" : null,
+                onKeyDown: opts.onRow
+                  ? function (e) {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        opts.onRow(row);
+                      }
+                    }
+                  : null,
                 onClick: opts.onRow
                   ? function () {
                       opts.onRow(row);
@@ -646,7 +656,26 @@
     return api;
   }
 
-  /* ── 七、零碎 ─────────────────────────────────────────────────── */
+  /* ── 七、数据表 ───────────────────────────────────────────────
+   * 几百名选手、几十支战队这种东西不该硬编在代码里。作者把表传到 data/roster.csv，
+   * 平台会在 /play 下虚拟出一个 data/roster.js，用 <script src> 引进来即可
+   * （沙箱发不出请求，读不到 .csv，这是唯一走得通的路）。
+   */
+  function data(name) {
+    var bag = window.WGP_DATA;
+    var got = bag ? bag[name] : undefined;
+    if (got === undefined) {
+      console.error(
+        '[WGP] 没有名叫 "' + name + '" 的数据表。' +
+          '先把表传到 data/' + name + '.csv，再在 index.html 里加一行 ' +
+          '<script src="data/' + name + '.js"></' + "script>"
+      );
+      return [];
+    }
+    return got;
+  }
+
+  /* ── 八、零碎 ─────────────────────────────────────────────────── */
   var fmt = {
     num: function (n) {
       return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -687,6 +716,7 @@
     nav: nav,
     ui: ui,
     text: text,
+    data: data,
     fmt: fmt,
     wait: wait,
   };

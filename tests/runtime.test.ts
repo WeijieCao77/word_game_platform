@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runInNewContext } from "node:vm";
 import { runtimeAsset, isRuntimeAsset, runtimeVersion } from "../src/lib/runtime";
 import { blankCodeIndex } from "../src/lib/blank-code";
+import { wrapDataset } from "../src/lib/dataset";
 
 /**
  * 运行库（wgp.js / wgp.css）是平台垫在每一部自由模式作品下面的地基。
@@ -15,6 +16,7 @@ import { blankCodeIndex } from "../src/lib/blank-code";
 /** 把运行库塞进一个最小的假浏览器里跑起来，拿到它挂出来的 WGP */
 function loadRuntime(): {
   WGP: any;
+  win: any;
   posted: Array<{ type: string; data?: unknown }>;
   fire: (msg: unknown) => void;
 } {
@@ -114,6 +116,7 @@ function loadRuntime(): {
   runInNewContext(runtimeAsset("wgp.js")!, sandbox, { filename: "wgp.js" });
   return {
     WGP: sandbox.WGP,
+    win: sandbox,
     posted,
     fire: (data: unknown) => listeners.forEach((fn) => fn({ data })),
   };
@@ -156,7 +159,7 @@ describe("运行库供得出来", () => {
 describe("运行库跑得起来", () => {
   it("挂出完整的 API 面（技能包里写了什么，这里就得有什么）", () => {
     const { WGP } = loadRuntime();
-    for (const k of ["ready", "save", "saveLater", "clearSave", "rng", "el", "mount", "screen", "go", "back", "refresh", "current", "nav", "ui", "text", "fmt", "wait"]) {
+    for (const k of ["ready", "save", "saveLater", "clearSave", "rng", "el", "mount", "screen", "go", "back", "refresh", "current", "nav", "ui", "text", "data", "fmt", "wait"]) {
       expect(typeof (WGP as any)[k]).not.toBe("undefined");
     }
     for (const k of ["panel", "stat", "stats", "bar", "table", "actions", "modal", "confirm", "toast"]) {
@@ -301,6 +304,29 @@ describe("DOM 构造与格式化", () => {
     expect(WGP.fmt.pct(0.4237, 1)).toBe("42.4%");
     expect(WGP.fmt.money(1200, "¥")).toBe("¥1,200");
     expect(WGP.fmt.clamp(120, 0, 100)).toBe(100);
+  });
+});
+
+describe("数据表", () => {
+  it("WGP.data 取的是孪生 js 挂上来的那张表", () => {
+    const { WGP, win } = loadRuntime();
+    const js = wrapDataset("roster", "data/roster.csv", "name,rating\nTenZ,92\n");
+    // 孪生 js 是用 <script src> 引进来的，效果等同于在同一个 window 上执行
+    new Function("window", "console", js)(win, console);
+    expect(WGP.data("roster")).toEqual([{ name: "TenZ", rating: 92 }]);
+  });
+
+  it("表没引进来时给空数组，并在控制台说清该怎么补", () => {
+    const { WGP } = loadRuntime();
+    const errs: string[] = [];
+    const orig = console.error;
+    console.error = (m: string) => errs.push(String(m));
+    try {
+      expect(WGP.data("没这张表")).toEqual([]);
+    } finally {
+      console.error = orig;
+    }
+    expect(errs.join("")).toContain("data/没这张表.csv");
   });
 });
 

@@ -174,6 +174,40 @@ describe("OpenAI 兼容流式", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("模型把工具调用当正文吐出来时，捞回来当成真调用（实测第 9 次踩的坑）", async () => {
+    // 线上日志里的原样：整个 update_config 被当成回复文字发给了创作者，
+    // 工具没执行、配置一个字没落，那一轮的 token 照收
+    const leak =
+      "校验器要求 ending 必须存在于 endings 里。补上：\n\n" +
+      "<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"update_config\">\n" +
+      "<｜｜DSML｜｜parameter name=\"config\" string=\"false\">{\"meta\":{\"title\":\"星澜电竞经理\"}}</｜｜DSML｜｜parameter>\n" +
+      "</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>";
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      sseResponse([`data: ${JSON.stringify({ choices: [{ delta: { content: leak } }] })}\n\n`, "data: [DONE]\n\n"])
+    ));
+    const { callChat } = await import("@/lib/ai/provider");
+    const r = await callChat([{ role: "user", content: "x" }], []);
+    const call = r.message.tool_calls?.[0];
+    expect(call?.function.name).toBe("update_config");
+    expect(JSON.parse(call!.function.arguments).config.meta.title).toBe("星澜电竞经理");
+    // 剩给创作者看的是人话，不是标记
+    expect(r.message.content).toBe("校验器要求 ending 必须存在于 endings 里。补上：");
+  });
+
+  it("正经的 tool_calls 在场时不去动正文", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"顺手提一句 <invoke> 这种写法"}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"validate","arguments":"{}"}}]}}]}\n\n',
+        "data: [DONE]\n\n",
+      ])
+    ));
+    const { callChat } = await import("@/lib/ai/provider");
+    const r = await callChat([{ role: "user", content: "x" }], []);
+    expect(r.message.tool_calls?.length).toBe(1);
+    expect(r.message.content).toBe("顺手提一句 <invoke> 这种写法");
+  });
+
   it("工具调用按 index 归位，参数拼成完整 JSON", async () => {
     vi.stubGlobal("fetch", vi.fn(async () =>
       sseResponse([

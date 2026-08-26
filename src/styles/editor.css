@@ -461,6 +461,14 @@ body.splitting * {
 .files-row-virtual { color: var(--muted); cursor: default; }
 .files-row-virtual .files-name { cursor: default; color: inherit; }
 .files-hint { margin: 8px 14px 0; line-height: 1.7; }
+.files-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 14px 0;
+}
+.files-upload .pane-note { margin: 0; }
 .files-hint code { font-size: 12px; }
 
 .files-name {

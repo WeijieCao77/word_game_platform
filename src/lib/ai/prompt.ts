@@ -465,6 +465,18 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
     r.int(1, 6)  r.chance(0.3)  r.pick(数组)  r.weighted(数组)  r.shuffle(数组)  r.float()
     存档时把 r.seed 一起存下来，读档 WGP.rng(存档.seed) 就接得上。
 
+**数据表**（几百个实体不要硬编在代码里）
+沙箱发不出请求，读不到 .csv——所以平台给每张表虚拟一个孪生 js：
+
+    写表：write_file 到 data/roster.csv（第一行表头，数字自动当数字用）
+    引它：<script src="data/roster.js"></script>
+    取用：var roster = WGP.data("roster");   // 一个对象数组
+
+作者也可以在「文件」页签里直接上传自己的 CSV（真实赛事数据、自制角色表），
+你不必逐条生成。data/roster.json 同理（内容就是那个数组）。
+**几十条以上的名单一律走数据表**：写进 csv 比写进 js 省一半字符，
+以后改数据也不必动代码。
+
 **零碎**：WGP.fmt.num(1234567) → "1,234,567"；WGP.fmt.pct(0.42)；WGP.fmt.clamp(x, 0, 100)；await WGP.wait(300)
 
 **皮肤**：wgp.css 的颜色全是 CSS 变量，在自己的 style.css 里重写 :root 就换一套皮，

@@ -99,12 +99,71 @@ export default function FilesTab({
     }
   };
 
+  /**
+   * 上传一张数据表。
+   *
+   * 几百名选手、几十支战队不该由 AI 一条条生成——那会烧掉整轮预算，作者也换不成
+   * 自己手上的真实数据。传成 data/xxx.csv 之后，平台会在 /play 下虚拟出
+   * data/xxx.js，作品里 <script src> 引进来、代码里 WGP.data("xxx") 取用。
+   */
+  const upload = async (file: File): Promise<void> => {
+    const clean = file.name.replace(/[^A-Za-z0-9._-]/g, "-");
+    if (!/\.(csv|json)$/i.test(clean)) {
+      setMsg("数据表只收 .csv 或 .json");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      const content = await file.text();
+      const path = `data/${clean.toLowerCase()}`;
+      const res = await fetch(`/api/games/${gameId}/files`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-edit-key": editKey },
+        body: JSON.stringify({ path, content }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "上传失败");
+      const name = clean.toLowerCase().replace(/\.(csv|json)$/i, "");
+      setMsg(`已存为 ${path}，代码里用 WGP.data("${name}") 取`);
+      onReload();
+      onPreviewRefresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "上传失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadRow = (
+    <div className="files-upload">
+      <label className="btn small">
+        上传数据表
+        <input
+          type="file"
+          accept=".csv,.json"
+          hidden
+          disabled={busy}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void upload(f);
+          }}
+        />
+      </label>
+      <span className="pane-note">
+        几百个实体（选手名单、赛程、角色表）传成 CSV，比让 AI 一条条写进代码省得多
+      </span>
+    </div>
+  );
+
   if (!files) return <div className="pane-note">正在读文件清单…</div>;
   if (files.length === 0) {
     return (
       <div className="pane-note">
         这部作品还没有文件。自由模式至少要有一个 <code>index.html</code>——
         跟左边的 AI 说「把界面搭起来」，它会写进来。
+        {uploadRow}
       </div>
     );
   }
@@ -132,6 +191,7 @@ export default function FilesTab({
           <span className="files-size">平台运行库</span>
         </div>
       </div>
+      {uploadRow}
       <p className="pane-note files-hint">
         <code>wgp.js</code> / <code>wgp.css</code> 是平台替每部自由模式作品垫的地基——存档、
         界面切换、表格进度条、打字机、可复现随机数都在里面，作品直接引用就行，不必自带。

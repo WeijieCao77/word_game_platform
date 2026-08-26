@@ -1,4 +1,5 @@
 // 模型供应商客户端：多供应商共存，一键切换。
+import { recoverInlineToolCalls } from "./inline-tools";
 //
 // 推荐用法（各家 key 各自存放，切换只改 AI_PROVIDER 一个变量）：
 //   AI_PROVIDER=openai | deepseek | anthropic | qwen | kimi
@@ -208,10 +209,14 @@ export async function callChat(messages: ChatMessage[], tools?: ToolDef[]): Prom
       type: "function" as const,
       function: { name: c.name, arguments: c.args || "{}" },
     }));
-  const content = texts.join("");
-  if (!content && toolCalls.length === 0) throw new Error("AI 服务返回了空回复");
+  // 有的模型/网关不走 tool_calls，把调用当正文吐出来——捞回来，别让这一轮白干
+  const raw = texts.join("");
+  const rescued = toolCalls.length === 0 ? recoverInlineToolCalls(raw) : { text: raw, calls: [] };
+  const content = rescued.text;
+  const calls = toolCalls.length > 0 ? toolCalls : rescued.calls;
+  if (!content && calls.length === 0) throw new Error("AI 服务返回了空回复");
   return {
-    message: { role: "assistant", content: content || null, tool_calls: toolCalls.length > 0 ? toolCalls : undefined },
+    message: { role: "assistant", content: content || null, tool_calls: calls.length > 0 ? calls : undefined },
     totalTokens: total,
   };
 }
@@ -362,13 +367,17 @@ async function callAnthropic(p: Resolved, messages: ChatMessage[], tools?: ToolD
     });
   }
 
-  const content = textParts.join("");
-  if (!content && toolCalls.length === 0) throw new Error("AI 服务返回了空回复");
+  // 同上：原生接口一般不会这样，但换个网关就说不准了，两条路都兜一下
+  const rawText = textParts.join("");
+  const rescued = toolCalls.length === 0 ? recoverInlineToolCalls(rawText) : { text: rawText, calls: [] };
+  const content = rescued.text;
+  const calls = toolCalls.length > 0 ? toolCalls : rescued.calls;
+  if (!content && calls.length === 0) throw new Error("AI 服务返回了空回复");
   return {
     message: {
       role: "assistant",
       content: content || null,
-      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+      tool_calls: calls.length > 0 ? calls : undefined,
     },
     totalTokens: inTok + outTok,
   };

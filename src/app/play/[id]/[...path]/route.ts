@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { canEditGame } from "@/lib/session";
 import { runtimeAsset } from "@/lib/runtime";
+import { datasetSourcesFor, wrapDataset } from "@/lib/dataset";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ const MIME: Record<string, string> = {
   css: "text/css; charset=utf-8",
   json: "application/json; charset=utf-8",
   svg: "image/svg+xml",
+  csv: "text/csv; charset=utf-8",
   txt: "text/plain; charset=utf-8",
 };
 
@@ -64,9 +66,11 @@ export async function GET(
     if (!ok) return new NextResponse("not published", { status: 403 });
   }
 
-  // 作品自己的文件优先；没有再看是不是运行库的虚拟文件（wgp.js / wgp.css）——
-  // 作者想换掉运行库，写一个同名文件就顶掉了
-  const content = store.fileRead(id, rel) ?? runtimeAsset(rel);
+  // 作品自己的文件优先，没有再看两种虚拟文件：
+  //   1. 运行库 wgp.js / wgp.css——写一个同名文件就顶掉了
+  //   2. 数据表的孪生 js：请求 data/roster.js 时，把 data/roster.csv 包成一段赋值语句
+  //      （沙箱里 connect-src 'none'，作品读不到 .csv，只能靠 <script src> 进来）
+  const content = store.fileRead(id, rel) ?? runtimeAsset(rel) ?? datasetTwin(store, id, rel);
   if (content === null) return new NextResponse("not found", { status: 404 });
 
   const ext = rel.split(".").pop()?.toLowerCase() ?? "txt";
@@ -88,4 +92,15 @@ export async function GET(
       "cache-control": "no-store",
     },
   });
+}
+
+/** 数据表 data/x.csv|json → 作品能 <script src> 引进去的 data/x.js */
+function datasetTwin(store: ReturnType<typeof getStore>, id: string, rel: string): string | null {
+  const spec = datasetSourcesFor(rel);
+  if (!spec) return null;
+  for (const src of spec.candidates) {
+    const raw = store.fileRead(id, src);
+    if (raw !== null) return wrapDataset(spec.name, src, raw);
+  }
+  return null;
 }

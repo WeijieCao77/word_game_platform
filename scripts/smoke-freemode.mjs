@@ -88,7 +88,11 @@ if (text.length < 30) problems.push(`打开后几乎没有内容（只有 ${text
 else notes.push(`开场有 ${text.length} 个字符`);
 
 // 2. 有得点：按钮/链接一类的可交互元素
-const clickable = frame.locator("button, [role=button], a[href], .choice, li[onclick]");
+// 能点的东西不止 <button>：表格里可点的行、挂了 onclick 的元素、
+// 用 tabindex 做成可聚焦的自定义控件，都算——只认按钮会把整类作品误判成「点不动」
+const clickable = frame.locator(
+  'button, [role=button], a[href], .choice, [onclick], tr.clickable, [tabindex="0"]'
+);
 const clickCount = await clickable.count();
 if (clickCount === 0) problems.push("没有任何可点的东西——玩家进来就卡住了");
 else notes.push(`可点元素 ${clickCount} 个`);

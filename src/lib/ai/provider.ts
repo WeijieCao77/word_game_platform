@@ -129,25 +129,39 @@ export async function callChat(messages: ChatMessage[], tools?: ToolDef[]): Prom
   const p = resolveProvider();
   if (!p) throw new Error("AI 尚未配置");
   if (p.base.includes("anthropic")) return callAnthropic(p, messages, tools);
-  const res = await fetch(`${p.base}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${p.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: p.model,
-      messages,
-      tools: tools && tools.length > 0 ? tools : undefined,
-      max_tokens: maxTokens(),
-      // 流式：写一整个游戏文件动辄上万 token，非流式连接会被中途掐断（见 readSSE 的注释）
-      stream: true,
-      stream_options: { include_usage: true },
-      // 不设 temperature：gpt-5 系推理模型只接受默认值，其余供应商默认值也够用
-      // gpt-5 系默认思考较深，交互式工作台压低推理档换速度（可用 AI_REASONING_EFFORT 覆盖）
-      ...(p.model.startsWith("gpt-5") ? { reasoning_effort: process.env.AI_REASONING_EFFORT ?? "low" } : {}),
-    }),
-  });
+  // stream_options 是 OpenAI / DeepSeek 那边的约定，用来让最后一帧带上 usage。
+  // 有的兼容供应商不认这个字段、还会直接 400；那就去掉它重试一次
+  // ——宁可这一轮统计不到 token，也不能整条通道不可用。
+  const send = async (withStreamOptions: boolean): Promise<Response> =>
+    fetch(`${p.base}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${p.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: p.model,
+        messages,
+        tools: tools && tools.length > 0 ? tools : undefined,
+        max_tokens: maxTokens(),
+        // 流式：写一整个游戏文件动辄上万 token，非流式连接会被中途掐断（见 readSSE 的注释）
+        stream: true,
+        ...(withStreamOptions ? { stream_options: { include_usage: true } } : {}),
+        // 不设 temperature：gpt-5 系推理模型只接受默认值，其余供应商默认值也够用
+        // gpt-5 系默认思考较深，交互式工作台压低推理档换速度（可用 AI_REASONING_EFFORT 覆盖）
+        ...(p.model.startsWith("gpt-5") ? { reasoning_effort: process.env.AI_REASONING_EFFORT ?? "low" } : {}),
+      }),
+    });
+
+  let res = await send(true);
+  if (res.status === 400) {
+    const text = await res.text();
+    if (text.includes("stream_options")) {
+      res = await send(false);
+    } else {
+      throw new Error(`AI 服务返回 400：${text.slice(0, 300)}`);
+    }
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`AI 服务返回 ${res.status}：${text.slice(0, 300)}`);

@@ -148,6 +148,32 @@ describe("OpenAI 兼容流式", () => {
     expect(r.totalTokens).toBe(77);
   });
 
+  it("供应商不认 stream_options 就去掉重试一次，不让整条通道挂掉", async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: { body: string }) => {
+      calls.push(init.body);
+      if (calls.length === 1) {
+        return new Response('{"error":{"message":"unknown field stream_options"}}', { status: 400 });
+      }
+      return sseResponse(['data: {"choices":[{"delta":{"content":"退而求其次也能跑"}}]}\n\n', "data: [DONE]\n\n"]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { callChat } = await import("@/lib/ai/provider");
+    const r = await callChat([{ role: "user", content: "x" }]);
+    expect(r.message.content).toBe("退而求其次也能跑");
+    expect(JSON.parse(calls[0]).stream_options).toBeDefined();
+    expect(JSON.parse(calls[1]).stream_options).toBeUndefined();
+    expect(JSON.parse(calls[1]).stream).toBe(true);
+  });
+
+  it("400 但不是 stream_options 的问题就直接报错，不要瞎重试", async () => {
+    const fetchMock = vi.fn(async () => new Response('{"error":{"message":"model not found"}}', { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { callChat } = await import("@/lib/ai/provider");
+    await expect(callChat([{ role: "user", content: "x" }])).rejects.toThrow(/model not found/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("工具调用按 index 归位，参数拼成完整 JSON", async () => {
     vi.stubGlobal("fetch", vi.fn(async () =>
       sseResponse([

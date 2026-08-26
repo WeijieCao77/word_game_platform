@@ -77,7 +77,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [hasCover, setHasCover] = useState(false);
   const [assets, setAssets] = useState<AssetItem[] | null>(null);
   const [assetName, setAssetName] = useState("");
-  const [assetShare, setAssetShare] = useState(false);
+  // 默认分享到公共素材库（老板定的：共建素材池），创作者不想共享自己取消勾选
+  const [assetShare, setAssetShare] = useState(true);
   const [libAssets, setLibAssets] = useState<LibAssetItem[] | null>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverVersion, setCoverVersion] = useState(0);

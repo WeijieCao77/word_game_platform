@@ -58,8 +58,17 @@ jobs:
               exit 0
             fi
             echo "  线上还是 ${got:-取不到}，15 秒后再看（第 $i 次）"
+            [ "$got" = "unknown" ] && unknowns=$((${unknowns:-0} + 1))
             sleep 15
           done
+          # 连着报 unknown 说明服务是活的、只是它不知道自己是哪个版本——
+          # 那是走了 `railway up` 那条不带 git 元数据的部署路子（第 10 次实测踩的坑）。
+          # 现在 CI 会把 sha 写进 public/build.json，只要线上跑的是带这条修复的代码就不会再有。
+          if [ "${unknowns:-0}" -ge 8 ]; then
+            echo "::error::线上一直报 commit=unknown：服务活着，但它不知道自己是哪个版本。"
+            echo "::error::多半是这次上线走了 railway up（没有 git 元数据）而线上代码还早于「把 commit 写进构建产物」那次修复。再推一次即可。"
+            exit 1
+          fi
           echo "::error::等了 10 分钟线上还没跟上（要 $want）。别在会动的靶子上测——先确认部署再重跑。"
           exit 1
 

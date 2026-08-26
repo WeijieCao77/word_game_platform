@@ -26,6 +26,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+      # 把这次的 commit 写进构建产物。
+      #
+      # 走 `railway up` 上线时，Railway 拿到的只是一个目录，没有 git 元数据，
+      # RAILWAY_GIT_COMMIT_SHA 是空的——健康检查就只能报 unknown，
+      # 于是「等部署跟上」的 gate 永远等不到（第 10 次实测就白等了十分钟）。
+      - name: 把 commit 写进构建产物
+        run: |
+          printf '{"commit":"%s"}\n' "${GITHUB_SHA:0:7}" > public/build.json
+          cat public/build.json
+
       - run: npm run build
 
       - name: Deploy

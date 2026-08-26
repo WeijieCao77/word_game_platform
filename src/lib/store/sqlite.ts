@@ -282,6 +282,26 @@ export class SqliteGameStore implements GameStore {
     } catch {
       // 列已存在
     }
+    this.jobSweepOnBoot();
+  }
+
+  /**
+   * 开机第一件事：把所有还标着 running 的任务判死。
+   *
+   * 任务是**跑在这个进程里**的（一个 Promise），进程没了活就没了——
+   * 可是数据库里那行还写着 running，于是这部作品被永久锁住：
+   * 作者发一句就被顶回来一句「这部作品还有一轮在跑」，而那一轮永远不会有结果。
+   * 线上真踩到了：合完一个 PR 触发部署，容器一重启，老板就再也发不出话。
+   *
+   * 判定不需要猜——**能看到这张表的进程，就是唯一会写它的进程**。
+   * 启动那一刻还 running 的，必然是上一条命留下的尸体。
+   */
+  private jobSweepOnBoot(): void {
+    const now = new Date().toISOString();
+    const n = this.db
+      .prepare("UPDATE ai_jobs SET status = 'error', error = ?, updated_at = ? WHERE status = 'running'")
+      .run("服务重启了，这一轮没跑完（进度已保存的部分不会丢）。把刚才那句话再发一次就行。", now).changes;
+    if (n > 0) console.warn(`[jobs] 启动清理：${n} 条上次没跑完的任务已判失败`);
   }
 
   /** 启动时同步官方示例：不存在则作为已发布游戏入库，已存在则刷新配置（模板改进随部署上线） */
@@ -973,14 +993,20 @@ export class SqliteGameStore implements GameStore {
     return true;
   }
 
-  /** 这部作品有没有还在跑的任务（超过 30 分钟的当成已经死了，别把作者永久锁住） */
+  /**
+   * 这部作品有没有还在跑的任务。
+   *
+   * 活着的任务每 20 秒打一次心跳（见 assistant 路由），所以**静默三分钟就是死了**。
+   * 早先这里写的是 30 分钟——那是没有心跳时的保守值，代价是任务一死作者要被锁半小时，
+   * 期间发什么都被顶回来。宁可偶尔多判死一条（重发一句就是了），也不许把人锁住。
+   */
   jobRunning(gameId: string): AiJobRecord | null {
     const row = this.db
       .prepare("SELECT * FROM ai_jobs WHERE game_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1")
       .get(gameId) as AiJobRow | undefined;
     if (!row) return null;
-    if (Date.now() - Date.parse(row.updated_at) > 30 * 60_000) {
-      this.jobFail(row.id, "这一轮超过 30 分钟没有动静，按失败处理（服务可能重启过）。");
+    if (Date.now() - Date.parse(row.updated_at) > 3 * 60_000) {
+      this.jobFail(row.id, "这一轮三分钟没有心跳，按失败处理（服务多半重启过）。把刚才那句话再发一次就行。");
       return null;
     }
     return toJob(row);
@@ -996,6 +1022,23 @@ export class SqliteGameStore implements GameStore {
     this.db
       .prepare("UPDATE ai_jobs SET note = ?, updated_at = ? WHERE id = ? AND status = 'running'")
       .run(String(note).slice(0, 500), new Date().toISOString(), id);
+  }
+
+  /** 心跳：只刷时间戳，不动 note（活着但没进展的时候也要证明自己还在） */
+  jobHeartbeat(id: string): void {
+    this.db
+      .prepare("UPDATE ai_jobs SET updated_at = ? WHERE id = ? AND status = 'running'")
+      .run(new Date().toISOString(), id);
+  }
+
+  /** 作者主动放弃这一轮：后台那个 Promise 拦不住，但锁必须立刻放开 */
+  jobAbandon(gameId: string): boolean {
+    const job = this.db
+      .prepare("SELECT id FROM ai_jobs WHERE game_id = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1")
+      .get(gameId) as { id: string } | undefined;
+    if (!job) return false;
+    this.jobFail(job.id, "作者放弃了这一轮。");
+    return true;
   }
 
   jobDone(id: string, result: unknown): void {

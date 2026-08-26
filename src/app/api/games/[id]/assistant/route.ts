@@ -150,23 +150,37 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   // 异步之后单轮想跑多久跑多久（见 agent 的 AI_ROUND_BUDGET_CODE_MS），
   // 连接断了也不影响后台那一轮，作者刷新页面还能接回来。
   if (asyncMode) {
-    if (store.jobRunning(id)) {
+    // 已经有一轮在跑：**把它的任务号带回去**，让前端直接接上去轮询。
+    // 早先这里只回一句「还有一轮在跑」，作者刷新一下页面就和那一轮失联了，
+    // 之后发什么都被顶回来——看上去就是「我改不了了」。
+    const busy = store.jobRunning(id);
+    if (busy) {
       return NextResponse.json(
-        { error: "这部作品还有一轮在跑，等它出结果再发下一句（同时改同一份配置会互相覆盖）。" },
+        {
+          error: "这部作品还有一轮在跑，先接着看它的结果（同时改同一份配置会互相覆盖）。",
+          jobId: busy.id,
+          note: busy.note,
+        },
         { status: 409 }
       );
     }
     const jobId = randomBytes(9).toString("base64url");
     if (!store.jobCreate(id, jobId)) {
-      return NextResponse.json({ error: "这部作品还有一轮在跑" }, { status: 409 });
+      const other = store.jobRunning(id);
+      return NextResponse.json({ error: "这部作品还有一轮在跑", jobId: other?.id }, { status: 409 });
     }
+    // 心跳：任务活在这个进程里，进程一死它就没了。每 20 秒盖个时间戳，
+    // 让 jobRunning 能凭「静默超过三分钟」把尸体判死，而不是把作者锁在那儿干等。
+    const beat = setInterval(() => store.jobHeartbeat(jobId), 20_000);
+    if (typeof beat.unref === "function") beat.unref();
     void runOneRound((note) => store.jobNote(jobId, note))
       .then((payload) => store.jobDone(jobId, payload))
       .catch((err: unknown) => {
         const detail = err instanceof Error ? err.message : String(err);
         console.error("[assistant] 异步任务失败:", detail);
         store.jobFail(jobId, explainAiFailure(detail));
-      });
+      })
+      .finally(() => clearInterval(beat));
     return NextResponse.json({ jobId }, { status: 202 });
   }
 
@@ -178,6 +192,20 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     console.error("[assistant] 失败:", detail);
     return NextResponse.json({ error: explainAiFailure(detail) }, { status: 502 });
   }
+}
+
+/**
+ * 放弃当前这一轮。
+ *
+ * 后台那个 Promise 拦不住（拦了也没意义，写到一半的配置已经落库了），
+ * 但**锁必须立刻放开**——不然作者只能干等三分钟心跳超时。
+ */
+export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { id } = await params;
+  const store = getStore();
+  if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+  return NextResponse.json({ abandoned: store.jobAbandon(id) });
 }
 
 /** 把上游返回的技术错误翻译成作者能行动的提示 */

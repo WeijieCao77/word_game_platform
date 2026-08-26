@@ -409,6 +409,12 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 **怎么写才像个正经作品**
 - 页面自适应手机与桌面（大多数人是在手机上点开链接的）
 - 文字排版是第一位的：行高 1.7~1.9、每行 28~40 个汉字、段间距足够
+- **index.html 里那行 viewport 一个字都不许动**：
+  meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"。
+  丢了它，手机浏览器会按桌面宽度（约 980px）排版再整体缩小——字看不清、按钮点不准，
+  **整部作品在手机上就废了，而且不报任何错**。用 write_file 重写 index.html 时最容易丢。
+- **一半的玩家在手机上**：不要用固定像素宽度的布局，表格要能横向滚动
+  （外面套一层 overflow-x:auto），按钮的点击区域至少 44px 高
 - 深色底浅色字是文字游戏的常规选择，但这是你的自由
 - 状态（属性、进度、时间）要一直看得见，不要让玩家翻页找
 - 图片少而准：一张开场图胜过十张装饰图；用 data: URI 或平台素材

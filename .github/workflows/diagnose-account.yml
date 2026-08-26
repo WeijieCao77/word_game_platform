@@ -1,0 +1,71 @@
+name: 账号与作品归属体检
+
+# 老板反复撞到同一件事：在电脑上点了「收录」，换手机登录同一个账号却看不到那部作品。
+# 本地照着同样的流程跑（建作品 → 注册 → 收录 → 换一套 cookie 重新登录 → 查账号名下）
+# 一次就过，所以问题在线上，不在这段逻辑。这条流水线就是去线上把真相取回来。
+#
+# 容器出口够不到 railway.app，所以只能在 Actions 的 runner 上问。
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_instances:
+        description: "连着问几次 /api/health，看是不是多实例（每个进程一个 instance 号）"
+        required: false
+        default: "8"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - name: 线上是什么版本、几个实例
+        env:
+          N: ${{ inputs.probe_instances }}
+        run: |
+          set -e
+          echo "--- /api/health ---"
+          curl -sS --max-time 20 "$BASE/api/health"; echo
+          echo "--- 连问 ${N:-8} 次，看 instance 是不是同一个 ---"
+          for i in $(seq 1 "${N:-8}"); do
+            curl -sS --max-time 20 "$BASE/api/health" \
+              | python3 -c 'import sys,json;d=json.load(sys.stdin);b=d.get("build",{});print(b.get("instance","(这版还没有 instance 字段)"), b.get("commit"))'
+          done
+
+      - name: 测试账号名下到底有没有作品
+        env:
+          U: ${{ secrets.E2E_USERNAME }}
+          P: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["U"], "password": os.environ["P"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          with urllib.request.urlopen(req, timeout=60) as r:
+              me = json.loads(r.read().decode())
+              cookie = r.headers.get("set-cookie", "").split(";")[0]
+          print("登录成功：", me.get("user"))
+          print("::add-mask::" + cookie.split("=", 1)[1])
+
+          def get(path):
+              rq = urllib.request.Request(f"{BASE}{path}", headers={"cookie": cookie})
+              with urllib.request.urlopen(rq, timeout=60) as r:
+                  return json.loads(r.read().decode())
+
+          games = get("/api/auth/games").get("games") or []
+          print(f"\n账号名下作品 {len(games)} 部：")
+          for g in games[:30]:
+              print(f"  - {g['id']}  {g.get('title')}  mode={g.get('mode')}  updated={g.get('updatedAt')}")
+
+          # 公开库还剩多少——顺便验证数据库有没有被部署冲掉
+          try:
+              pub = get("/api/games")
+              lst = pub.get("games") if isinstance(pub, dict) else pub
+              print(f"\n公开游戏库 {len(lst or [])} 部（数据库还在不在，看这个数）")
+          except Exception as e:
+              print("取公开库失败：", e)
+          PY

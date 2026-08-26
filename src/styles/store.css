@@ -373,7 +373,12 @@
 .embed-shell {
   display: flex;
   flex-direction: column;
+  /* 手机上 100vh 量的是「地址栏收起时」的高度，比实际能看到的部分高一截——
+     游戏底部那排按钮就被压在地址栏下面，点不着。老板说的「手机端玩不了」
+     有一半是这个。dvh 量的是当下真正可见的高度，随地址栏收放实时变。
+     旧浏览器不认 dvh，所以上面留一行 vh 兜底。 */
   height: 100vh;
+  height: 100dvh;
   background: var(--bg);
 }
 .embed-bar {

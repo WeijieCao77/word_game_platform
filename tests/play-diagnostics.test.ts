@@ -41,7 +41,8 @@ describe("自由模式出口注入：黑屏要变成看得懂的报错", () => {
 
   it("残缺的 html（没有 head）也要注入，不能因为格式不标准就不管", () => {
     const out = injectPlayDiagnostics('<div id="app"></div><script src="g.js"></script>');
-    expect(out.startsWith("<script>")).toBe(true);
+    // 注入的东西（viewport + 兜底诊断）整体排在作品内容之前
+    expect(out.indexOf("data-wgp-error")).toBeLessThan(out.indexOf('<div id="app">'));
     expect(out).toContain("data-wgp-error");
   });
 
@@ -74,6 +75,46 @@ describe("自由模式出口注入：黑屏要变成看得懂的报错", () => {
     // 真正的作品报错不能被误伤
     expect(re.test("Unexpected token ')'")).toBe(false);
     expect(re.test("app.textContent is not a function")).toBe(false);
+  });
+
+  /**
+   * 老板的原话：「游戏在手机端玩不了」。
+   *
+   * 头号原因是作品的 index.html 丢了 viewport 这一行——手机浏览器于是按
+   * 桌面宽度（约 980px）排版再整体缩小，字小得看不清、按钮点不准。
+   * 平台的起手骨架本来有这一行，但 AI 用 write_file 重写 index.html 时很容易丢掉，
+   * **一丢整部作品在手机上就废了，而且不报任何错**。
+   */
+  it("作品没写 viewport 就在出口补上——不然手机上按 980px 排版，等于玩不了", () => {
+    const out = injectPlayDiagnostics("<html><head></head><body>x</body></html>");
+    expect(out).toMatch(/<meta name="viewport"[^>]*width=device-width/);
+    // 要排在作品自己的内容之前
+    expect(out.indexOf("viewport")).toBeLessThan(out.indexOf("<body>"));
+  });
+
+  it("作品自己写了 viewport 就不动它——作者的设置优先", () => {
+    const own = '<html><head><meta name="viewport" content="width=420"></head></html>';
+    const out = injectPlayDiagnostics(own);
+    expect(out.match(/name="viewport"/g) ?? []).toHaveLength(1);
+    expect(out).toContain('content="width=420"');
+  });
+
+  it("单引号、大小写、属性顺序换一换也认得出来，别重复插一条", () => {
+    for (const tag of [
+      "<META NAME='viewport' CONTENT='width=device-width'>",
+      '<meta content="width=device-width" name="viewport">',
+    ]) {
+      const out = injectPlayDiagnostics(`<head>${tag}</head>`);
+      expect(out.match(/name=["']?viewport/gi) ?? [], tag).toHaveLength(1);
+    }
+  });
+
+  it("残缺的 html 也补 viewport", () => {
+    expect(injectPlayDiagnostics('<div id="app"></div>')).toContain("width=device-width");
+  });
+
+  it("顺手关掉 iOS 的自动放大字号——横屏时它会把排好的界面弄错位", () => {
+    expect(injectPlayDiagnostics("<head></head>")).toContain("-webkit-text-size-adjust:100%");
   });
 
   it("没被处理的 Promise 拒绝只记录、不弹横幅——它归不了因，十有八九不是作品的错", () => {

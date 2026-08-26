@@ -102,6 +102,31 @@ const BOOT = `<script>(function(){
 })();</script>`;
 
 /**
+ * 手机上打不开的头号原因：作品的 index.html 没有 viewport 这一行。
+ *
+ * 没有它，手机浏览器会按**桌面宽度（约 980px）**排版再整体缩小塞进屏幕——
+ * 字小得看不清、按钮点不准、横着还能拖。玩家的感受就是「这游戏手机上玩不了」。
+ *
+ * 平台的起手骨架里本来是有这一行的，但 AI 用 write_file 重写 index.html 时
+ * 很容易把它丢掉——**一丢，整部作品在手机上就废了，而且没有任何报错**。
+ *
+ * 所以在出口补一道：没有就补上。这跟兜底诊断走的是同一条路子——
+ * **不改作品的任何文件，所有已经存在的作品立刻受益**，不用等 AI 再写一轮。
+ * 已经自己写了 viewport 的作品原样放过，作者的设置优先。
+ */
+const VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">';
+
+/**
+ * iOS Safari 在横屏时会自作主张把字体放大（text auto-sizing），
+ * 排好的界面会当场错位。这一句是关掉它的标准写法，不影响作品自己的样式。
+ */
+const MOBILE_BASE = "<style>html{-webkit-text-size-adjust:100%}</style>";
+
+function hasViewport(html: string): boolean {
+  return /<meta[^>]+name\s*=\s*["']?viewport["']?/i.test(html);
+}
+
+/**
  * 给作品的 `<script src="...">` 标上 crossorigin。
  * 只动本地相对路径：外链（http(s)://、//）本来就取不到（CSP connect/script-src 只允许 self），
  * 而 data:/blob: 没有跨域问题，标了反而可能出岔子。
@@ -120,11 +145,12 @@ function markCrossOrigin(html: string): string {
  */
 export function injectPlayDiagnostics(html: string): string {
   const withCors = markCrossOrigin(html);
-  // 有 <head> 就贴在它后面；没有就顶在最前面（残缺的 html 浏览器照样能跑）
+  // 手机上能不能玩，全看有没有 viewport 这一行。作品自己写了就不动它。
   const head = withCors.search(/<head\b[^>]*>/i);
+  const inject = (hasViewport(withCors) ? "" : VIEWPORT + MOBILE_BASE) + BOOT;
   if (head >= 0) {
     const end = withCors.indexOf(">", head) + 1;
-    return withCors.slice(0, end) + BOOT + withCors.slice(end);
+    return withCors.slice(0, end) + inject + withCors.slice(end);
   }
-  return BOOT + withCors;
+  return inject + withCors;
 }

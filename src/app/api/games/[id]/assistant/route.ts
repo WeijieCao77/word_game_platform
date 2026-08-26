@@ -7,14 +7,13 @@ import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
 import { rankLibraryEntries } from "@/lib/library";
 import { clampRounds, runRounds } from "@/lib/ai/auto-build";
+import { trimHistory } from "@/lib/ai/history";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 type Params = { params: Promise<{ id: string }> };
-
-const MAX_HISTORY = 24;
 
 // 额度读数：工作台一进来就要显示「已用多少 / 还剩多少」，不必等发完一条消息。
 export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
@@ -74,10 +73,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   } catch {
     return NextResponse.json({ error: "请求体不是合法 JSON" }, { status: 400 });
   }
-  const history = (body.messages ?? [])
-    .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-    .slice(-MAX_HISTORY)
-    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 8000) }));
+  const history = trimHistory(
+    (body.messages ?? [])
+      .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+  );
   if (history.length === 0 || history[history.length - 1].role !== "user") {
     return NextResponse.json({ error: "缺少用户消息" }, { status: 400 });
   }
@@ -189,7 +189,6 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     void runRounds({
       rounds,
       history,
-      maxHistory: MAX_HISTORY,
       // 作者按了「放弃这一轮」→ 任务不再是 running → 下一轮不开
       alive: () => store.jobGet(jobId)?.status === "running",
       quotaBlocked: () => {

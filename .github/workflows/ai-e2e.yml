@@ -206,6 +206,24 @@ jobs:
           print(f"总字符数：{len(whole)}")
           PY
 
+      # 文件写出来了不等于能玩。自由模式没有模拟器可跑，唯一靠谱的办法是
+      # 像玩家一样真点一遍：打得开、有得点、点得动、存档能续、手机排得下。
+      - name: 真玩一遍（自由模式）
+        if: inputs.template == 'blank-code'
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          set -e
+          # 先发布，这样 /p/:id 不带钥匙也进得去
+          curl -sS -X POST "$BASE/api/games/$GID/publish" \
+            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -d '{"published":true}' -o /dev/null
+          npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          CHROME_PATH="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")" \
+            node scripts/smoke-freemode.mjs "$BASE" "$GID"
+
       - name: 留个地址
         if: always()
         env:

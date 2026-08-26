@@ -5,6 +5,8 @@
 
 ## 上手顺序（别一上来就读代码）
 
+0. [`docs/HANDOFF-2026-08-26.md`](docs/HANDOFF-2026-08-26.md) — **换会话接手先读这份**：
+   现在跑到哪一步、下一步干什么、环境上必踩的坑
 1. [`docs/STATUS.md`](docs/STATUS.md) — 平台现在能干什么、做到哪一步、有哪些坑
 2. [`docs/MODULES.md`](docs/MODULES.md) — **模块地图：要改某个东西，该看哪几个文件**
 3. [`docs/schema.md`](docs/schema.md) — 底层设计：内容卡 schema、表达式语言、三级校验

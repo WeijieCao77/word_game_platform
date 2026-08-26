@@ -68,6 +68,46 @@ jobs:
           echo "::error::等了 10 分钟线上还没跟上（要 $want）。先确认部署再重跑。"
           exit 1
 
+      # 额度规矩是老板定死的：游客 40 万/天、注册 200 万、管理员不限量。
+      # 实测一轮就要烧几百万 token，只能用平台自己的测试账号（管理员）跑——
+      # 以前靠把游客日额度放宽到 4000 万来跑，等于为了测试把对外的闸门拆了，不许再犯。
+      - name: 用平台测试账号登录（管理员＝不限量）
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$E2E_USERNAME" ] || [ -z "$E2E_PASSWORD" ]; then
+            echo "::error::缺少 Actions Secrets：E2E_USERNAME / E2E_PASSWORD。"
+            echo "::error::游客日额度是 40 万 token，撑不起实测；必须用平台的测试账号（管理员，不限量）。"
+            echo "::error::配置三步：1) 在网站上注册一个测试账号；2) 把它提为管理员（后台提拔，或把 Railway 变量 ADMIN_USERS 设成这个用户名，下次登录自动提升）；3) 把用户名密码存进本仓库 Actions Secrets 的 E2E_USERNAME / E2E_PASSWORD。"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]} —— 检查 E2E_USERNAME/E2E_PASSWORD（账号要先在网站上注册）。")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          # 会话 cookie 是凭据：先打码再写进 output
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          user = reply.get("user") or {}
+          print(f"已登录：{user.get('username')}（角色 {user.get('role')}）")
+          if user.get("role") != "admin":
+              raise SystemExit("::error::测试账号还不是管理员，按注册用户只有 200 万总额度，实测必然中途断。先提为管理员：后台提拔，或设 Railway 变量 ADMIN_USERS=这个用户名（登录时自动提升），再重跑。")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
       - name: 建作品并把真实数据传进去
         id: create
         env:
@@ -113,6 +153,7 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
           ROUNDS: ${{ inputs.rounds }}
         run: |
           set -e
@@ -120,6 +161,7 @@ jobs:
           import json, os, time, urllib.error, urllib.request
 
           BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          COOKIE = os.environ["COOKIE"]  # 测试账号（管理员）的会话，额度按不限量算
           rounds = int(os.environ.get("ROUNDS") or 12)
           spec = open("templates/valmanager/spec.md", encoding="utf-8").read()
 
@@ -148,7 +190,7 @@ jobs:
                       req = urllib.request.Request(
                           f"{BASE}{path}", method="POST",
                           data=json.dumps(payload).encode(),
-                          headers={"content-type": "application/json", "x-edit-key": GKEY})
+                          headers={"content-type": "application/json", "x-edit-key": GKEY, "cookie": COOKIE})
                       with urllib.request.urlopen(req, timeout=900) as r:
                           return json.loads(r.read().decode())
                   except urllib.error.HTTPError as e:
@@ -328,6 +370,7 @@ jobs:
         env:
           GID: ${{ steps.create.outputs.id }}
           GKEY: ${{ steps.create.outputs.key }}
+          COOKIE: ${{ steps.login.outputs.cookie }}
           FIX_ROUNDS: ${{ inputs.fix_rounds }}
         run: |
           set -e
@@ -347,7 +390,8 @@ jobs:
               req = urllib.request.Request(
                   f"{BASE}/api/games/{GID}/assistant", method="POST",
                   data=json.dumps({"messages": [{"role": "user", "content": text}]}).encode(),
-                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+                  headers={"content-type": "application/json", "x-edit-key": GKEY,
+                           "cookie": os.environ.get("COOKIE", "")})
               with urllib.request.urlopen(req, timeout=900) as r:
                   return json.loads(r.read().decode())
 

@@ -40,6 +40,29 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # 等线上真的是这次要测的代码再开始。
+      #
+      # 之前几次实测的结论全被这件事污染过：我一边改一边推，每次推送都触发
+      # Railway 重新部署、容器重启，而实测的窗口正好压在上面——于是 502 到底是
+      # 平台的毛病还是我自己推挂的，分不清。测一个会动的靶子等于没测。
+      - name: 等部署跟上（线上 commit 要对得上这次的 sha）
+        run: |
+          set -e
+          want="$(echo "${{ github.sha }}" | cut -c1-7)"
+          echo "要等的 commit：$want"
+          for i in $(seq 1 40); do
+            got="$(curl -sS --max-time 10 "$BASE/api/health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+            if [ "$got" = "$want" ]; then
+              echo "线上已经是 $got，等 20 秒让容器彻底稳下来"
+              sleep 20
+              exit 0
+            fi
+            echo "  线上还是 ${got:-取不到}，15 秒后再看（第 $i 次）"
+            sleep 15
+          done
+          echo "::error::等了 10 分钟线上还没跟上（要 $want）。别在会动的靶子上测——先确认部署再重跑。"
+          exit 1
+
       - name: 建一个空作品
         id: create
         env:

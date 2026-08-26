@@ -526,6 +526,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setChat(nextChat);
     setChatInput("");
     setChatBusy(true);
+    // 网关把连接掐断（502/503/504）时置位：断的是连接不是活，服务端那一轮多半还在跑
+    let gatewayCut = false;
     try {
       if (dirty) await save();
       const controller = new AbortController();
@@ -552,12 +554,12 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       } catch {
         // 502/503/504 是网关把连接掐了，不是服务端拒绝——那一轮很可能还在跑、
         // 甚至已经跑完。别让作者以为自己那句话说错了。
-        const gatewayDown = res.status === 502 || res.status === 503 || res.status === 504;
+        gatewayCut = res.status === 502 || res.status === 503 || res.status === 504;
         throw new Error(
           res.ok
             ? `服务返回了无法解析的内容（HTTP ${res.status}）：${rawText.slice(0, 120)}`
-            : gatewayDown
-              ? `网关中断了这次请求（HTTP ${res.status}）。这一轮生成得久，连接先断了——服务端那边可能已经改完了，我这就去把最新的配置拉回来看看。`
+            : gatewayCut
+              ? `网关中断了这次请求（HTTP ${res.status}）。这一轮生成得久，连接先断了——服务端多半还在跑，我每隔几秒去看一眼，跑完就把回复捞回来。先别重发。`
               : `请求失败 HTTP ${res.status}：${rawText.replace(/<[^>]+>/g, " ").trim().slice(0, 160) || "网关未返回具体原因，多半是这一轮生成太大或耗时过长"}`
         );
       }
@@ -583,18 +585,78 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
+      // 「断的是连接，不是活」的三种情况：客户端 5 分钟超时、网关掐断、网络层失败。
+      // 服务端是改一次存一次、整轮跑完把回复落库的——这三种都值得回头把活捞回来。
+      const recoverable = aborted || gatewayCut || err instanceof TypeError;
       const msg = aborted
-        ? "等待超过 5 分钟已自动中断。多半是这一轮要生成的东西太多了——把要求拆小一点（比如先建骨架，再分批补名单），或者让它先只改一部分。你的对话记录都还在。"
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        ? "等待超过 5 分钟已自动中断。多半是这一轮要生成的东西太多了。我每隔几秒去服务端看一眼有没有跑完——先别重发。"
+        : err instanceof TypeError
+          ? `网络断了一下（${err.message}）。服务端那一轮可能还在跑——我每隔几秒去看一眼，跑完就把回复捞回来，先别重发。`
+          : err instanceof Error
+            ? err.message
+            : String(err);
       setChat((c) => [...c, { role: "system", content: `⚠ ${msg}` }]);
+
+      // 轻量根治「502 之后作者对着报错干瞪眼」：回复和聊天记录都在服务端
+      // （整轮跑完时把「你这句 + AI 回复」一起落库），所以每隔几秒拉一次，
+      // 看到自己这句话后面跟着回复，就说明那一轮跑完了——整份接上，别让作者重发白烧额度。
+      let recovered = false;
+      if (recoverable && editKey) {
+        for (let i = 0; i < 22 && !recovered; i++) {
+          await new Promise((r) => setTimeout(r, 8000));
+          try {
+            const poll = await fetch(`/api/games/${id}`, { headers: { "x-edit-key": editKey } });
+            if (!poll.ok) continue;
+            const fresh = await poll.json();
+            const sc = (Array.isArray(fresh.chat) ? fresh.chat : []) as ChatMsg[];
+            const at = sc.map((m) => (m.role === "user" ? m.content : "")).lastIndexOf(text);
+            if (at < 0 || !sc.slice(at + 1).some((m) => m.role === "assistant")) continue;
+            recovered = true;
+            setChat([
+              ...sc,
+              {
+                role: "system",
+                content: "✓ 捞回来了——刚才只是连接断了，这一轮的活没丢。接着说下一句就行，不用重发。",
+              },
+            ]);
+            if (fresh.config) {
+              setConfig(fresh.config as GameConfig);
+              setConfigText(JSON.stringify(fresh.config, null, 2));
+              setDirty(false);
+            }
+            if (typeof fresh.designCard === "string") setDesignCard(fresh.designCard);
+            if (fresh.mode === "code") {
+              setMode("code");
+              void reloadFiles();
+            }
+            setPreviewNonce((n) => n + 1);
+            try {
+              const q = await fetch(`/api/games/${id}/assistant`, { headers: { "x-edit-key": editKey } });
+              if (q.ok) setQuota((await q.json()).quota ?? null);
+            } catch {
+              // 额度读数拉不到不碍事
+            }
+          } catch {
+            // 单次拉取失败不退出——网关抖动正是这条通道存在的原因
+          }
+        }
+        if (!recovered) {
+          setChat((c) => [
+            ...c,
+            {
+              role: "system",
+              content:
+                "等了几分钟还是没看到那一轮的结果，它可能真的失败了。刷新页面再看一眼聊天记录，还没有的话把刚才那句重发一次。",
+            },
+          ]);
+        }
+      }
 
       // 请求断了不等于活没干完。端到端实测里撞见过：网关回了 502
       // Application failed to respond，可服务端那一轮其实已经把配置写进库了——
       // 前端只是没收到回信。这种时候最坑的是「AI 说要搭，结果界面什么都没变」，
       // 作者会以为平台坏了。所以出错之后回头拉一次作品：真变了就把它接上来。
-      try {
+      if (!recovered) try {
         const before = JSON.stringify(config);
         const res2 = await fetch(`/api/games/${id}`, { headers: { "x-edit-key": editKey } });
         if (res2.ok) {

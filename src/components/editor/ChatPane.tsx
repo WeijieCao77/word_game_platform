@@ -130,6 +130,9 @@ export default function ChatPane({
   chatInput,
   onChatInput,
   onSend,
+  autoRounds = 10,
+  onAutoRounds,
+  onAutoBuild,
   chatEndRef,
   quota,
 }: {
@@ -147,6 +150,11 @@ export default function ChatPane({
   chatInput: string;
   onChatInput: (value: string) => void;
   onSend: () => void;
+  /** 连续搭建的轮数 */
+  autoRounds?: number;
+  onAutoRounds?: (n: number) => void;
+  /** 连续搭建：服务端一轮接一轮地跑，中间替作者说「接着做」 */
+  onAutoBuild?: () => void;
   chatEndRef: React.RefObject<HTMLDivElement | null>;
   /** 额度读数；null 表示还没取到 */
   quota: QuotaInfo | null;
@@ -205,6 +213,34 @@ export default function ChatPane({
           发送
         </button>
       </div>
+      {/* 连续搭建。
+          一部像样的大作品要三四十轮才搭得完，靠人一句句说「继续」，
+          一次坐下最多几轮——差距的大头就卡在这儿。这个按钮把「你陪着熬」
+          换成「你去忙别的，回来看」：服务端一轮接一轮地跑，
+          每轮都落库，随时可以按「放弃这一轮」收手。 */}
+      {onAutoBuild && (
+        <div className="chat-auto">
+          <button className="btn small" disabled={chatBusy} onClick={onAutoBuild} title="AI 照设计卡里的「剩余清单」一轮接一轮往下搭，不用你一句句催">
+            连续搭建
+          </button>
+          <label>
+            <select
+              value={autoRounds}
+              disabled={chatBusy}
+              onChange={(e) => onAutoRounds?.(Number(e.target.value))}
+            >
+              {[5, 10, 15, 20].map((n) => (
+                <option key={n} value={n}>
+                  {n} 轮
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="chat-auto-hint">
+            跑在后台，关页面也不中断；额度不够会自己停下
+          </span>
+        </div>
+      )}
       <QuotaMeter quota={quota} loginHref={loginHref} />
     </div>
   );

@@ -19,6 +19,10 @@ on:
         description: "搭几轮（每轮把上一轮的回复带上）"
         required: false
         default: "12"
+      auto_rounds:
+        description: "脚本化的十步走完之后，交给「连续搭建」再自己跑几轮（0 = 不跑）"
+        required: false
+        default: "10"
       fix_rounds:
         description: "玩出问题后，让 AI 回炉修几轮"
         required: false
@@ -168,6 +172,7 @@ jobs:
           GKEY: ${{ steps.create.outputs.key }}
           COOKIE: ${{ steps.login.outputs.cookie }}
           ROUNDS: ${{ inputs.rounds }}
+          AUTO_ROUNDS: ${{ inputs.auto_rounds }}
         run: |
           set -e
           python3 - <<'PY'
@@ -176,6 +181,7 @@ jobs:
           BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
           COOKIE = os.environ["COOKIE"]  # 测试账号（管理员）的会话，额度按不限量算
           rounds = int(os.environ.get("ROUNDS") or 12)
+          auto_rounds = int(os.environ.get("AUTO_ROUNDS") or 0)
           spec = open("templates/valmanager/spec.md", encoding="utf-8").read()
 
           # 第一轮把整份说明书发过去；之后按 spec 第七节的十步往下走，
@@ -218,6 +224,43 @@ jobs:
                       time.sleep(20)
               raise RuntimeError(last or "未知失败")
 
+          def run_round(payload_msgs, n=1):
+              """跑一轮（或连着跑 n 轮）——走**异步任务**那条路。
+
+              以前这里是同步 POST 干等回信，那条路一轮只有 180 秒预算，而且
+              最重的那一轮必然被网关掐成 502。异步之后：请求立刻拿到任务号，
+              活在后台跑（单轮 12 分钟），这里每 5 秒问一次跑完没有。
+              **这也才是创作者在工作台里真实走的那条路**——实测就该测那一条。
+              """
+              body = post_retry(f"/api/games/{GID}/assistant",
+                                {"messages": payload_msgs, "async": True, "rounds": n})
+              job = body.get("jobId")
+              if not job:
+                  return body  # 老版本线上还没有异步，原样返回
+              # n 轮 × 12 分钟，再宽一点：留足够的余量，别自己先放弃
+              deadline = time.time() + 60 * 20 * max(1, n)
+              note = ""
+              while time.time() < deadline:
+                  time.sleep(5)
+                  try:
+                      rq = urllib.request.Request(
+                          f"{BASE}/api/games/{GID}/assistant?job={job}",
+                          headers={"x-edit-key": GKEY, "cookie": COOKIE})
+                      with urllib.request.urlopen(rq, timeout=60) as r:
+                          jb = json.loads(r.read().decode())
+                  except Exception:
+                      continue  # 网络抖一下不该让这一轮白跑
+                  st = (jb.get("job") or {}).get("status")
+                  nn = (jb.get("job") or {}).get("note") or ""
+                  if nn and nn != note:
+                      note = nn
+                      print(f"  · {note}")
+                  if st == "done":
+                      return jb
+                  if st == "error":
+                      raise RuntimeError((jb.get("job") or {}).get("error") or "这一轮失败了")
+              raise RuntimeError(f"等了 {60 * 20 * max(1, n)} 秒还没跑完")
+
           def snapshot(tag):
               try:
                   req = urllib.request.Request(f"{BASE}/api/games/{GID}/files",
@@ -239,7 +282,7 @@ jobs:
               print(f"\n{'=' * 70}\n第 {i + 1} 轮 · 创作者说：{said[:100]}\n{'=' * 70}")
               t0 = time.time()
               try:
-                  body = post_retry(f"/api/games/{GID}/assistant", {"messages": msgs})
+                  body = run_round(msgs)
               except Exception as e:
                   # 单轮失败**不能**打死全场。第 2 次实测就栽在这儿：第 1 轮撞了三次 502
                   # 就 break 出去，14 轮一轮没跑，最后还报了绿。
@@ -262,6 +305,28 @@ jobs:
               before = now
               msgs.append({"role": "assistant", "content": reply})
               msgs.append({"role": "user", "content": steps[i] if i < len(steps) else "接着做，往下搭。"})
+
+          # 连续搭建：脚本化的十步走完之后，把剩下的活整个交给平台自己跑。
+          #
+          # 这一段测的正是差距的大头——**没跑够**。原作 13,132 行，最好的一次
+          # 12 轮才到约 4,500 行；靠人一句句催永远补不上那个差额。
+          # 这里一个请求丢过去，服务端一轮接一轮地搭，中间不用任何人说话。
+          if auto_rounds > 0:
+              print(f"\n{'=' * 70}\n连续搭建：接下来 {auto_rounds} 轮由平台自己跑，中间没人催\n{'=' * 70}")
+              t0 = time.time()
+              try:
+                  body = run_round(msgs, n=auto_rounds)
+                  print(f"[{time.time() - t0:.0f}s] 实际跑了 {body.get('roundsRun')} 轮")
+                  if body.get("stoppedBecause"):
+                      print(f"::warning::连续搭建提前停了：{body['stoppedBecause']}")
+                  print(f"最后一轮的回复：\n{(body.get('reply') or '')[:1800]}")
+                  q = body.get("quota") or {}
+                  print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}　身份 {q.get('kind')}")
+              except Exception as e:
+                  print(f"::warning::连续搭建失败：{e}")
+              now = snapshot("连续搭建后")
+              print(f"[增长] 连续搭建这一段 +{now - before} 字符")
+              before = now
           PY
 
       - name: 界面覆盖率（离「一模一样」还差几个界面）

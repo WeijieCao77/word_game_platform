@@ -3,6 +3,7 @@ import { getStore } from "@/lib/store";
 import { canEditGame } from "@/lib/session";
 import { runtimeAsset } from "@/lib/runtime";
 import { datasetSourcesFor, wrapDataset } from "@/lib/dataset";
+import { injectPlayDiagnostics } from "@/lib/play-diagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +82,18 @@ export async function GET(
   if (content === null) return new NextResponse("not found", { status: 404 });
 
   const ext = rel.split(".").pop()?.toLowerCase() ?? "txt";
-  return new NextResponse(content, {
+  // 入口页出口注入：兜底诊断 + 给脚本标 crossorigin。
+  // 作品的文件一个字都没改——所有已有作品立刻受益，不必等 AI 再写一轮。
+  const body = ext === "html" || ext === "htm" ? injectPlayDiagnostics(content) : content;
+  return new NextResponse(body, {
     headers: {
       "content-type": MIME[ext] ?? MIME.txt,
       "x-content-type-options": "nosniff",
+      // 沙箱 iframe 是不透明源，脚本算跨域，浏览器会把 window.onerror 的详情
+      // 抹成一句 Script error.（行号文件名全没）。配合 index.html 里注入的
+      // crossorigin="anonymous"，这个头让浏览器把真实报错交出来——
+      // 没有它，AI 和作者永远只能看见黑屏加一句废话。
+      "access-control-allow-origin": "*",
       // 只能被本站嵌；发不出任何网络请求；不许开新窗口跳外链
       "content-security-policy":
         "default-src 'self' data: blob:; " +

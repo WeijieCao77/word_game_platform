@@ -53,13 +53,37 @@ if (editKey) {
 }
 
 await page.goto(`${base}/p/${gameId}`, { waitUntil: "networkidle" });
-await page.waitForTimeout(2500);
+await page.waitForTimeout(1500);
 
 const frame = page.frameLocator("iframe.embed-frame");
 const body = frame.locator("body");
 
-// 1. 打得开：页面上得有字
-const text = (await body.innerText().catch(() => "")).trim();
+/**
+ * 等页面自己安静下来再判断——像人一样等打字机打完。
+ *
+ * 文字游戏常见的开场是「一句句往外冒」，几秒钟才停。定死等 2.5 秒去点，
+ * 等于在人家还在打字的时候就下结论，会把正常作品误判成坏的。
+ * 所以改成盯着正文长度，连续 1.2 秒不变就算稳定，最多等 maxMs。
+ */
+async function settle(maxMs = 15000) {
+  const started = Date.now();
+  let last = "";
+  let stableSince = Date.now();
+  while (Date.now() - started < maxMs) {
+    const now = (await body.innerText().catch(() => "")).trim();
+    if (now !== last) {
+      last = now;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= 1200) {
+      return last;
+    }
+    await page.waitForTimeout(300);
+  }
+  return last;
+}
+
+// 1. 打得开：页面上得有字（先等开场演完）
+const text = await settle();
 if (text.length < 30) problems.push(`打开后几乎没有内容（只有 ${text.length} 个字符）——多半是白屏`);
 else notes.push(`开场有 ${text.length} 个字符`);
 
@@ -73,17 +97,18 @@ else notes.push(`可点元素 ${clickCount} 个`);
 let advanced = false;
 if (clickCount > 0) {
   const before = text;
-  for (let i = 0; i < Math.min(clickCount, 3) && !advanced; i++) {
+  // 多试几个：第一个可能是「重来」「全屏」这类不推进剧情的按钮
+  for (let i = 0; i < Math.min(clickCount, 6) && !advanced; i++) {
     try {
       await clickable.nth(i).click({ timeout: 4000 });
-      await page.waitForTimeout(1200);
-      const after = (await body.innerText().catch(() => "")).trim();
+      // 点完同样要等它把话说完再看，别在打字中途下结论
+      const after = await settle(10000);
       if (after !== before) advanced = true;
     } catch {
       /* 这个点不动就试下一个 */
     }
   }
-  if (!advanced) problems.push("点了几下内容都没变化——玩家推进不下去");
+  if (!advanced) problems.push("点遍了能点的东西，内容都没变化——玩家推进不下去");
   else notes.push("点击能推进剧情");
 }
 
@@ -98,8 +123,8 @@ const saved = await page.evaluate((k) => {
 if (saved) {
   const beforeReload = (await body.innerText().catch(() => "")).trim();
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
-  const after = (await page.frameLocator("iframe.embed-frame").locator("body").innerText().catch(() => "")).trim();
+  await page.waitForTimeout(1500);
+  const after = await settle(12000);
   if (after === beforeReload) notes.push("刷新后进度接上了");
   else notes.push("刷新后画面变了（可能是从头开始——作者若想续玩要检查存档恢复）");
 } else {

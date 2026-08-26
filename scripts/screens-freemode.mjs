@@ -30,11 +30,34 @@ const CHROME = process.env.CHROME_PATH ?? "/opt/pw-browsers/chromium-1194/chrome
  *
  * 一开始只数字数，结果一张五行的首发名单表（九十几个字）被判成占位——
  * 表格本来就是密的，选手 ID 也短。所以改成看**实质**：
- * 一页只要有表格行、或有自己的可交互元素、或字够多，就算做出来了；
- * 三样一样都没有才是占位（那种「施工中」的页面）。
+ * 一页只要有表格行、或有自己的可交互元素、或字够多，就算做出来了。
  */
 const THIN_TEXT = 70;
+
+/**
+ * 「建造中」这类空壳，是比空页面更坏的东西。
+ *
+ * 实测里真的撞见过这个：
+ *     积分榜 · 建造中
+ *     规划：按联赛分组的真实积分榜
+ *     第 3 轮上线
+ * 它字数够、还带个标题，按上面那条「有实质」的规矩能混过去；
+ * 而按关键词扫源码的覆盖率更是直接把它算成「积分榜 ✓ 做好了」——
+ * 一个骗人的页面反而让分数更好看。所以这里单拎出来判：
+ * 页面上出现这些话，无论多少字、有几个按钮，一律算占位。
+ */
+const UNDER_CONSTRUCTION = [
+  "建造中", "施工中", "开发中", "制作中", "敬请期待", "即将上线", "尚未实现",
+  "暂未开放", "待实现", "规划：", "规划:", "下一轮", "轮上线",
+  "coming soon", "Coming Soon", "under construction", "TODO", "WIP",
+];
+
+function isUnderConstruction(text) {
+  return UNDER_CONSTRUCTION.some((w) => text.includes(w));
+}
+
 function hasSubstance(r) {
+  if (isUnderConstruction(r.text)) return false;
   return r.tableRows > 0 || r.own > 0 || r.chars >= THIN_TEXT;
 }
 
@@ -117,7 +140,7 @@ for (let i = 0; i < navCount; i++) {
   }
   // 导航自己也算可点元素，扣掉才是这一页真正的交互
   const own = Math.max(0, clickable - navCount);
-  rows.push({ label: labels[i], chars: text.length, own, tableRows, errs: [...new Set(errors)] });
+  rows.push({ label: labels[i], text, chars: text.length, own, tableRows, errs: [...new Set(errors)] });
 }
 
 await browser.close();
@@ -131,6 +154,9 @@ for (const r of rows) {
   if (r.errs.length) {
     flags.push("报错");
     broken += 1;
+  } else if (isUnderConstruction(r.text)) {
+    flags.push("建造中空壳");
+    thin += 1;
   } else if (!hasSubstance(r)) {
     flags.push("占位");
     thin += 1;
@@ -149,6 +175,10 @@ for (const r of rows) {
 }
 
 const good = rows.length - thin - broken;
-console.log(`\n有内容的界面 ${good} / ${rows.length}（占位 ${thin}，报错 ${broken}）`);
-console.log(good === rows.length ? "结论：每个界面都有真东西。" : "结论：还有界面是空的或坏的。");
+const shells = rows.filter((r) => !r.errs.length && isUnderConstruction(r.text)).length;
+console.log(`\n有内容的界面 ${good} / ${rows.length}（占位 ${thin}${shells ? `，其中「建造中」空壳 ${shells}` : ""}，报错 ${broken}）`);
+if (shells) {
+  console.log("「建造中」空壳比空页面更坏：玩家点进去才发现被骗了一次。没做的页面就先别挂进导航。");
+}
+console.log(good === rows.length ? "结论：每个界面都有真东西。" : "结论：还有界面是空的、坏的、或者只是个「建造中」的壳。");
 process.exit(good === rows.length ? 0 : 1);

@@ -53,8 +53,20 @@ function fmtHours(seconds: number): string {
   return `${(seconds / 3600).toFixed(1)} 小时`;
 }
 
+interface LibraryGame {
+  id: string;
+  title: string;
+  author: string;
+  mode: string;
+  plays: number;
+  likes: number;
+  updatedAt: string;
+}
+
 export default function AdminPage(): React.ReactElement {
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [library, setLibrary] = useState<LibraryGame[]>([]);
+  const [busyGame, setBusyGame] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [quotaReqs, setQuotaReqs] = useState<QuotaReq[]>([]);
@@ -90,6 +102,36 @@ export default function AdminPage(): React.ReactElement {
     [loadQuota]
   );
 
+  const loadLibrary = useCallback(async (): Promise<void> => {
+    const res = await fetch("/api/admin/games");
+    if (!res.ok) return;
+    const body = await res.json();
+    setLibrary((body.games ?? []) as LibraryGame[]);
+  }, []);
+
+  /**
+   * 把一部作品从公开库撤下来。
+   *
+   * 只撤不删：删是作者的权利，平台不该替他毁掉作品。撤下只是让它不出现在
+   * 公开列表里，作者带着钥匙照样能看能改能重新发布。
+   */
+  const takeDown = useCallback(
+    async (id: string, published: boolean): Promise<void> => {
+      setBusyGame(id);
+      try {
+        await fetch("/api/admin/games", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, published }),
+        });
+        await loadLibrary();
+      } finally {
+        setBusyGame("");
+      }
+    },
+    [loadLibrary]
+  );
+
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError("");
@@ -103,10 +145,11 @@ export default function AdminPage(): React.ReactElement {
       }
       setStats(body as AdminStats);
       await loadQuota();
+      await loadLibrary();
     } finally {
       setLoading(false);
     }
-  }, [loadQuota]);
+  }, [loadQuota, loadLibrary]);
 
   useEffect(() => {
     void load();
@@ -239,6 +282,37 @@ export default function AdminPage(): React.ReactElement {
                 <td>{fmtHours(g.playSeconds)}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+      <h2 className="section-title">公开游戏库（{library.length}）</h2>
+      <p className="pane-note" style={{ marginBottom: 10 }}>
+        这里列的是玩家在首页能看到的全部作品。撤下只是让它不再出现在公开列表里——
+        作者带着编辑钥匙照样能看能改，也能自己重新发布。删除是作者的权利，平台不代劳。
+      </p>
+      <div className="roster-scroll">
+        <table className="admin-table">
+          <thead>
+            <tr><th>作品</th><th>作者</th><th>形态</th><th>游玩</th><th>点赞</th><th></th></tr>
+          </thead>
+          <tbody>
+            {library.map((g) => (
+              <tr key={g.id}>
+                <td><Link href={g.mode === "code" ? `/p/${g.id}` : `/g/${g.id}`}>{g.title}</Link></td>
+                <td>{g.author || "—"}</td>
+                <td>{g.mode === "code" ? "自由模式" : "快速模式"}</td>
+                <td>{g.plays}</td>
+                <td>{g.likes}</td>
+                <td>
+                  <button className="linklike" disabled={busyGame === g.id} onClick={() => void takeDown(g.id, false)}>
+                    {busyGame === g.id ? "处理中…" : "撤下"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {library.length === 0 && (
+              <tr><td colSpan={6} style={{ color: "var(--muted)" }}>公开库里还没有作品。</td></tr>
+            )}
           </tbody>
         </table>
       </div>

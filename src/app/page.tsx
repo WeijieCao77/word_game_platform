@@ -204,7 +204,6 @@ export default async function HomePage({
                         <div className="desc">{g.description || "（暂无简介）"}</div>
                         <div className="meta">
                           <span className="tag">{KIND_CN[g.kind]}</span>
-                        {g.mode === "code" && <span className="tag">自由模式</span>}
                           {g.mode === "code" && <span className="tag">自由模式</span>}
                           {g.genre && <span className="tag genre-tag">{g.genre}</span>}
                           <span>{g.author}</span>

@@ -154,21 +154,21 @@ jobs:
                   print(f"[写入配置] 卡片 {len(c.get('cards', []))} 张 / 变量 {len(c.get('vars', []))} 个 / "
                         f"结局 {len(c.get('endings', []))} 个 / 决策 {len(c.get('actions') or [])} 个 / "
                         f"实体 {len(c.get('entities') or [])} 个")
-              # 每轮之后看一眼作品长成什么样了——复刻 VAL MANAGER 要的是「一层层长出来」，
-    # 只看最后一轮的总量看不出中间有没有停滞、有没有被整份重写
-    try:
-        fr = urllib.request.Request(f"{BASE}/api/games/{GID}/files", headers={"x-edit-key": GKEY})
-        with urllib.request.urlopen(fr, timeout=60) as resp:
-            fl = json.loads(resp.read().decode()).get("files") or []
-        total = sum(f["size"] for f in fl)
-        print(f"[作品] {len(fl)} 个文件 / 共 {total} 字符：" +
-              "、".join(f"{f['path']} {f['size']}" for f in fl))
-    except Exception as e:
-        print(f"[作品] 取文件清单失败：{e}")
-    msgs.append({"role": "assistant", "content": reply})
-              # 追问用完了就一直说「接着做」——这正是创作者搭大作品时的真实说法，
-    # 反复念最后一句（比如「跑一下校验和模拟」）会把 AI 带进死循环
-    nxt = follow[i] if i < len(follow) else "接着做，往下搭。"
+              # 每轮之后看一眼作品长成什么样了：只看最后一轮的总量，
+              # 看不出中间有没有停滞、有没有被整份重写
+              try:
+                  fr = urllib.request.Request(f"{BASE}/api/games/{GID}/files",
+                                              headers={"x-edit-key": GKEY})
+                  with urllib.request.urlopen(fr, timeout=60) as resp:
+                      fl = json.loads(resp.read().decode()).get("files") or []
+                  total = sum(f["size"] for f in fl)
+                  print(f"[作品] {len(fl)} 个文件 / 共 {total} 字符：" +
+                        "、".join(f"{f['path']} {f['size']}" for f in fl))
+              except Exception as e:
+                  print(f"[作品] 取文件清单失败：{e}")
+              msgs.append({"role": "assistant", "content": reply})
+              # 追问用完了就一直说「接着做」——反复念最后一句会把 AI 带进死循环
+              nxt = follow[i] if i < len(follow) else "接着做，往下搭。"
               msgs.append({"role": "user", "content": nxt})
           PY
 
@@ -270,6 +270,20 @@ jobs:
           npx playwright install --with-deps chromium >/dev/null
           CHROME_PATH="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")" \
             node scripts/smoke-freemode.mjs "$BASE" "$GID"
+
+      # 实测的半成品不该挂在公开游戏库里——老板在首页上看到两张「AI 端到端实测」
+      # 就是这么来的。发布只是为了让冒烟检查不带钥匙能进去，测完就撤。
+      - name: 从公开游戏库撤下来
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          [ -z "$GID" ] && exit 0
+          curl -sS -X POST "$BASE/api/games/$GID/publish" \
+            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -d '{"published":false}' -o /dev/null || true
+          echo "已从公开游戏库撤下（作者带钥匙仍可访问）"
 
       - name: 留个地址
         if: always()

@@ -61,6 +61,8 @@ interface LibraryGame {
   plays: number;
   likes: number;
   updatedAt: string;
+  codeFiles: number;
+  codeBytes: number;
 }
 
 export default function AdminPage(): React.ReactElement {
@@ -293,7 +295,7 @@ export default function AdminPage(): React.ReactElement {
       <div className="roster-scroll">
         <table className="admin-table">
           <thead>
-            <tr><th>作品</th><th>作者</th><th>形态</th><th>游玩</th><th>点赞</th><th></th></tr>
+            <tr><th>作品</th><th>作者</th><th>形态</th><th>体量</th><th>游玩</th><th>点赞</th><th></th></tr>
           </thead>
           <tbody>
             {library.map((g) => (
@@ -301,6 +303,11 @@ export default function AdminPage(): React.ReactElement {
                 <td><Link href={g.mode === "code" ? `/p/${g.id}` : `/g/${g.id}`}>{g.title}</Link></td>
                 <td>{g.author || "—"}</td>
                 <td>{g.mode === "code" ? "自由模式" : "快速模式"}</td>
+                <td>
+                  {g.mode === "code"
+                    ? `${g.codeFiles} 个文件 · ${(g.codeBytes / 1000).toFixed(1)}k 字符`
+                    : "—"}
+                </td>
                 <td>{g.plays}</td>
                 <td>{g.likes}</td>
                 <td>

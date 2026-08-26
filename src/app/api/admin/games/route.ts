@@ -26,9 +26,15 @@ function guard(req: NextRequest): NextResponse | null {
 export function GET(req: NextRequest): NextResponse {
   const bad = guard(req);
   if (bad) return bad;
-  const games = getStore()
-    .listPublished(200, "new")
-    .map((g) => ({
+  const store = getStore();
+  const games = store.listPublished(200, "new").map((g) => {
+    // 自由模式的作品光看标题分不出好坏——两次实测都叫 VAL MANAGER，
+    // 一个 17 万字符、一个 1.9 万。把代码量摆出来，一眼就知道哪个是半成品。
+    const files = g.mode === "code" ? store.fileList(g.id) : [];
+    const codeBytes = files
+      .filter((f) => !f.path.startsWith("data/"))
+      .reduce((n, f) => n + f.size, 0);
+    return {
       id: g.id,
       title: g.title,
       author: g.author,
@@ -36,7 +42,10 @@ export function GET(req: NextRequest): NextResponse {
       plays: g.plays,
       likes: g.likes,
       updatedAt: g.updatedAt,
-    }));
+      codeFiles: files.filter((f) => !f.path.startsWith("data/")).length,
+      codeBytes,
+    };
+  });
   return NextResponse.json({ games });
 }
 

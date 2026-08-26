@@ -8,6 +8,7 @@ import { runAssistant } from "@/lib/ai/agent";
 import { rankLibraryEntries } from "@/lib/library";
 import { clampRounds, runRounds } from "@/lib/ai/auto-build";
 import { trimHistory } from "@/lib/ai/history";
+import { comparePublished, describeDrift } from "@/lib/publish-drift";
 import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -121,6 +122,16 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             onNote?.(`正在写 ${path}…`);
           },
         },
+        // 草稿改了没发布 = 玩家还在跑旧代码。不说出来的话，AI 会把
+        // 「修完还是同一个报错」误判成「这是旧记录」然后停手（实测真发生过）。
+        publishDrift: describeDrift(
+          comparePublished(
+            Object.fromEntries(
+              store.fileList(id).map((f) => [f.path, store.fileRead(id, f.path) ?? ""])
+            ),
+            store.versionLive(id)?.files ?? null
+          )
+        ),
         // 回切（自由 → 快速）：创作者点头后由 AI 触发，文件保留但不再执行
         setMode: (m) => {
           if (store.gameMode(id) !== m) store.gameSetMode(id, m);

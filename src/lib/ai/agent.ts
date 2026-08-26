@@ -317,6 +317,16 @@ export interface AgentContext {
     read: (path: string) => string | null;
     write: (path: string, content: string) => void;
   };
+  /**
+   * 草稿与线上快照的落差，写成一句话（见 lib/publish-drift.ts）。
+   *
+   * 平台的规矩是「作者看草稿、玩家看最近一次发布的快照」，可这条规矩对 AI 是隐形的。
+   * 实测里因此出过一幕：冒烟检查报某个崩溃，AI 修了两轮，报错一模一样，
+   * 第三轮它判定「这是旧记录，行号对不上当前文件」于是不改了——
+   * 观察对，推论错：不是记录旧，是**玩家在玩的那份代码旧**。三轮全白烧。
+   * 所以有落差就明写进上下文。
+   */
+  publishDrift?: string;
   /** 切轨：自由模式写文件时切到 code，创作者同意回切时切回 engine。不传则形态不变 */
   setMode?: (mode: GameMode) => void;
   /**
@@ -447,6 +457,7 @@ export async function runAssistant(
       ? `【当前设计卡】\n${designCard}\n\n` +
         `【游戏信息】${JSON.stringify(config.meta)}\n\n` +
         fileBlock() +
+        (ctx.publishDrift ? `\n\n【发布状态】\n${ctx.publishDrift}` : "") +
         legacyEngineBlock
       : `【当前设计卡】\n${designCard}\n\n` +
         `${configBlock}\n\n` +

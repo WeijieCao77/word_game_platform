@@ -36,7 +36,7 @@
 ### data/teams.csv — 78 支战队
 `id`(T0…) `tag`(LEV) `name`(Leviatán) `region`(Americas/EMEA/Pacific/China)
 `league`(VCT Americas / Challengers EMEA …) `tier`(1=VCT, 2=Challengers)
-`rating`(队伍强度) `reputation`(声望) `budget`(预算) `facilities`(设施等级)
+`rating`(队伍强度) `reputation`(声望) `budget`(预算，美元；这是一笔存量，不是每周收入) `facilities`(设施等级)
 `coach` `coachTactics` `coachDevelopment` `coachMotivation`（主教练三维）
 `assistants`（助教，`|` 分隔） `roster`（首发选手 id，`|` 分隔）
 
@@ -48,10 +48,21 @@ Challengers 四赛区 8 / 8 / 7 / 7 队。
 `role`（分路：决斗者 / 控场 / 先锋 / 哨卫 / 自由人）`roles`（会打的分路，`|` 分隔）
 `flex`(能不能换位) `isIgl`(是不是指挥)
 `overall` `potential` `form`(状态) `morale`(士气) `fatigue`(疲劳)
-`salary`(周薪) `value`(身价) `contractYears` `loyalty`(忠诚) `ambition`(野心)
+`salary`(**年薪**，美元/年) `value`(身价，美元) `contractYears` `loyalty`(忠诚) `ambition`(野心)
 `rounds`(生涯回合数) `agentPool`(常用英雄，`|` 分隔) `traits`(特点标签，`|` 分隔)
 八维能力：`aim` `reaction` `awareness` `utility` `clutch` `teamwork` `communication` `igl`
 真实战绩：`vlrRating` `vlrAcs` `vlrRounds`
+
+> **钱的口径（这条错一次，整个数值系统就散了）**
+>
+> 表里所有金额都是**美元**，`salary` 是**年薪**（中位 5.2 万/年，最高 92.5 万/年，
+> 对得上真实 VCT 的量级）。要显示「周薪」就自己 ÷52，**但同一个数在所有界面必须用
+> 同一个口径**——不能转会页把年薪直接标成「周薪」、财务页又按年薪 ÷52，
+> 那样两页对不上，玩家一眼就看出这游戏的账是假的。
+>
+> 建议：在代码里只保留一个来源（比如 `annualSalary`），要周薪的地方统一走一个
+> `weekly(x) = Math.round(x / 52)` 函数，别在各个页面各算各的。
+> 解约金、身价这类派生值也一样，公式写一处、全局引用。
 
 ### data/analysts.csv — 自由市场上的分析师
 `name` `from`(原东家) `spec`(专精：maps 地图 / opponent 对手 / potential 潜力 /

@@ -2,6 +2,7 @@
 
 import { ROLE_CLASS, STAGE_STEPS, STAGE_VIEW } from "./stages";
 import { ChatMsg } from "./types";
+import Link from "next/link";
 import { fmtWan } from "@/lib/format";
 
 // 工作台左半边：和 AI 驻场工作室对话的地方，也是整个产品的主入口。
@@ -87,7 +88,7 @@ export interface QuotaInfo {
  * 额度给得很足（正常创作根本用不完），但不能让人心里没数——
  * 「我用了多少」本身就是信息，何况用完了要走审批。
  */
-function QuotaMeter({ quota }: { quota: QuotaInfo | null }): React.ReactElement | null {
+function QuotaMeter({ quota, loginHref }: { quota: QuotaInfo | null; loginHref?: string }): React.ReactElement | null {
   if (!quota) return null;
   if (quota.unlimited) {
     return <div className="quota-meter">管理员 · 不限量　累计已用 {fmtWan(quota.used)} tokens</div>;
@@ -103,7 +104,16 @@ function QuotaMeter({ quota }: { quota: QuotaInfo | null }): React.ReactElement 
         {quota.kind === "guest" ? "今日额度" : "AI 额度"} {fmtWan(quota.used)} / {fmtWan(quota.limit)}
         　剩 {fmtWan(quota.remaining)}
       </span>
-      {quota.kind === "guest" && <span className="quota-note">注册后额度大得多</span>}
+      {/* 光说「注册后额度大得多」却不给入口，等于把人晾在那儿——
+          这一句本身就是入口。next 带上当前作品，登录后原地回来。 */}
+      {quota.kind === "guest" &&
+        (loginHref ? (
+          <Link className="quota-note" href={loginHref} style={{ textDecoration: "underline" }}>
+            注册 / 登录，额度大得多 →
+          </Link>
+        ) : (
+          <span className="quota-note">注册后额度大得多</span>
+        ))}
       {low && quota.kind === "user" && <span className="quota-note">用完会自动向管理员申请</span>}
     </div>
   );
@@ -115,6 +125,7 @@ export default function ChatPane({
   chatBusy,
   chatSeconds,
   jobNote,
+  loginHref,
   chatInput,
   onChatInput,
   onSend,
@@ -128,6 +139,8 @@ export default function ChatPane({
   chatSeconds: number;
   /** 后台那一轮干到哪一步了（异步模式下服务端实时报上来，比干等一个转圈强得多） */
   jobNote?: string;
+  /** 游客的注册/登录入口（带 next 回到当前作品）。登录用户不显示 */
+  loginHref?: string;
   chatInput: string;
   onChatInput: (value: string) => void;
   onSend: () => void;
@@ -179,7 +192,7 @@ export default function ChatPane({
           发送
         </button>
       </div>
-      <QuotaMeter quota={quota} />
+      <QuotaMeter quota={quota} loginHref={loginHref} />
     </div>
   );
 }

@@ -789,6 +789,18 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           {errorCount > 0 ? `${errorCount} 个错误 · ` : ""}
           {statusMsg}
         </span>
+        {/* 游客做到一半想注册却找不到入口——额度条上写着「注册后额度大得多」，
+            可整个工作台一个登录入口都没有。next 带上当前作品，登录后原地回来，
+            本机的作品也会被自动收进账号（登录页会拿本地钥匙去认领）。 */}
+        {quota?.kind === "guest" && (
+          <Link
+            className="btn small"
+            href={`/login?next=${encodeURIComponent(`/edit/${id}`)}`}
+            title="注册或登录：额度大得多，作品也不会因为换设备而丢"
+          >
+            注册 / 登录
+          </Link>
+        )}
         <button className="linklike" onClick={() => setTourOpen(true)} title="重看新手引导：每个板块是干嘛的">
           引导
         </button>
@@ -815,6 +827,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           chatBusy={chatBusy}
           chatSeconds={chatSeconds}
               jobNote={jobNote}
+              loginHref={`/login?next=${encodeURIComponent(`/edit/${id}`)}`}
           chatInput={chatInput}
           onChatInput={setChatInput}
           onSend={() => void sendChat()}

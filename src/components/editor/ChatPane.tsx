@@ -65,8 +65,10 @@ function waitingHint(sec: number): string {
   if (sec <= 15) return "";
   if (sec <= 60) return "（聊方案通常十几秒；要动配置的话会久一些，它可能正在跑校验和模拟）";
   if (sec <= 150) return "（正在搭建配置：写卡片 → 校验 → 跑几百局模拟，两三分钟都算正常）";
-  if (sec <= 300) return "（这轮改动比较大，还在迭代配平——校验没过它会自己重来，最多 6 轮）";
-  return "（已经超过 5 分钟，可能是卡住了：刷新页面后把要求拆小一点重发，聊天记录不会丢）";
+  if (sec <= 300) return "（这轮改动比较大，还在迭代配平——校验没过它会自己重来）";
+  // 这一轮跑在后台，不是挂在这个网页上：关掉页面它照样干完，回来还能接上。
+  // 以前这里写的是「可能卡住了，刷新重发」——那是同步时代的话，现在重发只会白烧一轮。
+  return "（这一轮在服务端后台跑，关页面也不会中断；回来打开就能看到结果，别重发）";
 }
 
 export interface QuotaInfo {
@@ -112,6 +114,7 @@ export default function ChatPane({
   chat,
   chatBusy,
   chatSeconds,
+  jobNote,
   chatInput,
   onChatInput,
   onSend,
@@ -123,6 +126,8 @@ export default function ChatPane({
   chatBusy: boolean;
   /** AI 工作中已等待的秒数，超过 15 秒补一句「这是正常的」安抚 */
   chatSeconds: number;
+  /** 后台那一轮干到哪一步了（异步模式下服务端实时报上来，比干等一个转圈强得多） */
+  jobNote?: string;
   chatInput: string;
   onChatInput: (value: string) => void;
   onSend: () => void;
@@ -154,7 +159,9 @@ export default function ChatPane({
         )}
         {chatBusy && (
           <div className="chat-msg system">
-            AI 策划工作中… {chatSeconds}s{waitingHint(chatSeconds)}
+            AI 策划工作中… {chatSeconds}s
+            {jobNote ? `　${jobNote}` : ""}
+            {waitingHint(chatSeconds)}
           </div>
         )}
         <div ref={chatEndRef} />

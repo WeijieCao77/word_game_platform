@@ -74,6 +74,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatSeconds, setChatSeconds] = useState(0);
+  /** 后台那一轮干到哪一步了（异步模式下服务端报上来的一句话） */
+  const [jobNote, setJobNote] = useState("");
   const [hasCover, setHasCover] = useState(false);
   const [assets, setAssets] = useState<AssetItem[] | null>(null);
   const [assetName, setAssetName] = useState("");
@@ -532,16 +534,21 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       if (dirty) await save();
       const controller = new AbortController();
       const kill = setTimeout(() => controller.abort(), 300000);
+      // 异步模式：请求立刻回一个任务号，活在后台跑，这里轮询要结果。
+      // 同步那条路一轮必须在网关的耐心之内跑完（240 秒），最重的那一轮必然 502；
+      // 异步之后连接断了也不影响后台，刷新页面还能接回来。
       const res = await fetch(`/api/games/${id}/assistant`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-edit-key": editKey },
-        body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system") }),
+        body: JSON.stringify({ messages: nextChat.filter((m) => m.role !== "system"), async: true }),
         signal: controller.signal,
       }).finally(() => clearTimeout(kill));
       // 网关超时/请求体过大这类失败返回的是 HTML，不是 JSON——别让真正的原因被吞掉
       const rawText = await res.text();
       let body: {
         error?: string;
+        jobId?: string;
+        job?: { status?: string; note?: string; error?: string };
         reply?: string;
         config?: unknown;
         designCard?: string;
@@ -564,6 +571,26 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         );
       }
       if (!res.ok) throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
+      // 202 + jobId = 后台开跑了，接下来靠轮询。轮询本身很轻（一条 SQL），
+      // 所以 2 秒一次；上限 40 分钟，比服务端 30 分钟的任务超时还宽一点。
+      if (body.jobId) {
+        const jobId = body.jobId;
+        let done: typeof body | null = null;
+        for (let i = 0; i < 1200 && !done; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const p = await fetch(`/api/games/${id}/assistant?job=${encodeURIComponent(jobId)}`, {
+            headers: { "x-edit-key": editKey },
+          }).catch(() => null);
+          if (!p || !p.ok) continue; // 网络抖一下不该让这一轮白跑
+          const pb = await p.json();
+          if (pb.job?.status === "done") done = pb;
+          else if (pb.job?.status === "error") throw new Error(pb.job.error || "这一轮失败了");
+          else if (pb.job?.note) setJobNote(pb.job.note);
+        }
+        setJobNote("");
+        if (!done) throw new Error("这一轮跑了太久还没结束。刷新页面看看结果——服务端是改一次存一次的，做完的部分不会丢。");
+        body = done;
+      }
       setChat((c) => [...c, { role: "assistant", content: body.reply ?? "（无回复）" }]);
       if (body.config) {
         setConfig(body.config as GameConfig);
@@ -690,6 +717,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       }
     } finally {
       setChatBusy(false);
+      setJobNote("");
     }
   }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save]);
 
@@ -786,6 +814,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           chat={chat}
           chatBusy={chatBusy}
           chatSeconds={chatSeconds}
+              jobNote={jobNote}
           chatInput={chatInput}
           onChatInput={setChatInput}
           onSend={() => void sendChat()}

@@ -6,6 +6,7 @@ import { GameConfig } from "@/lib/schema";
 import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
 import { rankLibraryEntries } from "@/lib/library";
+import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -22,7 +23,22 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
   const editKey = req.headers.get("x-edit-key") ?? "";
   const user = currentUser(req);
-  return NextResponse.json({ quota: quotaView(store, { user, quotaKey: quotaKeyOf(req, editKey) }) });
+  // ?job=<id> 是异步那一轮的轮询口：请求早就返回了，活还在后台跑，
+  // 前端靠这里问「跑完没有、跑到哪了」。
+  const jobId = new URL(req.url).searchParams.get("job");
+  if (jobId) {
+    const job = store.jobGet(jobId);
+    if (!job || job.gameId !== id) return NextResponse.json({ error: "没有这个任务" }, { status: 404 });
+    return NextResponse.json({
+      job: { id: job.id, status: job.status, note: job.note, error: job.error, updatedAt: job.updatedAt },
+      ...(job.status === "done" ? (job.result as object) : {}),
+    });
+  }
+  return NextResponse.json({
+    quota: quotaView(store, { user, quotaKey: quotaKeyOf(req, editKey) }),
+    // 页面刷新后还能接回正在跑的那一轮，不至于「我刚才说的话去哪了」
+    running: store.jobRunning(id)?.id ?? null,
+  });
 }
 
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
@@ -51,7 +67,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     return NextResponse.json({ error: verdict.reason, code: verdict.code }, { status: 429 });
   }
 
-  let body: { messages?: { role: string; content: string }[] };
+  let body: { messages?: { role: string; content: string }[]; async?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -65,21 +81,31 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     return NextResponse.json({ error: "缺少用户消息" }, { status: 400 });
   }
 
-  try {
+  const asyncMode = body.async === true;
+  // 一轮的活抽成一个函数：同步模式直接 await，异步模式丢到后台跑。
+  // 两条路跑的是同一段代码，不会出现「异步那条忘了记额度」这种事。
+  const runOneRound = async (onNote?: (note: string) => void): Promise<Record<string, unknown>> => {
     const result = await runAssistant(
       {
         config: record.config as GameConfig,
         designCard: record.designCard,
         mode: store.gameMode(id),
+        // 异步任务不受网关脸色，单轮可以放开跑（默认 12 分钟）——
+        // 这正是异步化要换来的东西：AI 一轮能干完一整块，而不是刚起头就被叫停。
+        budgetMs: asyncMode ? Number(process.env.AI_ROUND_BUDGET_ASYNC_MS ?? 720_000) : undefined,
         // 改一次存一次：网关掐断连接时（线上实测撞过 502），
         // 这一轮已经做完的部分不会白做
-        persist: (patch) => store.update(id, patch),
+        persist: (patch) => {
+          store.update(id, patch);
+          onNote?.("正在写配置…");
+        },
         files: {
           list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size })),
           read: (path) => store.fileRead(id, path),
           write: (path, content) => {
             store.fileWrite(id, path, content);
             if (store.gameMode(id) !== "code") store.gameSetMode(id, "code");
+            onNote?.(`正在写 ${path}…`);
           },
         },
         // 回切（自由 → 快速）：创作者点头后由 AI 触发，文件保留但不再执行
@@ -107,15 +133,45 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       { role: "assistant", content: result.reply || "（无回复）" },
     ]);
     recordSpend(store, { user, quotaKey, gameId: id, tokens: result.totalTokens });
-    const quota = quotaView(store, { user, quotaKey });
-    return NextResponse.json({
+    return {
       reply: result.reply,
       config: result.config,
       designCard: result.designCard,
       filesChanged: result.filesChanged,
       mode: store.gameMode(id),
-      quota,
-    });
+      quota: quotaView(store, { user, quotaKey }),
+    };
+  };
+
+  // 异步模式：请求立刻返回一个任务号，活在后台跑，前端轮询要结果。
+  //
+  // 这才是 502 的根治。同步模式下一轮必须在网关的耐心之内跑完，所以单轮预算
+  // 只能压到 240 秒——AI 一轮干不完一件事，复刻一个大作品要十几轮一个小时。
+  // 异步之后单轮想跑多久跑多久（见 agent 的 AI_ROUND_BUDGET_CODE_MS），
+  // 连接断了也不影响后台那一轮，作者刷新页面还能接回来。
+  if (asyncMode) {
+    if (store.jobRunning(id)) {
+      return NextResponse.json(
+        { error: "这部作品还有一轮在跑，等它出结果再发下一句（同时改同一份配置会互相覆盖）。" },
+        { status: 409 }
+      );
+    }
+    const jobId = randomBytes(9).toString("base64url");
+    if (!store.jobCreate(id, jobId)) {
+      return NextResponse.json({ error: "这部作品还有一轮在跑" }, { status: 409 });
+    }
+    void runOneRound((note) => store.jobNote(jobId, note))
+      .then((payload) => store.jobDone(jobId, payload))
+      .catch((err: unknown) => {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error("[assistant] 异步任务失败:", detail);
+        store.jobFail(jobId, explainAiFailure(detail));
+      });
+    return NextResponse.json({ jobId }, { status: 202 });
+  }
+
+  try {
+    return NextResponse.json(await runOneRound());
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     // 服务端日志留全文，方便按时间点回查（Railway 的 Logs 里能看到）

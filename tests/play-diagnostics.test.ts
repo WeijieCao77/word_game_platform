@@ -55,4 +55,31 @@ describe("自由模式出口注入：黑屏要变成看得懂的报错", () => {
   it("Script error.（跨域遮蔽）要说清是怎么回事，不能让人以为平台在藏信息", () => {
     expect(injectPlayDiagnostics("<head></head>")).toContain("跨域遮蔽");
   });
+
+  // 上线第一天就踩到的回归：一个**全新的空作品**顶上挂着血红的
+  // 「这部作品有一个没被处理的异步错误：Failed to connect to MetaMask」——
+  // 那是玩家浏览器里的加密钱包插件在喊，跟作品毫无关系。
+  // 误报比不报还坏：作者以为平台坏了，AI 还会被指使去修一个不存在的 bug。
+  it("插件噪音一概不管：MetaMask 这类关键词进过滤名单", () => {
+    const code = /<script>([\s\S]*?)<\/script>/.exec(injectPlayDiagnostics("<head></head>"))![1];
+    const noise = /var NOISE = (\/.*?\/i);/.exec(code)![1];
+    const re = new RegExp(noise.slice(1, -2), "i");
+    for (const m of [
+      "Failed to connect to MetaMask",
+      "ethereum is not defined",
+      "ResizeObserver loop completed with undelivered notifications",
+    ]) {
+      expect(re.test(m), m).toBe(true);
+    }
+    // 真正的作品报错不能被误伤
+    expect(re.test("Unexpected token ')'")).toBe(false);
+    expect(re.test("app.textContent is not a function")).toBe(false);
+  });
+
+  it("没被处理的 Promise 拒绝只记录、不弹横幅——它归不了因，十有八九不是作品的错", () => {
+    const code = /<script>([\s\S]*?)<\/script>/.exec(injectPlayDiagnostics("<head></head>"))![1];
+    const handler = /unhandledrejection[\s\S]*?\}\);/.exec(code)![0];
+    expect(handler).toContain("post(");
+    expect(handler).not.toContain("bar(");
+  });
 });

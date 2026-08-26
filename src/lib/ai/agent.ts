@@ -7,6 +7,7 @@ import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designc
 import { LibraryEntry } from "@/lib/library";
 import { viewFile } from "./file-view";
 import { checkFileSyntax, describeProblem } from "@/lib/syntax-check";
+import { checkWiring, describeWiring } from "@/lib/wiring";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -474,6 +475,24 @@ export async function runAssistant(
     return `已拒绝（${what}）：${blockedReason}`;
   };
 
+  /**
+   * 每次写完文件都做一次接线体检。
+   *
+   * 第一级校验只查**单个文件**的语法——实测里撞见过 9 个文件 145,137 字符、
+   * 11 个主界面全在的作品，玩家打开却是一片空白，因为 index.html 少了一行
+   * `<script src="screens-setup.js">`。每个文件单独看都对，拼起来跑不动。
+   * 这一层就是补那个缺口：只报告，不拦截（先写文件、下一步再接进去是正常节奏）。
+   */
+  const wiringNote = (): string => {
+    if (!ctx.files) return "";
+    const bag: Record<string, string> = {};
+    for (const f of ctx.files.list()) bag[f.path] = "";
+    const idx = Object.keys(bag).find((p) => /(^|\/)index\.html$/i.test(p));
+    if (idx) bag[idx] = ctx.files.read(idx) ?? "";
+    const note = describeWiring(checkWiring(bag));
+    return note ? `\n${note}` : "";
+  };
+
   const startedAt = Date.now();
   let outOfTime = false;
   const roundCap = maxToolRounds(mode);
@@ -715,7 +734,7 @@ export async function runAssistant(
           if (bad) return describeProblem(bad);
           ctx.files.write(path, content);
           filesChanged = true;
-          return `已写入 ${path}（${content.length} 字符）。`;
+          return `已写入 ${path}（${content.length} 字符）。${wiringNote()}`;
         }
         case "patch_file": {
           if (!ctx.files) return "这部作品是快速模式，不能改文件。";
@@ -773,7 +792,8 @@ export async function runAssistant(
           const delta = next.length - original.length;
           return (
             `已改 ${path}：${done.join("、")}生效。` +
-            `文件 ${original.length} → ${next.length} 字符（${delta >= 0 ? "+" : ""}${delta}）。`
+            `文件 ${original.length} → ${next.length} 字符（${delta >= 0 ? "+" : ""}${delta}）。` +
+            wiringNote()
           );
         }
         case "read_skill": {

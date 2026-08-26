@@ -6,6 +6,7 @@ import { GameMode } from "@/lib/store/types";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 import { LibraryEntry } from "@/lib/library";
 import { viewFile } from "./file-view";
+import { checkFileSyntax, describeProblem } from "@/lib/syntax-check";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -691,6 +692,10 @@ export async function runAssistant(
             return `路径不合法：${path}（只许相对路径，字母数字点横线斜杠）`;
           }
           if (content.length > 400000) return "单个文件太大了（上限 40 万字符），按模块拆开写。";
+          // 第一级校验：语法不过就不许落盘。带着语法错误上线，玩家看到的是黑屏，
+          // 而错误信息到了浏览器里已经被跨域遮蔽成一句 Script error.，回头谁也查不出来。
+          const bad = checkFileSyntax(path, content);
+          if (bad) return describeProblem(bad);
           ctx.files.write(path, content);
           filesChanged = true;
           return `已写入 ${path}（${content.length} 字符）。`;
@@ -743,6 +748,9 @@ export async function runAssistant(
 
           if (next === original) return "改完之后内容和原来一样，没有实际变化。";
           if (next.length > 400000) return "改完超过单文件上限（40 万字符），把这个文件拆开。";
+          // 同一道第一级校验：patch 之后的成品也得能解析，别让一次局部替换把文件改瘫
+          const badPatch = checkFileSyntax(path, next);
+          if (badPatch) return describeProblem(badPatch);
           ctx.files.write(path, next);
           filesChanged = true;
           const delta = next.length - original.length;

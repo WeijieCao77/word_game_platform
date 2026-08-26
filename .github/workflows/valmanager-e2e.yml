@@ -1,0 +1,291 @@
+name: VAL MANAGER 复刻实测
+
+# 老板的验收标准只有一条：**用这个平台一比一复刻出 VAL MANAGER，功能和 UI 完全一样。**
+# 这条流水线就是量这把尺子的。
+#
+# 跟通用的 ai-e2e 有两处关键不同：
+# 1. 发给 AI 的不是我编的题材梗概，是从原作逐项抽出来的建造说明书
+#    （templates/valmanager/spec.md）
+# 2. **真实世界数据由平台传进作品**（78 队 / 518 人 / 5 名分析师），
+#    不让 AI 自己编名单——编出来的跟「一模一样」不沾边，而且要烧掉整轮预算
+#
+# 产出三样：每轮的 token 与文件增长曲线、冒烟检查（真点一遍）、
+# 以及**界面覆盖率**（原作 11 个主界面 + 12 个弹层，做出来几个）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "搭几轮（每轮把上一轮的回复带上）"
+        required: false
+        default: "12"
+      resume_game:
+        description: "接着搭已有的作品（填作品 id；留空则新建）"
+        required: false
+        default: ""
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # 等线上真的是这次要测的代码再开始——别在会动的靶子上测
+      - name: 等部署跟上
+        run: |
+          set -e
+          want="$(echo "${{ github.sha }}" | cut -c1-7)"
+          echo "要等的 commit：$want"
+          unknowns=0
+          for i in $(seq 1 40); do
+            got="$(curl -sS --max-time 10 "$BASE/api/health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+            if [ "$got" = "$want" ]; then
+              echo "线上已经是 $got，等 20 秒让容器彻底稳下来"
+              sleep 20
+              exit 0
+            fi
+            echo "  线上还是 ${got:-取不到}，15 秒后再看（第 $i 次）"
+            [ "$got" = "unknown" ] && unknowns=$((unknowns + 1))
+            sleep 15
+          done
+          if [ "$unknowns" -ge 8 ]; then
+            echo "::error::线上一直报 commit=unknown：服务活着，但它不知道自己是哪个版本。"
+            echo "::error::多半是这次上线走了 railway up（没有 git 元数据）而线上代码还早于「把 commit 写进构建产物」那次修复。再推一次即可。"
+            exit 1
+          fi
+          echo "::error::等了 10 分钟线上还没跟上（要 $want）。先确认部署再重跑。"
+          exit 1
+
+      - name: 建作品并把真实数据传进去
+        id: create
+        env:
+          RESUME: ${{ inputs.resume_game }}
+        run: |
+          set -e
+          if [ -n "$RESUME" ]; then
+            echo "::error::接着搭已有作品需要那把编辑钥匙，而钥匙不该进 workflow 输入。请留空重跑。"
+            exit 1
+          fi
+          BODY=$(curl -sS -X POST "$BASE/api/games" \
+            -H 'content-type: application/json' \
+            -d '{"title":"VAL MANAGER（平台复刻）","template":"blank-code"}')
+          ID=$(echo "$BODY" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+          KEY=$(echo "$BODY" | sed -n 's/.*"editKey":"\([^"]*\)".*/\1/p')
+          if [ -z "$ID" ] || [ -z "$KEY" ]; then echo "::error::建作品失败：$BODY"; exit 1; fi
+          echo "::add-mask::$KEY"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "作品已创建：$BASE/edit/$ID"
+
+          # 真实世界数据进作品的 data/ 目录。
+          # 沙箱里 connect-src 'none'，作品读不到 .csv——平台会给每张表虚拟一个
+          # 同名的 data/xxx.js，作品 <script src> 引进来、WGP.data("xxx") 取用。
+          # id 与钥匙走环境变量传给 python，别写进命令行（命令行会进日志）
+          export GID="$ID" GKEY="$KEY"
+          python3 - <<'PY'
+          import json, os, urllib.request
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          for name in ("teams", "players", "analysts"):
+              path = f"templates/valmanager/data/{name}.csv"
+              content = open(path, encoding="utf-8").read()
+              req = urllib.request.Request(
+                  f"{BASE}/api/games/{GID}/files", method="PUT",
+                  data=json.dumps({"path": f"data/{name}.csv", "content": content}).encode(),
+                  headers={"content-type": "application/json", "x-edit-key": GKEY})
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  r.read()
+              print(f"  已传 data/{name}.csv（{len(content)} 字符）")
+          PY
+
+      - name: 让线上 AI 照着说明书搭
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, time, urllib.error, urllib.request
+
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+          rounds = int(os.environ.get("ROUNDS") or 12)
+          spec = open("templates/valmanager/spec.md", encoding="utf-8").read()
+
+          # 第一轮把整份说明书发过去；之后按 spec 第七节的十步往下走，
+          # 用完了就一直说「接着做」——这正是创作者搭大作品时的真实说法
+          steps = [
+              "开搭。先把骨架和数据接上：读三张表，做出顶部导航（11 个界面按组分栏）和总览页。",
+              "阵容页：我的首发五人和替补，可排序表格，点一行开选手详情（八维 + 特点 + 合同）。",
+              "赛程和积分榜：按 336 天的日历排赛程，积分榜按联赛分组。",
+              "比赛：地图 ban/pick、逐回合模拟、回合条带、战术暂停、优势拆解，一个都不能少。",
+              "训练：每人专项 + 全队集训 + 双人搭档，计划确认后锁定一周。",
+              "转会：多维报价评分、挂牌、解约、AI 战队之间自己也在转会。",
+              "商务、财务、教练组、设施升级这四块补上。",
+              "关系三轴（士气/怨气/信任）+ 两两羁绊 + 生活事件（伤病/退役/更衣室矛盾）。",
+              "生涯：年度目标、下课、应聘下一家、跨赛季继承。记住这个游戏没有结局。",
+              "打磨：存档、每日简报、教程、手机适配。",
+          ]
+
+          msgs = [{"role": "user", "content": spec}]
+
+          def post_retry(path, payload, tries=3):
+              last = None
+              for k in range(tries):
+                  try:
+                      req = urllib.request.Request(
+                          f"{BASE}{path}", method="POST",
+                          data=json.dumps(payload).encode(),
+                          headers={"content-type": "application/json", "x-edit-key": GKEY})
+                      with urllib.request.urlopen(req, timeout=900) as r:
+                          return json.loads(r.read().decode())
+                  except urllib.error.HTTPError as e:
+                      last = f"HTTP {e.code}：{e.read().decode()[:300]}"
+                      if e.code not in (502, 503, 504):
+                          raise
+                      print(f"  ↻ {last} —— {20 * (k + 1)}s 后重试")
+                      time.sleep(20 * (k + 1))
+                  except Exception as e:
+                      last = str(e)
+                      print(f"  ↻ {last} —— 20s 后重试")
+                      time.sleep(20)
+              raise RuntimeError(last or "未知失败")
+
+          def snapshot(tag):
+              try:
+                  req = urllib.request.Request(f"{BASE}/api/games/{GID}/files",
+                                               headers={"x-edit-key": GKEY})
+                  with urllib.request.urlopen(req, timeout=120) as r:
+                      files = json.loads(r.read().decode()).get("files") or []
+                  code = [f for f in files if not f["path"].startswith("data/")]
+                  total = sum(f["size"] for f in code)
+                  print(f"[{tag}] 作品代码 {len(code)} 个文件 / 共 {total} 字符：" +
+                        "、".join(f"{f['path']} {f['size']}" for f in sorted(code, key=lambda x: -x["size"])[:8]))
+                  return total
+              except Exception as e:
+                  print(f"[{tag}] 取文件清单失败：{e}")
+                  return 0
+
+          before = snapshot("起手")
+          for i in range(rounds):
+              said = msgs[-1]["content"]
+              print(f"\n{'=' * 70}\n第 {i + 1} 轮 · 创作者说：{said[:100]}\n{'=' * 70}")
+              t0 = time.time()
+              try:
+                  body = post_retry(f"/api/games/{GID}/assistant", {"messages": msgs})
+              except Exception as e:
+                  print(f"::warning::第 {i + 1} 轮失败：{e}")
+                  break
+              reply = body.get("reply", "")
+              q = body.get("quota") or {}
+              print(f"[{time.time() - t0:.0f}s] AI 回复：\n{reply[:1800]}")
+              print(f"[额度] 已用 {q.get('used')} / 上限 {q.get('limit')}　身份 {q.get('kind')}")
+              now = snapshot(f"第 {i + 1} 轮后")
+              print(f"[增长] 这一轮 +{now - before} 字符")
+              before = now
+              msgs.append({"role": "assistant", "content": reply})
+              msgs.append({"role": "user", "content": steps[i] if i < len(steps) else "接着做，往下搭。"})
+          PY
+
+      - name: 界面覆盖率（离「一模一样」还差几个界面）
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          BASE = os.environ["BASE"]; GID = os.environ["GID"]; GKEY = os.environ["GKEY"]
+
+          req = urllib.request.Request(f"{BASE}/api/games/{GID}/files", headers={"x-edit-key": GKEY})
+          with urllib.request.urlopen(req, timeout=120) as r:
+              files = json.loads(r.read().decode()).get("files") or []
+          code = [f for f in files if not f["path"].startswith("data/")]
+          if not code:
+              print("::error::作品里一个代码文件都没有")
+              raise SystemExit(1)
+
+          def read(path):
+              rq = urllib.request.Request(
+                  f"{BASE}/api/games/{GID}/files?path={urllib.parse.quote(path)}",
+                  headers={"x-edit-key": GKEY})
+              with urllib.request.urlopen(rq, timeout=120) as resp:
+                  return json.loads(resp.read().decode()).get("content") or ""
+          whole = "".join(read(f["path"]) for f in code)
+
+          # 原作的 11 个主界面 + 12 个弹层/专属组件。
+          # 判定很粗（中文名或英文名出现即算），但方向是对的：一个都没提到，
+          # 就绝不可能做出来了。
+          SCREENS = {
+              "总览": ["总览", "Dashboard", "dashboard"],
+              "阵容": ["阵容", "Squad", "squad"],
+              "战术": ["战术", "Tactics", "tactics"],
+              "训练": ["训练", "Training", "training"],
+              "转会": ["转会", "Transfers", "transfers"],
+              "商务": ["商务", "Commercial", "commercial"],
+              "财务": ["财务", "Finance", "finance"],
+              "赛程": ["赛程", "Schedule", "schedule"],
+              "积分榜": ["积分榜", "Standings", "standings"],
+              "经理生涯": ["生涯", "Career", "career"],
+              "存档": ["存档", "Saves", "saves"],
+          }
+          PARTS = {
+              "选手详情": ["选手详情", "PlayerModal", "playerModal"],
+              "赛前布置": ["赛前布置", "MatchModal", "matchModal"],
+              "逐回合直播": ["逐回合", "MatchLive", "matchLive", "回合直播"],
+              "回合条带": ["回合条带", "RoundRibbon", "roundRibbon"],
+              "战术滑条": ["滑条", "TacticSliders", "tacticSlider"],
+              "优势拆解": ["优势拆解", "WhyPanel", "whyPanel", "EdgeBreakdown"],
+              "对阵表": ["对阵表", "Bracket", "bracket"],
+              "合同条款": ["合同条款", "ContractTerms", "contractTerms"],
+              "每日简报": ["简报", "Digest", "digest"],
+              "地图ban/pick": ["ban", "Ban", "禁用"],
+              "战术暂停": ["暂停", "timeout", "Timeout"],
+              "教练组": ["教练组", "分析师", "Staff", "staff"],
+          }
+          def report(title, spec):
+              hit = [k for k, keys in spec.items() if any(x in whole for x in keys)]
+              miss = [k for k in spec if k not in hit]
+              print(f"\n{title}：{len(hit)} / {len(spec)}")
+              print(f"  有：{'、'.join(hit) or '（一个都没有）'}")
+              print(f"  缺：{'、'.join(miss) or '（都齐了）'}")
+              return len(hit), len(spec)
+
+          print(f"=== 作品代码 {len(code)} 个文件 / 共 {len(whole)} 字符（原作 13,132 行）===")
+          for f in sorted(code, key=lambda x: -x["size"]):
+              print(f"  {f['path']}  {f['size']} 字符")
+          a, at = report("主界面", SCREENS)
+          b, bt = report("弹层与专属组件", PARTS)
+          print(f"\n=== 离「一模一样」：{a + b} / {at + bt} ===")
+
+          # 数据到底用没用上——编名单是这次实测最要防的一件事
+          used = [n for n in ("players", "teams", "analysts") if f'WGP.data("{n}")' in whole or f"WGP.data('{n}')" in whole]
+          print(f"用上的真实数据表：{'、'.join(used) or '（一张都没用——它多半自己编了名单）'}")
+          PY
+
+      - name: 真玩一遍
+        env:
+          GID: ${{ steps.create.outputs.id }}
+          GKEY: ${{ steps.create.outputs.key }}
+        run: |
+          set -e
+          curl -sS -X POST "$BASE/api/games/$GID/publish" \
+            -H "x-edit-key: $GKEY" -H 'content-type: application/json' \
+            -d '{"published":true}' -o /dev/null
+          npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          CHROME_PATH="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")" \
+            node scripts/smoke-freemode.mjs "$BASE" "$GID"
+
+      - name: 留个地址
+        if: always()
+        env:
+          GID: ${{ steps.create.outputs.id }}
+        run: echo "作品：$BASE/p/$GID　（工作台 $BASE/edit/$GID，编辑钥匙已打码）"

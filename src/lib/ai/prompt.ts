@@ -416,6 +416,65 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
 - 不要试图突破沙箱（读 parent、开外链、发请求），一律拿不到还会报错
 `,
   },
+  "运行库": {
+    desc: "自由模式的地基 wgp.js：存档、界面切换、表格进度条、打字机、可复现随机数",
+    body: `
+## 运行库 wgp.js：别再从零写这些
+平台在每一部自由模式作品下面**虚拟出**两个文件，作品不必自带、也不占文件数：
+
+    <link rel="stylesheet" href="wgp.css">
+    <script src="wgp.js"></script>
+
+用它有两个硬理由：一是沙箱那几个坑（localStorage 用不了、fetch 被掐死）它已经替你趟平；
+二是省钱——存档桥、界面路由、表格、进度条、打字机这些**每部作品都要写一遍**的东西，
+写在库里就不用每轮再吐一遍。**不要自己重写这些轮子**，除非创作者明确要另一套观感。
+
+**存档**（沙箱里唯一的持久化）
+    WGP.ready(function (save) { … })   // 平台把存档送回来了才开工；没有存档给你 null
+    WGP.save(obj)                      // 立刻存
+    WGP.saveLater(obj)                 // 防抖存（连点、拖滑条用这个）
+    WGP.clearSave()                    // 清档
+
+**界面切换**（26 个面板也不用手写路由）
+    WGP.mount("#app")                        // 指定根节点
+    WGP.screen("squad", function (root) { … })   // 注册一个界面
+    WGP.nav([{ name: "squad", label: "阵容" }, { name: "market", label: "转会" }])
+    WGP.go("squad", { id: 3 })   // 切过去   WGP.back()  // 返回
+    WGP.refresh()                // 数值改了就地重画当前界面
+
+**界面积木**（全部返回 DOM 节点，用 WGP.el 拼起来）
+    WGP.el("div", { class: "x", text: "字", onClick: fn }, [子节点…])
+    WGP.ui.panel("标题", 内容, { aside: "右上角小字" })
+    WGP.ui.stats([{ label: "资金", value: "1,200 万", hint: "本周 -80" }])
+    WGP.ui.bar(72, 100, { label: "状态", tone: "ok" })     // tone: ok|warn|bad
+    WGP.ui.table(列, 行, { sortable: true, onRow: fn, max: 50 })
+        列 = [{ key: "name", label: "选手" }, { key: "rating", label: "评分", align: "right" }]
+    WGP.ui.actions([{ label: "专项训练", hint: "消耗 1 行动点", onPick: fn }])
+    WGP.ui.modal({ title, body, actions: [{ label, onPick }] })
+    await WGP.ui.confirm("确定解约？")
+    WGP.ui.toast("已保存")
+
+**文字流**（打字机 + 选项，叙事段落用它）
+    var t = WGP.text("#story");
+    await t.say("夜色压下来。");            // 打字机，点一下跳过
+    await t.speak("教练", "这局必须赢。");   // 带说话人
+    var c = await t.choices([{ label: "答应", hint: "士气 +5" }, { label: "拒绝" }]);
+
+**可复现随机数**（Math.random 存不进存档，读档重打结果就变了）
+    var r = WGP.rng(存档.seed || 20260826);
+    r.int(1, 6)  r.chance(0.3)  r.pick(数组)  r.weighted(数组)  r.shuffle(数组)  r.float()
+    存档时把 r.seed 一起存下来，读档 WGP.rng(存档.seed) 就接得上。
+
+**零碎**：WGP.fmt.num(1234567) → "1,234,567"；WGP.fmt.pct(0.42)；WGP.fmt.clamp(x, 0, 100)；await WGP.wait(300)
+
+**皮肤**：wgp.css 的颜色全是 CSS 变量，在自己的 style.css 里重写 :root 就换一套皮，
+不必跟它打架：--wgp-bg / --wgp-panel / --wgp-line / --wgp-ink / --wgp-dim /
+--wgp-accent / --wgp-ok / --wgp-warn / --wgp-bad / --wgp-radius / --wgp-font / --wgp-serif。
+
+**边界**：运行库只做壳，不碰玩法。数值怎么算、剧情怎么走、比赛怎么模拟，那是你写的代码的事。
+要是某个积木不够用，自己写一个就行——它不是笼子，是省事的地基。
+`,
+  },
   "淘汰赛": {
     desc: "季后赛对阵表：种子、轮次、夺冠",
     body: `## 淘汰赛对阵表（brackets）
@@ -596,7 +655,7 @@ export function pickSkills(config: GameConfig, mode: GameMode = "engine"): strin
   // 自由模式：游戏本体是作者写的代码，引擎那几包（经营模块/淘汰赛/关系网/待办箱）
   // 讲的是配置怎么写，在这里一条都用不上，发了只会误导。留下文笔与自由模式本身。
   if (mode === "code") {
-    return ["自由模式", "文笔"];
+    return ["自由模式", "运行库", "文笔"];
   }
 
   // 文笔：叙事向的题材必发；经营向的也发，结算文案同样是文案

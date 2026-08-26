@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { canEditGame } from "@/lib/session";
+import { runtimeAsset } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,9 @@ export async function GET(
     if (!ok) return new NextResponse("not published", { status: 403 });
   }
 
-  const content = store.fileRead(id, rel);
+  // 作品自己的文件优先；没有再看是不是运行库的虚拟文件（wgp.js / wgp.css）——
+  // 作者想换掉运行库，写一个同名文件就顶掉了
+  const content = store.fileRead(id, rel) ?? runtimeAsset(rel);
   if (content === null) return new NextResponse("not found", { status: 404 });
 
   const ext = rel.split(".").pop()?.toLowerCase() ?? "txt";

@@ -123,7 +123,20 @@ export default function FilesTab({
             </button>
           </div>
         ))}
+        {/* 运行库不是作品的文件，是平台垫在下面的地基——列在这里是让作者知道它存在，
+            不然他只会看到代码里凭空冒出来的 wgp.js，以为是 AI 漏写了文件 */}
+        <div className="files-row files-row-virtual">
+          <span className="files-name" title="平台提供，不占作品文件数">
+            wgp.js · wgp.css
+          </span>
+          <span className="files-size">平台运行库</span>
+        </div>
       </div>
+      <p className="pane-note files-hint">
+        <code>wgp.js</code> / <code>wgp.css</code> 是平台替每部自由模式作品垫的地基——存档、
+        界面切换、表格进度条、打字机、可复现随机数都在里面，作品直接引用就行，不必自带。
+        想换掉它，自己写一个同名文件即可。
+      </p>
 
       {open && (
         <div className="files-editor">

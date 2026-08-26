@@ -103,10 +103,21 @@ describe("自由模式下发给 AI 的守则", () => {
     expect(buildSystemPrompt(cfg, "engine")).toContain("自由模式");
   });
 
-  it("code 模式省掉了引擎配置那一大段，提示明显更短", () => {
+  it("code 模式省掉了引擎配置那一大段，换上运行库那一段", () => {
     const engine = buildSystemPrompt(cfg, "engine");
     const code = buildSystemPrompt(cfg, "code");
-    expect(code.length).toBeLessThan(engine.length);
+
+    // 引擎那套配置规则在自由模式里一条都用不上，发了只会误导
+    expect(engine).toContain("## 游戏配置结构（GameConfig）");
+    expect(code).not.toContain("## 游戏配置结构（GameConfig）");
+
+    // 换来的是运行库的用法——这一段是**故意加的成本**：
+    // 它让 AI 不必每轮重写存档桥、界面路由、表格、打字机，省下的远多于它自己占的
+    expect(code).toContain("运行库 wgp.js");
+    expect(code).toContain("WGP.ready(");
+
+    // 但也要有个上限，免得技能包越塞越肥：净多出来的不许超过 4k 字符
+    expect(code.length - engine.length).toBeLessThan(4000);
   });
 });
 

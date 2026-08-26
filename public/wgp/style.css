@@ -1,0 +1,301 @@
+/*!
+ * 字游 · 自由模式运行库的皮肤（wgp.css）
+ *
+ * 只管三件事：暗色底子好看、手机上排得下、作者想改随手能改。
+ * 所有颜色走 CSS 变量——作者在自己的 style.css 里重写 :root 就换了一套皮，
+ * 不必跟这份文件打架。
+ */
+
+:root {
+  --wgp-bg: #0e1116;
+  --wgp-panel: #161b22;
+  --wgp-panel-2: #1c222b;
+  --wgp-line: #262d38;
+  --wgp-ink: #e6edf3;
+  --wgp-dim: #8b95a3;
+  --wgp-accent: #7cc4ff;
+  --wgp-ok: #56d364;
+  --wgp-warn: #e3b341;
+  --wgp-bad: #f85149;
+  --wgp-radius: 10px;
+  --wgp-font: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --wgp-serif: "Noto Serif SC", "Songti SC", Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--wgp-bg);
+  color: var(--wgp-ink);
+  font-family: var(--wgp-font);
+  font-size: 15px;
+  line-height: 1.7;
+  /* 手机上左右乱晃是自由模式最常见的毛病，从根上掐掉 */
+  overflow-x: hidden;
+}
+
+.wgp-root {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 14px 14px 40px;
+  min-height: 100vh;
+}
+
+/* ── 导航 ─────────────────────────────────────────────── */
+.wgp-nav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid var(--wgp-line);
+  margin-bottom: 14px;
+  scrollbar-width: none;
+}
+.wgp-nav::-webkit-scrollbar { display: none; }
+.wgp-nav-item {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--wgp-dim);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: var(--wgp-radius);
+  cursor: pointer;
+}
+.wgp-nav-item:hover { color: var(--wgp-ink); }
+.wgp-nav-item.is-on {
+  color: var(--wgp-ink);
+  background: var(--wgp-panel);
+  border-color: var(--wgp-line);
+}
+
+/* ── 面板 ─────────────────────────────────────────────── */
+.wgp-panel {
+  background: var(--wgp-panel);
+  border: 1px solid var(--wgp-line);
+  border-radius: var(--wgp-radius);
+  margin: 0 0 14px;
+  overflow: hidden;
+}
+.wgp-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--wgp-line);
+  background: var(--wgp-panel-2);
+}
+.wgp-panel-title { font-weight: 600; font-size: 14px; letter-spacing: .03em; }
+.wgp-panel-aside { color: var(--wgp-dim); font-size: 12.5px; }
+.wgp-panel-body { padding: 14px; }
+.wgp-panel-body > :first-child { margin-top: 0; }
+.wgp-panel-body > :last-child { margin-bottom: 0; }
+
+/* ── 数值 ─────────────────────────────────────────────── */
+.wgp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 10px;
+}
+.wgp-stat {
+  background: var(--wgp-panel-2);
+  border: 1px solid var(--wgp-line);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+.wgp-stat-label { color: var(--wgp-dim); font-size: 12px; line-height: 1.4; }
+.wgp-stat-value { font-size: 20px; font-weight: 600; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.wgp-stat-hint { color: var(--wgp-dim); font-size: 11.5px; line-height: 1.4; }
+
+/* ── 进度条 ───────────────────────────────────────────── */
+.wgp-bar { margin: 0 0 9px; }
+.wgp-bar-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--wgp-dim);
+  margin-bottom: 3px;
+}
+.wgp-bar-num { color: var(--wgp-ink); font-variant-numeric: tabular-nums; }
+.wgp-bar-track {
+  height: 6px;
+  background: var(--wgp-line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.wgp-bar-fill {
+  height: 100%;
+  background: var(--wgp-accent);
+  border-radius: 999px;
+  transition: width .35s ease;
+}
+.wgp-bar.tone-ok .wgp-bar-fill { background: var(--wgp-ok); }
+.wgp-bar.tone-warn .wgp-bar-fill { background: var(--wgp-warn); }
+.wgp-bar.tone-bad .wgp-bar-fill { background: var(--wgp-bad); }
+
+/* ── 表格 ─────────────────────────────────────────────── */
+/* 宽表在手机上只让表格自己横向滚，页面不跟着晃 */
+.wgp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.wgp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.wgp-table th, .wgp-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--wgp-line);
+  text-align: left;
+}
+.wgp-table th {
+  color: var(--wgp-dim);
+  font-weight: 500;
+  font-size: 12.5px;
+  position: sticky;
+  top: 0;
+  background: var(--wgp-panel-2);
+}
+.wgp-table th.sortable { cursor: pointer; user-select: none; }
+.wgp-table th.sortable:hover { color: var(--wgp-ink); }
+.wgp-table th.is-sorted { color: var(--wgp-accent); }
+.wgp-table td { font-variant-numeric: tabular-nums; }
+.wgp-table .align-right { text-align: right; }
+.wgp-table .align-center { text-align: center; }
+.wgp-table tbody tr:last-child td { border-bottom: none; }
+.wgp-table tbody tr.clickable { cursor: pointer; }
+.wgp-table tbody tr.clickable:hover { background: var(--wgp-panel-2); }
+.wgp-empty { color: var(--wgp-dim); font-size: 13px; padding: 14px 2px; text-align: center; }
+
+/* ── 按钮 ─────────────────────────────────────────────── */
+.wgp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wgp-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  background: var(--wgp-panel-2);
+  border: 1px solid var(--wgp-line);
+  color: var(--wgp-ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: var(--wgp-radius);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s ease, background .15s ease;
+}
+.wgp-btn:hover:not(:disabled) { border-color: var(--wgp-accent); }
+.wgp-btn:disabled { opacity: .45; cursor: not-allowed; }
+.wgp-btn small { color: var(--wgp-dim); font-size: 11.5px; line-height: 1.4; }
+.wgp-btn.tone-primary { border-color: var(--wgp-accent); color: var(--wgp-accent); }
+.wgp-btn.tone-bad { border-color: var(--wgp-bad); color: var(--wgp-bad); }
+
+/* ── 弹层 ─────────────────────────────────────────────── */
+.wgp-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 50;
+}
+.wgp-modal {
+  background: var(--wgp-panel);
+  border: 1px solid var(--wgp-line);
+  border-radius: 14px;
+  max-width: 30rem;
+  width: 100%;
+  max-height: 86vh;
+  overflow: auto;
+}
+.wgp-modal-head { padding: 13px 16px; border-bottom: 1px solid var(--wgp-line); font-weight: 600; }
+.wgp-modal-body { padding: 15px 16px; }
+.wgp-modal-body > :first-child { margin-top: 0; }
+.wgp-modal-body > :last-child { margin-bottom: 0; }
+.wgp-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--wgp-line);
+}
+
+/* ── 提示条 ───────────────────────────────────────────── */
+.wgp-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: center;
+  z-index: 60;
+  pointer-events: none;
+  max-width: 90vw;
+}
+.wgp-toast {
+  background: var(--wgp-panel-2);
+  border: 1px solid var(--wgp-line);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  opacity: 1;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.wgp-toast.out { opacity: 0; transform: translateY(6px); }
+
+/* ── 文字流 ───────────────────────────────────────────── */
+.wgp-stream {
+  font-family: var(--wgp-serif);
+  font-size: 16px;
+  line-height: 1.95;
+  max-height: 100%;
+  overflow-y: auto;
+}
+.wgp-line { margin: 0 0 .9em; white-space: pre-wrap; }
+.wgp-line.wgp-echo { color: var(--wgp-accent); font-family: var(--wgp-font); font-size: 14px; }
+.wgp-say { margin: 0 0 .9em; }
+.wgp-who { color: var(--wgp-accent); font-family: var(--wgp-font); font-size: 12.5px; letter-spacing: .05em; }
+.wgp-say .wgp-line { margin: 0; }
+.wgp-choices { display: flex; flex-direction: column; gap: 8px; margin: 1.2em 0 .6em; }
+.wgp-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--wgp-panel);
+  border: 1px solid var(--wgp-line);
+  color: var(--wgp-ink);
+  font: inherit;
+  font-family: var(--wgp-font);
+  font-size: 14.5px;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: var(--wgp-radius);
+  cursor: pointer;
+}
+.wgp-choice:hover:not(.is-off) { border-color: var(--wgp-accent); }
+.wgp-choice.is-off { opacity: .45; cursor: not-allowed; }
+.wgp-choice small { color: var(--wgp-dim); font-size: 12px; }
+
+.wgp-error {
+  color: var(--wgp-bad);
+  border: 1px solid var(--wgp-bad);
+  border-radius: var(--wgp-radius);
+  padding: 12px 14px;
+  font-size: 13.5px;
+}
+
+/* ── 手机 ─────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  .wgp-root { padding: 10px 10px 32px; }
+  .wgp-stat-value { font-size: 18px; }
+  .wgp-actions .wgp-btn { flex: 1 1 auto; }
+  .wgp-stream { font-size: 15.5px; }
+}

@@ -457,6 +457,12 @@ body.splitting * {
 .files-row:last-child { border-bottom: 0; }
 .files-row.on { background: var(--panel); }
 
+/* 平台运行库那一行：看得见、但点不开也删不掉——它不是作品的文件 */
+.files-row-virtual { color: var(--muted); cursor: default; }
+.files-row-virtual .files-name { cursor: default; color: inherit; }
+.files-hint { margin: 8px 14px 0; line-height: 1.7; }
+.files-hint code { font-size: 12px; }
+
 .files-name {
   background: none;
   border: 0;

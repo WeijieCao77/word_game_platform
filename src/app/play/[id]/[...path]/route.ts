@@ -54,23 +54,30 @@ export async function GET(
   const record = store.get(id);
   if (!record) return new NextResponse("not found", { status: 404 });
 
+  // 作者带着凭据来 = 看草稿（他要看的正是刚改完的东西）；
+  // 玩家 = 看最近一次发布的那份快照。
+  const key = req.headers.get("x-edit-key") ?? new URL(req.url).searchParams.get("k") ?? "";
+  const isAuthor =
+    (pass && store.checkPreviewToken(id, pass)) || canEditGame(req, id) || store.checkEditKey(id, key);
+
   // 未发布的作品只有作者本人看得到。三种凭据：
   //   1. 请求头（接口调用）
   //   2. cookie（工作台预览换来的通行证——**子资源只有这一条走得通**：
   //      index.html 里相对引用的 style.css / game.js，浏览器不会带上 ?k=）
   //   3. ?k=（直接开链接时的兜底）
-  if (!record.published) {
-    const key = req.headers.get("x-edit-key") ?? new URL(req.url).searchParams.get("k") ?? "";
-    const ok =
-      (pass && store.checkPreviewToken(id, pass)) || canEditGame(req, id) || store.checkEditKey(id, key);
-    if (!ok) return new NextResponse("not published", { status: 403 });
-  }
+  if (!record.published && !isAuthor) return new NextResponse("not published", { status: 403 });
 
   // 作品自己的文件优先，没有再看两种虚拟文件：
   //   1. 运行库 wgp.js / wgp.css——写一个同名文件就顶掉了
   //   2. 数据表的孪生 js：请求 data/roster.js 时，把 data/roster.csv 包成一段赋值语句
   //      （沙箱里 connect-src 'none'，作品读不到 .csv，只能靠 <script src> 进来）
-  const content = store.fileRead(id, rel) ?? runtimeAsset(rel) ?? datasetTwin(store, id, rel);
+  // 玩家读线上快照；作者读草稿。快照里没有的路径（运行库、数据表孪生 js）照旧兜底。
+  const live = isAuthor ? null : store.versionLive(id);
+  const own = live ? (live.files[rel] ?? null) : store.fileRead(id, rel);
+  const content =
+    own ??
+    runtimeAsset(rel) ??
+    (live ? datasetTwinFrom(live.files, rel) : datasetTwin(store, id, rel));
   if (content === null) return new NextResponse("not found", { status: 404 });
 
   const ext = rel.split(".").pop()?.toLowerCase() ?? "txt";
@@ -101,6 +108,17 @@ function datasetTwin(store: ReturnType<typeof getStore>, id: string, rel: string
   for (const src of spec.candidates) {
     const raw = store.fileRead(id, src);
     if (raw !== null) return wrapDataset(spec.name, src, raw);
+  }
+  return null;
+}
+
+/** 快照里的数据表 → 孪生 js（玩家侧走这条，读的是发布那一刻的那份表） */
+function datasetTwinFrom(files: Record<string, string>, rel: string): string | null {
+  const spec = datasetSourcesFor(rel);
+  if (!spec) return null;
+  for (const src of spec.candidates) {
+    const raw = files[src];
+    if (raw !== undefined) return wrapDataset(spec.name, src, raw);
   }
   return null;
 }

@@ -118,6 +118,8 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN ai_tokens INTEGER NOT NULL DEFAULT 0",
       // 作品形态：engine=配置喂给通用引擎（快速模式）；code=自带 HTML 包（自由模式）
       "ALTER TABLE games ADD COLUMN mode TEXT NOT NULL DEFAULT 'engine'",
+      // 线上正在跑第几版；0 = 还没发布过任何版本
+      "ALTER TABLE games ADD COLUMN live_version INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
@@ -189,6 +191,25 @@ export class SqliteGameStore implements GameStore {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (game_id, path)
       );
+      -- 发布出去的版本。
+      --
+      -- 在这之前，作品只有一份 config 和一套 game_files，published 只是个布尔开关——
+      -- 也就是说**作者在工作台里每保存一次，线上立刻就变**。AI 哪一轮写坏了，
+      -- 玩家当场就玩到坏的；玩到一半的人，游戏在他脚下换了；存档格式一改进度就没了。
+      -- 而且退不回去。
+      --
+      -- 现在分开：作者改的是草稿，玩家看到的是**最近一次发布的快照**，
+      -- 「发布新版本」才把草稿推上去，坏了可以回滚到上一版。
+      CREATE TABLE IF NOT EXISTS game_versions (
+        game_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        at TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        config TEXT NOT NULL,
+        files TEXT NOT NULL DEFAULT '{}',
+        PRIMARY KEY (game_id, version)
+      );
+
       -- 自由模式作品在浏览器里抛出来的异常。
       -- 快速模式有三级校验 + 600 局模拟兜着，写错了当场打回；自由模式一条都没有，
       -- AI 写完就交差，永远不知道自己的游戏炸了。运行库把异常送回来，存在这儿，
@@ -348,6 +369,7 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("DELETE FROM game_assets WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_files WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_versions WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
 
@@ -739,6 +761,89 @@ export class SqliteGameStore implements GameStore {
 
   fileDelete(gameId: string, path: string): void {
     this.db.prepare("DELETE FROM game_files WHERE game_id = ? AND path = ?").run(gameId, path);
+  }
+
+  /** 每部作品最多留几个历史版本——够回滚就行，不必当版本控制系统用 */
+  private static readonly KEEP_VERSIONS = 10;
+
+  /**
+   * 把当前草稿存成一个新版本并推上线。
+   *
+   * 快速模式存的是 config，自由模式存的是全部文件（数据表也一起，
+   * 不然回滚之后作品会去引用一份已经不在的表）。
+   */
+  versionPublish(gameId: string, note = ""): number {
+    const row = this.db.prepare("SELECT config FROM games WHERE id = ?").get(gameId) as
+      | { config: string }
+      | undefined;
+    if (!row) throw new Error("游戏不存在");
+
+    const files: Record<string, string> = {};
+    for (const f of this.fileList(gameId)) {
+      const content = this.fileRead(gameId, f.path);
+      if (content !== null) files[f.path] = content;
+    }
+    const next =
+      ((this.db.prepare("SELECT MAX(version) AS v FROM game_versions WHERE game_id = ?").get(gameId) as
+        | { v: number | null }
+        | undefined)?.v ?? 0) + 1;
+
+    this.db
+      .prepare("INSERT INTO game_versions (game_id, version, at, note, config, files) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(gameId, next, new Date().toISOString(), String(note).slice(0, 200), row.config, JSON.stringify(files));
+    this.db.prepare("UPDATE games SET live_version = ? WHERE id = ?").run(next, gameId);
+    // 只留最近几版，但**正在线上的那一版永远不删**（回滚之后老版本可能才是 live）
+    this.db
+      .prepare(
+        "DELETE FROM game_versions WHERE game_id = ? AND version <> ? AND version NOT IN " +
+          "(SELECT version FROM game_versions WHERE game_id = ? ORDER BY version DESC LIMIT ?)"
+      )
+      .run(gameId, next, gameId, SqliteGameStore.KEEP_VERSIONS);
+    return next;
+  }
+
+  versionList(gameId: string): { version: number; at: string; note: string; live: boolean }[] {
+    const live = this.liveVersion(gameId);
+    return (
+      this.db
+        .prepare("SELECT version, at, note FROM game_versions WHERE game_id = ? ORDER BY version DESC")
+        .all(gameId) as { version: number; at: string; note: string }[]
+    ).map((v) => ({ ...v, live: v.version === live }));
+  }
+
+  liveVersion(gameId: string): number {
+    const row = this.db.prepare("SELECT live_version FROM games WHERE id = ?").get(gameId) as
+      | { live_version?: number }
+      | undefined;
+    return row?.live_version ?? 0;
+  }
+
+  /**
+   * 玩家应该看到的那一份。没发布过任何版本就返回 null——
+   * 调用方要据此决定「按草稿渲染」还是「这作品还没上线」。
+   */
+  versionLive(gameId: string): { version: number; config: unknown; files: Record<string, string> } | null {
+    const v = this.liveVersion(gameId);
+    if (!v) return null;
+    const row = this.db
+      .prepare("SELECT version, config, files FROM game_versions WHERE game_id = ? AND version = ?")
+      .get(gameId, v) as { version: number; config: string; files: string } | undefined;
+    if (!row) return null;
+    try {
+      return { version: row.version, config: JSON.parse(row.config), files: JSON.parse(row.files || "{}") };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 回滚：把线上切回某个历史版本。草稿一个字都不动。 */
+  versionRollback(gameId: string, version: number): boolean {
+    const exists = this.db
+      .prepare("SELECT 1 FROM game_versions WHERE game_id = ? AND version = ?")
+      .get(gameId, version);
+    if (!exists) return false;
+    this.db.prepare("UPDATE games SET live_version = ? WHERE id = ?").run(version, gameId);
+    return true;
   }
 
   /**

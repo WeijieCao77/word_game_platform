@@ -26,9 +26,19 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     }
     return NextResponse.json({ error: "游戏未发布" }, { status: 404 });
   }
+  // 作者拿到的是草稿（他要接着改的那份）；玩家拿到的是最近一次发布的快照。
+  // 这条分界线是整套版本机制的意义所在——以前作者一保存线上立刻变，
+  // AI 写坏一轮，玩家当场就玩到坏的，还退不回去。
+  const live = canEdit ? null : store.versionLive(id);
   return NextResponse.json({
     id: record.id,
-    config: record.config,
+    config: (live?.config ?? record.config) as typeof record.config,
+    liveVersion: store.liveVersion(id),
+    // 草稿和线上不一样时，工作台顶栏要提示「有未发布的改动」
+    hasUnpublished:
+      canEdit && record.published
+        ? JSON.stringify(store.versionLive(id)?.config ?? null) !== JSON.stringify(record.config)
+        : false,
     author: record.author,
     published: record.published,
     canEdit,

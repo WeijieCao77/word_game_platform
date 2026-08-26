@@ -154,6 +154,19 @@ export interface GameStore {
    * 自由模式原本一条都没有——AI 写完就交差，永远不知道自己的游戏炸了，
    * 玩家看到白屏，作者看到的是「AI 说做好了」。
    */
+  /**
+   * 发布版本。
+   *
+   * 在这之前，作者在工作台里每保存一次线上立刻就变——AI 哪一轮写坏了玩家当场玩到坏的，
+   * 玩到一半的人游戏在他脚下换了，而且退不回去。现在草稿与线上分开：
+   * 作者改草稿，玩家看到的是最近一次发布的快照，坏了能回滚。
+   */
+  versionPublish(gameId: string, note?: string): number;
+  versionList(gameId: string): { version: number; at: string; note: string; live: boolean }[];
+  liveVersion(gameId: string): number;
+  versionLive(gameId: string): { version: number; config: unknown; files: Record<string, string> } | null;
+  versionRollback(gameId: string, version: number): boolean;
+
   errorAdd(gameId: string, e: { message: string; stack?: string; source?: string }): void;
   errorList(gameId: string): { at: string; message: string; stack: string; source: string }[];
   errorClear(gameId: string): void;

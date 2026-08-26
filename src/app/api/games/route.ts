@@ -4,7 +4,7 @@ import path from "node:path";
 import { getStore } from "@/lib/store";
 import { currentUser } from "@/lib/session";
 import { blankLife, blankSim, blankStory } from "@/lib/blank";
-import { blankCodeIndex } from "@/lib/blank-code";
+import { blankCodeFiles } from "@/lib/blank-code";
 import { validateGameConfig } from "@/lib/schema";
 import { DESIGN_CARD_TEMPLATE } from "@/lib/ai/designcard";
 
@@ -87,8 +87,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const store = getStore();
   const { id, editKey } = store.create({ config, author, designCard: DESIGN_CARD_TEMPLATE, ownerId: user?.id });
   if (template === "blank-code") {
-    // 先落一份起手页：预览不至于白屏，AI 也有个能照着改的骨架
-    store.fileWrite(id, "index.html", blankCodeIndex(title));
+    // 先落起手三件套：预览不至于白屏，AI 也有个能照着改的骨架——
+    // 而且从第一秒就是 index.html / style.css / game.js 拆开的，
+    // 免得它把整个作品堆进一份文件（那样改一处就要整份重吐）
+    for (const f of blankCodeFiles(title)) store.fileWrite(id, f.path, f.content);
     store.gameSetMode(id, "code");
   }
   return NextResponse.json({ id, editKey });

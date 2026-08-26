@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runInNewContext } from "node:vm";
 import { runtimeAsset, isRuntimeAsset, runtimeVersion } from "../src/lib/runtime";
-import { blankCodeIndex } from "../src/lib/blank-code";
+import { blankCodeIndex, blankCodeFiles } from "../src/lib/blank-code";
 import { wrapDataset } from "../src/lib/dataset";
 
 /**
@@ -330,23 +330,40 @@ describe("数据表", () => {
   });
 });
 
-describe("起手页就用运行库", () => {
-  it("引了 wgp.css / wgp.js，示范了正确的存档写法", () => {
+describe("起手三件套", () => {
+  it("从第一秒就是拆开的：index.html / style.css / game.js", () => {
+    const files = blankCodeFiles("测试作品");
+    expect(files.map((f) => f.path)).toEqual(["index.html", "style.css", "game.js"]);
+  });
+
+  it("index.html 只留骨架：引运行库、引自己的两份文件，不塞逻辑", () => {
     const html = blankCodeIndex("测试作品");
     expect(html).toContain('href="wgp.css"');
+    expect(html).toContain('href="style.css"');
     expect(html).toContain('src="wgp.js"');
-    expect(html).toContain("WGP.ready(");
-    expect(html).toContain("WGP.save(");
+    expect(html).toContain('src="game.js"');
+    // 逻辑不该留在 html 里——留了 AI 就会接着往里堆
+    expect(html).not.toContain("WGP.screen(");
+  });
+
+  it("game.js 示范了正确的存档写法", () => {
+    const js = blankCodeFiles("测试作品").find((f) => f.path === "game.js")!.content;
+    expect(js).toContain("WGP.ready(");
+    expect(js).toContain("WGP.save(");
+    expect(js).toContain("WGP.mount(");
   });
 
   it("不示范沙箱里用不了的东西", () => {
-    const html = blankCodeIndex("测试作品");
+    const whole = blankCodeFiles("测试作品")
+      .map((f) => f.content)
+      .join("");
     for (const banned of ["localStorage", "sessionStorage", "document.cookie"]) {
-      expect(html.includes(banned)).toBe(false);
+      expect(whole.includes(banned)).toBe(false);
     }
   });
 
-  it("仍然小于实测脚本判「只剩起手页」的那条线（3000 字符）", () => {
-    expect(blankCodeIndex("测试作品").length).toBeLessThan(3000);
+  it("三份加起来仍小于实测脚本判「只剩起手页」的那条线（6000 字符）", () => {
+    const total = blankCodeFiles("测试作品").reduce((n, f) => n + f.content.length, 0);
+    expect(total).toBeLessThan(6000);
   });
 });

@@ -154,8 +154,21 @@ jobs:
                   print(f"[写入配置] 卡片 {len(c.get('cards', []))} 张 / 变量 {len(c.get('vars', []))} 个 / "
                         f"结局 {len(c.get('endings', []))} 个 / 决策 {len(c.get('actions') or [])} 个 / "
                         f"实体 {len(c.get('entities') or [])} 个")
-              msgs.append({"role": "assistant", "content": reply})
-              nxt = follow[min(i, len(follow) - 1)] if follow else "继续。"
+              # 每轮之后看一眼作品长成什么样了——复刻 VAL MANAGER 要的是「一层层长出来」，
+    # 只看最后一轮的总量看不出中间有没有停滞、有没有被整份重写
+    try:
+        fr = urllib.request.Request(f"{BASE}/api/games/{GID}/files", headers={"x-edit-key": GKEY})
+        with urllib.request.urlopen(fr, timeout=60) as resp:
+            fl = json.loads(resp.read().decode()).get("files") or []
+        total = sum(f["size"] for f in fl)
+        print(f"[作品] {len(fl)} 个文件 / 共 {total} 字符：" +
+              "、".join(f"{f['path']} {f['size']}" for f in fl))
+    except Exception as e:
+        print(f"[作品] 取文件清单失败：{e}")
+    msgs.append({"role": "assistant", "content": reply})
+              # 追问用完了就一直说「接着做」——这正是创作者搭大作品时的真实说法，
+    # 反复念最后一句（比如「跑一下校验和模拟」）会把 AI 带进死循环
+    nxt = follow[i] if i < len(follow) else "接着做，往下搭。"
               msgs.append({"role": "user", "content": nxt})
           PY
 
@@ -210,10 +223,12 @@ jobs:
           print("=== AI 写出来的文件 ===")
           for f in files:
               print(f"  {f['path']}  {f['size']} 字符")
-          # 建作品时平台会先落一份起手页（约 2.5k 字符的 index.html）。
-          # 只有这一个文件、而且大小没变，等于 AI 一个字都没写——
+          # 建作品时平台会先落起手三件套（index.html / style.css / game.js，合计约 4k 字符）。
+          # 还是那三个文件、总量没涨，等于 AI 一个字都没写——
           # 这一步就该判失败，别让 run 显示绿色骗人。
-          only_scaffold = len(files) == 1 and files[0]["path"] == "index.html" and files[0]["size"] < 3000
+          scaffold_set = {"index.html", "style.css", "game.js"}
+          only_scaffold = ({f["path"] for f in files} <= scaffold_set
+                           and sum(f["size"] for f in files) < 6000)
           if not files or only_scaffold:
               print("::error::AI 没有写任何文件——自由模式下这等于什么都没做")
               raise SystemExit(1)

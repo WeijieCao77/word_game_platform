@@ -114,6 +114,8 @@ export interface GameStore {
   jobRunning(gameId: string): AiJobRecord | null;
   jobGet(id: string): AiJobRecord | null;
   jobNote(id: string, note: string): void;
+  jobHeartbeat(id: string): void;
+  jobAbandon(gameId: string): boolean;
   jobDone(id: string, result: unknown): void;
   jobFail(id: string, error: string): void;
   claimGames(userId: string, keys: { id: string; editKey: string }[]): number;

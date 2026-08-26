@@ -125,6 +125,7 @@ export default function ChatPane({
   chatBusy,
   chatSeconds,
   jobNote,
+  onAbandon,
   loginHref,
   chatInput,
   onChatInput,
@@ -139,6 +140,8 @@ export default function ChatPane({
   chatSeconds: number;
   /** 后台那一轮干到哪一步了（异步模式下服务端实时报上来，比干等一个转圈强得多） */
   jobNote?: string;
+  /** 放弃这一轮。同一部作品只允许一轮在跑，卡住的时候这是唯一的出口 */
+  onAbandon?: () => void;
   /** 游客的注册/登录入口（带 next 回到当前作品）。登录用户不显示 */
   loginHref?: string;
   chatInput: string;
@@ -175,6 +178,16 @@ export default function ChatPane({
             AI 策划工作中… {chatSeconds}s
             {jobNote ? `　${jobNote}` : ""}
             {waitingHint(chatSeconds)}
+            {/* 一部作品同时只跑一轮，所以这一轮卡住 = 整部作品发不出话。
+                必须给个出口，否则作者只能干瞪眼——线上真发生过。 */}
+            {onAbandon && chatSeconds > 30 && (
+              <>
+                {"　"}
+                <button type="button" className="linklike" onClick={onAbandon}>
+                  放弃这一轮
+                </button>
+              </>
+            )}
           </div>
         )}
         <div ref={chatEndRef} />

@@ -90,6 +90,63 @@ describe("AI 任务（异步跑一轮对话）", () => {
     expect(store.jobCreate(id, "fresh")).toBe(true); // 可以接着发下一句
   });
 
+  /**
+   * 线上真事：合完一个 PR 触发部署，容器一重启，老板就再也发不出话——
+   * 发一句顶回来一句「这部作品还有一轮在跑」，而那一轮永远不会有结果。
+   * 任务活在进程里，进程没了活就没了，可数据库那行还写着 running。
+   */
+  it("重启后开机就把上一条命留下的僵尸判死，不让作者对着「还有一轮在跑」干瞪眼", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "wgp-jobs-boot-"));
+    const file = path.join(dir, "test.db");
+    const first = new SqliteGameStore(file);
+    const { id } = first.create({ config: MINI_CONFIG });
+    first.jobCreate(id, "died-with-the-process");
+    expect(first.jobRunning(id)?.id).toBe("died-with-the-process");
+
+    // 同一个库换一个进程打开 = 重启
+    const rebooted = new SqliteGameStore(file);
+    expect(rebooted.jobRunning(id)).toBeNull();
+    expect(rebooted.jobGet("died-with-the-process")?.status).toBe("error");
+    expect(rebooted.jobGet("died-with-the-process")?.error).toContain("重启");
+    expect(rebooted.jobCreate(id, "next")).toBe(true);
+  });
+
+  it("心跳只刷时间戳：活着但暂时没进展的一轮不该被判死", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    store.jobCreate(id, "alive");
+    store.jobNote("alive", "正在写 game.js…");
+    const stale = new Date(Date.now() - 5 * 60_000).toISOString();
+    (store as unknown as { db: { prepare: (q: string) => { run: (...a: unknown[]) => void } } }).db
+      .prepare("UPDATE ai_jobs SET updated_at = ? WHERE id = ?")
+      .run(stale, "alive");
+    store.jobHeartbeat("alive"); // 进程还在，盖一个新戳
+    expect(store.jobRunning(id)?.id).toBe("alive");
+    expect(store.jobGet("alive")?.note).toBe("正在写 game.js…"); // 心跳不该抹掉进度
+  });
+
+  it("静默三分钟就判死——早先是三十分钟，代价是作者被锁半小时", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    store.jobCreate(id, "silent");
+    const stale = new Date(Date.now() - 4 * 60_000).toISOString();
+    (store as unknown as { db: { prepare: (q: string) => { run: (...a: unknown[]) => void } } }).db
+      .prepare("UPDATE ai_jobs SET updated_at = ? WHERE id = ?")
+      .run(stale, "silent");
+    expect(store.jobRunning(id)).toBeNull();
+  });
+
+  it("作者可以主动放弃这一轮，锁立刻放开", () => {
+    const store = newStore();
+    const { id } = store.create({ config: MINI_CONFIG });
+    store.jobCreate(id, "stuck");
+    expect(store.jobAbandon(id)).toBe(true);
+    expect(store.jobGet("stuck")?.status).toBe("error");
+    expect(store.jobRunning(id)).toBeNull();
+    expect(store.jobCreate(id, "again")).toBe(true);
+    expect(store.jobAbandon(store.create({ config: MINI_CONFIG }).id)).toBe(false); // 没在跑就没得放弃
+  });
+
   it("每部作品只留最近 20 条任务，这张表不会无限长", () => {
     const store = newStore();
     const { id } = store.create({ config: MINI_CONFIG });

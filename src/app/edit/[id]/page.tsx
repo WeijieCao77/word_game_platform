@@ -570,7 +570,19 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
               : `请求失败 HTTP ${res.status}：${rawText.replace(/<[^>]+>/g, " ").trim().slice(0, 160) || "网关未返回具体原因，多半是这一轮生成太大或耗时过长"}`
         );
       }
-      if (!res.ok) throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
+      // 409 + jobId = 上一轮还在跑。**接上去看它的结果**，而不是把作者顶回来。
+      // 顶回来是最糟的处理：作者不知道那一轮跑到哪了，只知道自己发什么都失败，
+      // 于是「我改不了了」。接上去至少能看着它跑完，跑完再重发这一句。
+      let resendHint = false;
+      if (res.status === 409 && body.jobId) {
+        resendHint = true;
+        setChat((c) => [
+          ...c,
+          { role: "system", content: "⚠ 上一轮还在跑，先接着看它的结果。它一跑完，你刚才那句话再发一次就行。" },
+        ]);
+      } else if (!res.ok) {
+        throw new Error(body.error ?? `请求失败 HTTP ${res.status}`);
+      }
       // 202 + jobId = 后台开跑了，接下来靠轮询。轮询本身很轻（一条 SQL），
       // 所以 2 秒一次；上限 40 分钟，比服务端 30 分钟的任务超时还宽一点。
       if (body.jobId) {
@@ -591,7 +603,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         if (!done) throw new Error("这一轮跑了太久还没结束。刷新页面看看结果——服务端是改一次存一次的，做完的部分不会丢。");
         body = done;
       }
-      setChat((c) => [...c, { role: "assistant", content: body.reply ?? "（无回复）" }]);
+      setChat((c) => [
+        ...c,
+        { role: "assistant", content: body.reply ?? "（无回复）" },
+        ...(resendHint
+          ? [{ role: "system" as const, content: "✓ 上一轮跑完了。现在可以把你刚才那句话再发一次。" }]
+          : []),
+      ]);
       if (body.config) {
         setConfig(body.config as GameConfig);
         setConfigText(JSON.stringify(body.config, null, 2));
@@ -721,6 +739,23 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     }
   }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save]);
 
+  /**
+   * 放弃当前这一轮。
+   *
+   * 后台那个 Promise 拦不住，但**锁要立刻放开**——不然作者只能干等心跳超时，
+   * 期间发什么都被顶回来。这是那句「我改不了了」的出口。
+   */
+  const abandonRound = useCallback(async () => {
+    if (!editKey) return;
+    await fetch(`/api/games/${id}/assistant`, {
+      method: "DELETE",
+      headers: { "x-edit-key": editKey },
+    }).catch(() => null);
+    setJobNote("");
+    setChatBusy(false);
+    setChat((c) => [...c, { role: "system", content: "已放弃这一轮。已经写进去的部分不会丢，接着说下一句就行。" }]);
+  }, [editKey, id]);
+
   if (!editKey) {
     return (
       <div className="site">
@@ -826,8 +861,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           chat={chat}
           chatBusy={chatBusy}
           chatSeconds={chatSeconds}
-              jobNote={jobNote}
-              loginHref={`/login?next=${encodeURIComponent(`/edit/${id}`)}`}
+          jobNote={jobNote}
+          onAbandon={abandonRound}
+          loginHref={`/login?next=${encodeURIComponent(`/edit/${id}`)}`}
           chatInput={chatInput}
           onChatInput={setChatInput}
           onSend={() => void sendChat()}

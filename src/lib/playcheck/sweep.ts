@@ -331,6 +331,34 @@ const SWEEP = `<script>(function(){
         clickable: clickables().length
       });
     }
+
+    /**
+     * 补一遍：**从别的页面**再点一次那些「看着点不动」的。
+     *
+     * already 只认得出一种「已经在这一页了」——体检自己先点开过它。
+     * 可作品一进主界面**默认就停在第一项**（总览高亮、总览的内容已经铺好），
+     * 体检扫到第一项时点下去，界面当然一个字不变，于是报「总览点不动」。
+     * 这是冤枉的：玩家点自己已经在的那一页，本来就没反应。
+     * 线上真报过这一条，本地拿一份自己写的假作品复现出来了。
+     *
+     * 判据跟开局走查那边一致：**只有从别处点它也不动，才算真的点不动**。
+     * 扫完一圈之后当前多半停在最后一项，这时候回头再点一次就问得出真假。
+     */
+    for (var k=0;k<out.length && !overtime();k++){
+      if (out[k].changed || out[k].already) continue;
+      var el2 = byLabel(out[k].label);
+      if (!el2) continue;
+      var b2 = sig();
+      await click(el2);
+      if (sig() !== b2){
+        // 换个地方点它就动了 —— 刚才那一下只是因为已经在这一页
+        out[k].already = true;
+        screenOf[out[k].label] = sig();
+        out[k].textLen = text().replace(/\\s+/g,"").length;
+        out[k].clickable = clickables().length;
+      }
+    }
+
     if (names.length && overtime()) notes.push("体检超时，导航只扫到 " + out.length + "/" + names.length + " 项");
     return out;
   }

@@ -22,10 +22,23 @@ if (!base) {
   process.exit(2);
 }
 
-// 线上跑的是哪个版本——「代码改了线上没变」这类事故先看这一行
+// 线上跑的是哪个版本——「代码改了线上没变」这类事故先看这一行。
+// 取不到就把原文打出来：上一版这里只说「没有 build 段」，
+// 到底是服务返回了别的东西还是真的老代码，谁也说不清，白折腾一轮。
 try {
-  const h = await fetch(`${base}/api/health`).then((r) => r.json());
-  console.log(`线上版本：commit ${h.build?.commit ?? "（这版还没有 build 段 = 很老的代码）"}  实例 ${h.build?.instance ?? "-"}\n`);
+  const r = await fetch(`${base}/api/health`);
+  const raw = await r.text();
+  let h = null;
+  try {
+    h = JSON.parse(raw);
+  } catch {
+    /* 不是 JSON，下面把原文打出来 */
+  }
+  if (h?.build?.commit) {
+    console.log(`线上版本：commit ${h.build.commit}  实例 ${h.build.instance ?? "-"}\n`);
+  } else {
+    console.log(`⚠ /api/health 里没有版本号（HTTP ${r.status}）。原文前 300 字：\n${raw.slice(0, 300)}\n`);
+  }
 } catch (e) {
   console.log(`取不到 /api/health：${e}\n`);
 }

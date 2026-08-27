@@ -35,6 +35,29 @@ jobs:
       BASE: https://word-game-platform-production.up.railway.app
     steps:
       - uses: actions/checkout@v4
+
+      # 等线上真的是这次的代码再开工——别在会动的靶子上测。
+      #
+      # 这一步是被真事逼出来的：合完 PR 就急着开跑，结果 ?wgpcheck=1 那一层
+      # 还没上线，平台的试玩体检一声不吭，整轮白烧。判据用退出码，不猜。
+      - name: 等部署跟上
+        run: |
+          set -e
+          want="$(echo "${{ github.sha }}" | cut -c1-7)"
+          echo "要等的 commit：$want"
+          for i in $(seq 1 40); do
+            got="$(curl -sS --max-time 10 "$BASE/api/health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+            if [ "$got" = "$want" ]; then
+              echo "线上已经是 $got，等 20 秒让容器彻底稳下来"
+              sleep 20
+              exit 0
+            fi
+            echo "  线上还是 ${got:-取不到}，15 秒后再看（第 $i 次）"
+            sleep 15
+          done
+          echo "::error::等了 10 分钟线上还没跟上（要 $want）。先确认部署再重跑。"
+          exit 1
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

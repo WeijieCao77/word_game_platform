@@ -22,6 +22,14 @@ if (!base) {
   process.exit(2);
 }
 
+// 线上跑的是哪个版本——「代码改了线上没变」这类事故先看这一行
+try {
+  const h = await fetch(`${base}/api/health`).then((r) => r.json());
+  console.log(`线上版本：commit ${h.build?.commit ?? "（这版还没有 build 段 = 很老的代码）"}  实例 ${h.build?.instance ?? "-"}\n`);
+} catch (e) {
+  console.log(`取不到 /api/health：${e}\n`);
+}
+
 const res = await fetch(`${base}/api/games`);
 const all = (await res.json()).games ?? [];
 const games = filter ? all.filter((g) => (g.title ?? "").toLowerCase().includes(filter.toLowerCase())) : all;

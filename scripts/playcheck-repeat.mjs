@@ -33,6 +33,12 @@ if (!base || !gameId) {
   process.exit(2);
 }
 
+// fix-game.mjs 的 boot() 用的就是这一串
+const CLICKABLE =
+  "button:visible, [role=button]:visible, .btn:visible, a[href]:visible, " +
+  "[onclick]:visible, [data-act]:visible, [data-screen]:visible, [tabindex]:visible, " +
+  ".card:visible, .option:visible, .choice:visible, li[data-id]:visible";
+
 /**
  * 跑一次平台自己的试玩体检。
  *
@@ -70,6 +76,83 @@ async function once() {
   }
 }
 
+/**
+ * 照抄 `fix-game.mjs` 里 `boot()` 的走法，一步不差：
+ *
+ *   - 每一步**只点 `CLICKABLE` 的最后一个**（`.last()`），不排序、不挑主按钮
+ *   - 点完页面没变就**当场放弃**，不试别的
+ *   - 停下来的条件是「看见任意一个 nav button / .wgp-nav-item / [data-screen]」
+ *
+ * 平台走查（sweep.ts）在这三条上都不一样：按主按钮排序、一步里最多试 10 个、
+ * 要认出**一排 6 项以上**才算走到主界面。
+ *
+ * 两边到底差在哪一步——这个函数就是来量这件事的，不是来判谁对的。
+ */
+async function bootWalk() {
+  const browser = await chromium.launch(
+    CHROME ? { executablePath: CHROME, args: ["--no-sandbox"] } : { args: ["--no-sandbox"] }
+  );
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 820 } });
+    const eq = COOKIE.indexOf("=");
+    if (eq > 0) {
+      await ctx.addCookies([{ name: COOKIE.slice(0, eq), value: COOKIE.slice(eq + 1), url: base }]);
+    }
+    const page = await ctx.newPage();
+    // 不带 wgpcheck：平台的走查会自己去点，带上就不是「同一个开局」了
+    await page.addInitScript(() => {
+      window.addEventListener("message", (e) => {
+        if ((e.data || {}).type === "wgp:load") window.postMessage({ type: "wgp:loaded", data: null }, "*");
+      });
+    });
+    await page.goto(`${base}/play/${gameId}/index.html?t=${Date.now()}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    await page.waitForTimeout(2600);
+
+    const body = async () => (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
+    const hasNav = async () =>
+      (await page
+        .locator("nav button:visible, .wgp-nav-item:visible, [data-screen]:visible")
+        .count()
+        .catch(() => 0)) > 0;
+
+    const trail = [];
+    let steps = 0;
+    let quitAt = null;
+    while (steps < 10 && !(await hasNav())) {
+      const fields = page.locator("input:visible, textarea:visible");
+      const fn = Math.min(await fields.count().catch(() => 0), 4);
+      for (let i = 0; i < fn; i++) await fields.nth(i).fill("测试", { timeout: 1500 }).catch(() => {});
+
+      const next = page.locator(CLICKABLE).last();
+      if ((await next.count().catch(() => 0)) === 0) {
+        quitAt = { step: steps + 1, why: "没得点" };
+        break;
+      }
+      const name = (await next.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 16) || "（无字）";
+      const was = await body();
+      await next.click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      const now = await body();
+      steps += 1;
+      trail.push(`${steps}:${name}${now === was ? "✗" : "✓"}`);
+      if (now === was) {
+        quitAt = { step: steps, why: `点「${name}」页面没变，当场放弃` };
+        break;
+      }
+    }
+    const navN = await page
+      .locator("nav button:visible, .wgp-nav-item:visible, [data-screen]:visible")
+      .count()
+      .catch(() => 0);
+    return { steps, quitAt, navN, reachedNav: await hasNav(), trail };
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 /** 把一份报告压成一行「指纹」：指纹一样 = 这一次和上一次结论相同 */
 function fingerprint(r) {
   if (!r) return "（没跑出结果）";
@@ -89,21 +172,58 @@ function fingerprint(r) {
 console.log(`同一份代码连跑 ${times} 次：${base}/p/${gameId}\n`);
 
 const seen = new Map();
+const bootSeen = new Map();
+let disagreed = 0;
+
 for (let i = 1; i <= times; i++) {
   const r = await once();
   const fp = fingerprint(r);
   seen.set(fp, (seen.get(fp) ?? 0) + 1);
-  console.log(`第 ${i} 次：${fp}${r ? `　（${(r.ms / 1000).toFixed(1)} 秒）` : ""}`);
+  console.log(`第 ${i} 次`);
+  console.log(`  平台走查：${fp}${r ? `　（${(r.ms / 1000).toFixed(1)} 秒）` : ""}`);
+
+  // 紧接着用 fix-game 的 boot() 那套走法再走一遍**同一部作品**。
+  // run 15 里这两边同一分钟给了相反结论，这就是来量那件事的。
+  const b = await bootWalk();
+  const bfp = b.quitAt
+    ? `走${b.steps}步 · 第${b.quitAt.step}步放弃（${b.quitAt.why}）`
+    : `走${b.steps}步 · ${b.reachedNav ? `看见导航${b.navN}项` : "走满 10 步也没看见导航"}`;
+  bootSeen.set(bfp, (bootSeen.get(bfp) ?? 0) + 1);
+  console.log(`  boot 走法：${bfp}`);
+  console.log(`  boot 的脚印：${b.trail.join("  ") || "（一步都没走）"}`);
+
+  // 两边「玩不玩得动」的口径对不上，就是 run 15 那一幕
+  const sweepOk = !!r && !!r.arrived && !r.stuck;
+  const bootOk = !b.quitAt && b.reachedNav;
+  if (sweepOk !== bootOk) {
+    disagreed += 1;
+    console.log(`  ⚠ 两边打架：平台走查说${sweepOk ? "走得通" : "走不通"}，boot 说${bootOk ? "走得通" : "走不通"}`);
+  }
 }
 
 console.log("");
-if (seen.size === 1) {
-  console.log(`✓ ${times} 次结论完全一致——这个检查器在这部作品上是可复现的。`);
-  process.exit(0);
+console.log("── 平台走查（sweep.ts）──");
+for (const [fp, n] of [...seen.entries()].sort((a, b) => b[1] - a[1])) console.log(`   ${n} 次：${fp}`);
+console.log("── boot 走法（fix-game.mjs）──");
+for (const [fp, n] of [...bootSeen.entries()].sort((a, b) => b[1] - a[1])) console.log(`   ${n} 次：${fp}`);
+
+console.log("");
+const stable = seen.size === 1 && bootSeen.size === 1;
+if (!stable) {
+  console.log(
+    `✗ 不可复现：平台走查 ${seen.size} 种结论、boot 走法 ${bootSeen.size} 种。\n` +
+      "在这条修好之前，任何「修好没修好」的结论都不算数。"
+  );
+  process.exit(1);
 }
-console.log(`✗ ${times} 次出现了 ${seen.size} 种不同结论，这个检查器不可复现：`);
-for (const [fp, n] of [...seen.entries()].sort((a, b) => b[1] - a[1])) {
-  console.log(`   ${n} 次：${fp}`);
+if (disagreed > 0) {
+  console.log(
+    `✗ 两边各自都稳定，但 ${disagreed}/${times} 次结论相反——**平台有两个判据在打架**。\n` +
+      "看上面 boot 的脚印：带 ✗ 的那一下就是它放弃的地方。\n" +
+      "boot 每一步只点最后一个可点元素、不变就放弃；平台走查会挑主按钮、一步试 10 个。\n" +
+      "谁对谁错要看那个按钮该不该有反应——但两个判据同时存在本身就是个坑。"
+  );
+  process.exit(1);
 }
-console.log("\n在这条修好之前，任何「修好没修好」的结论都不算数。");
-process.exit(1);
+console.log(`✓ ${times} 次结论完全一致，两个走查器也没打架。`);
+process.exit(0);

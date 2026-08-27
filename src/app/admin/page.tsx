@@ -110,17 +110,22 @@ export default function AdminPage(): React.ReactElement {
   }, []);
 
   /**
-   * 把一部作品从公开库撤下来。撤下只是让它不出现在公开列表里，
-   * 作者带着钥匙照样能看能改能重新发布。
+   * 把一部作品从公开库撤下来。
+   *
+   * **只动挂牌，不动链接**：撤下之后它不再出现在公开列表里，
+   * 但拿着链接的人（作者、测试者、已经分享出去的人）照样打得开。
+   * 原来这两件事共用一个字段，撤下等于把链接一起弄死。
    */
   const takeDown = useCallback(
-    async (id: string, published: boolean): Promise<void> => {
+    async (id: string, listed: boolean): Promise<void> => {
       setBusyGame(id);
       try {
         await fetch("/api/admin/games", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, published }),
+          // 撤下动的是**挂牌**，不是链接。原来这里传的是 published，
+          // 于是「把半成品撤下公开库」＝「把作者和测试者的链接一起弄死」。
+          body: JSON.stringify({ id, listed }),
         });
         await loadLibrary();
       } finally {
@@ -239,7 +244,7 @@ export default function AdminPage(): React.ReactElement {
         <div className="admin-tile"><b>{stats.totals.plays}</b><span>总游玩人次</span></div>
         <div className="admin-tile"><b>{stats.accounts.total}</b><span>注册账号（{stats.accounts.admins} 位管理员）</span></div>
         <div className="admin-tile"><b>{stats.creators}</b><span>创作者（署名作者数，含游客）</span></div>
-        <div className="admin-tile"><b>{stats.games.total}</b><span>作品总数（{stats.games.published} 已发布 / {stats.games.drafts} 草稿）</span></div>
+        <div className="admin-tile"><b>{stats.games.total}</b><span>作品总数（{stats.games.published} 个链接开着 / {stats.games.drafts} 个还没发过）</span></div>
         <div className="admin-tile"><b>{stats.totals.likes}</b><span>总点赞</span></div>
         <div className="admin-tile"><b>{fmtHours(stats.totals.playSeconds)}</b><span>总游玩时长</span></div>
         <div className="admin-tile"><b>{stats.ai.todayRequests}</b><span>今日 AI 请求（累计 {stats.ai.totalRequests} 次 / {fmtWan(stats.ai.totalTokens)} tokens{fmtCost(stats.ai.totalTokens) ? ` · ${fmtCost(stats.ai.totalTokens)}` : ""}）</span></div>
@@ -322,7 +327,7 @@ export default function AdminPage(): React.ReactElement {
                 <td>{i + 1}</td>
                 <td><Link href={`/g/${g.id}`}>{g.title}</Link></td>
                 <td>{g.author || "—"}</td>
-                <td>{g.published ? "已发布" : "草稿"}</td>
+                <td>{g.published ? "链接开着" : "还没发过"}</td>
                 <td>{g.plays}</td>
                 <td>{g.likes}</td>
                 <td>{fmtHours(g.playSeconds)}</td>
@@ -333,9 +338,10 @@ export default function AdminPage(): React.ReactElement {
       </div>
       <h2 className="section-title">公开游戏库（{library.length}）</h2>
       <p className="pane-note" style={{ marginBottom: 10 }}>
-        这里列的是玩家在首页能看到的全部作品。撤下只是让它不再出现在公开列表里——
-        作者带着编辑钥匙照样能看能改，也能自己重新发布。删除是彻底清掉（实测遗留的
-        半成品用这个），不可恢复，正常创作者的作品别碰。
+        这里列的是玩家在首页能看到的全部作品。撤下**只动挂牌**：撤下之后它不再出现在
+        公开列表里，但**链接照旧能玩**——作者、测试者、已经分享出去的人都不受影响。
+        （以前这两件事是同一个开关，撤下会把链接一起弄死。）
+        删除是彻底清掉（实测遗留的半成品用这个），不可恢复，正常创作者的作品别碰。
       </p>
       <div className="roster-scroll">
         <table className="admin-table">

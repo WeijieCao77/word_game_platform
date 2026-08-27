@@ -61,7 +61,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const bad = guard(req);
   if (bad) return bad;
 
-  let body: { id?: unknown; published?: unknown };
+  let body: { id?: unknown; published?: unknown; listed?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -71,9 +71,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const store = getStore();
   if (!id || !store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
 
-  const published = body.published === true;
-  store.setPublished(id, published);
-  return NextResponse.json({ ok: true, id, published });
+  /**
+   * 后台「撤下」动的是**挂牌**，不是链接。
+   *
+   * 原来这里跟作者那个开关共用同一个 `published` 字段，于是
+   * 「把半成品撤下公开库」＝「把作者和测试者的链接一起弄死」——
+   * 作者自己都打不开自己的作品，还查不出为什么（/play 一律回 403）。
+   *
+   * 管理员真要彻底关掉链接（比如内容违规），显式传 published 就行。
+   */
+  const listed = body.listed === true;
+  store.setListed(id, listed);
+  if (typeof body.published === "boolean") store.setPublished(id, body.published);
+  const after = store.get(id);
+  return NextResponse.json({
+    ok: true,
+    id,
+    listed,
+    published: after?.published ?? false,
+  });
 }
 
 /**

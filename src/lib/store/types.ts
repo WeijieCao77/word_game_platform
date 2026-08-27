@@ -37,7 +37,15 @@ export interface GameRecord {
   /** 是否有作者上传的自定义封面 */
   hasCover: boolean;
   author: string;
+  /**
+   * **链接可达**：拿到链接的人能不能玩。
+   *
+   * 这个字段原来一个人管三件事（打快照、链接、挂公开库），现在只管这一件。
+   * 挂不挂公开库看 `listed`。
+   */
   published: boolean;
+  /** **公开挂牌**：在游戏库里列不列出来。撤下挂牌**不会**弄死链接 */
+  listed: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +117,8 @@ export interface GameStore {
     daily: { date: string; plays: number; likes: number; playSeconds: number }[];
   };
   setPublished(id: string, published: boolean): void;
+  /** 公开挂牌：在游戏库里列不列出来。跟「链接可达」是两件事 */
+  setListed(gameId: string, listed: boolean): void;
   /** 作品归属：游客作品 ownerId 为空，登录后可用编辑钥匙认领 */
   gameOwner(id: string): string | null;
   /** AI 任务（异步跑一轮对话）：开、查、报进度、收尾 */

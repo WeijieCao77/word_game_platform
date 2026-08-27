@@ -63,7 +63,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [config, setConfig] = useState<GameConfig | null>(null);
   const [configText, setConfigText] = useState("");
   const [designCard, setDesignCard] = useState("");
+  // 「发布」原来是一个开关管三件事，现在是三件事：
+  //   published    链接可达（拿到链接能不能玩）
+  //   listed       公开挂牌（游戏库里列不列出来）
+  //   drift        草稿比线上多改了几个文件（自由模式；>0 就该发新版本了）
   const [published, setPublished] = useState(false);
+  const [listed, setListed] = useState(false);
+  const [drift, setDrift] = useState(0);
   const [tab, setTab] = useState<Tab>("preview");
   // 试玩体检：平台开一个看不见的沙箱 iframe 真去点一遍（见 @/components/playcheck-run）。
   // 「点了没反应」这类问题一个异常都不抛，前面所有护栏都照不到——
@@ -177,6 +183,8 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
       setConfigText(JSON.stringify(body.config, null, 2));
       setDesignCard(body.designCard ?? "");
       setPublished(body.published);
+      setListed(!!body.listed);
+      setDrift(Number(body.unpublishedFiles) || 0);
       if (Array.isArray(body.chat)) setChat(body.chat as ChatMsg[]);
       setHasCover(!!body.hasCover);
       setMode(body.mode === "code" ? "code" : "engine");
@@ -460,33 +468,73 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     void save(next);
   }, [config, save]);
 
-  const togglePublish = useCallback(async (): Promise<void> => {
-    if (!editKey) return;
-    if (!(await save())) return;
-    const res = await fetch(`/api/games/${id}/publish`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-edit-key": editKey },
-      body: JSON.stringify({ published: !published }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      // 自由模式的发布门槛会回一串结构化的问题。顶栏那条状态只有一行，
-      // 塞不下——所以只在那儿说一句话，详情摆进「体检」页签，并且切过去。
-      const list = Array.isArray(body.issues) && body.gate === "code" ? (body.issues as GateIssue[]) : [];
-      setGateIssues(list);
-      if (list.length) {
-        const n = list.filter((i) => i.level === "error").length;
-        setStatusMsg(`发不了：${n} 处得先修，详情在「体检」页签`);
-        setTab("playcheck");
-      } else {
-        setStatusMsg(String(body.error ?? "发布失败").split("\n")[0]);
+  /**
+   * 发布这件事拆成了三件，这里是共用的那一次请求。
+   *
+   * 原来只有一个开关，写着「发布 / 取消发布」。作品一旦发布，作者再改就
+   * **没有任何按钮能把改动推给玩家**——那个按钮这时候写着「取消发布」。
+   * 要上线只能先取消（链接当场对所有人 403，链接立刻死掉）再点发布，
+   * 中间一段真空，而且界面上没有任何地方提示要这么做。
+   */
+  const doPublish = useCallback(
+    async (
+      what: { publishVersion?: boolean; linkOpen?: boolean; listed?: boolean },
+      okMsg: (b: { published: boolean; listed: boolean; version: number }) => string
+    ): Promise<void> => {
+      if (!editKey) return;
+      if (!(await save())) return;
+      const res = await fetch(`/api/games/${id}/publish`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-edit-key": editKey },
+        body: JSON.stringify(what),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        // 自由模式的发布门槛会回一串结构化的问题。顶栏那条状态只有一行，
+        // 塞不下——所以只在那儿说一句话，详情摆进「体检」页签，并且切过去。
+        const list = Array.isArray(body.issues) && body.gate === "code" ? (body.issues as GateIssue[]) : [];
+        setGateIssues(list);
+        if (list.length) {
+          const n = list.filter((i) => i.level === "error").length;
+          setStatusMsg(`发不了：${n} 处得先修，详情在「体检」页签`);
+          setTab("playcheck");
+        } else {
+          setStatusMsg(String(body.error ?? "发布失败").split("\n")[0]);
+        }
+        return;
       }
-      return;
-    }
-    setGateIssues([]);
-    setPublished(body.published);
-    setStatusMsg(body.published ? "已发布 ✓ 任何人都能通过链接游玩了" : "已取消发布");
-  }, [editKey, id, published, save]);
+      setGateIssues([]);
+      setPublished(!!body.published);
+      setListed(!!body.listed);
+      if (what.publishVersion) setDrift(0);
+      setStatusMsg(okMsg(body));
+    },
+    [editKey, id, save]
+  );
+
+  /** ① 发新版本：把当前草稿打成快照推给玩家。**随时可点** */
+  const publishVersion = useCallback(
+    () => doPublish({ publishVersion: true }, (b) => `第 ${b.version} 版已推给玩家 ✓`),
+    [doPublish]
+  );
+
+  /** ② 链接可达：拿到链接的人能不能玩 */
+  const toggleLink = useCallback(
+    () =>
+      doPublish({ linkOpen: !published }, (b) =>
+        b.published ? "链接已打开 ✓ 拿到链接就能玩" : "链接已关闭，只有你自己打得开"
+      ),
+    [doPublish, published]
+  );
+
+  /** ③ 公开挂牌：在游戏库里列不列出来。**关掉它不会弄死链接** */
+  const toggleListed = useCallback(
+    () =>
+      doPublish({ listed: !listed }, (b) =>
+        b.listed ? "已挂上公开游戏库 ✓" : "已从公开库撤下（链接照旧能玩）"
+      ),
+    [doPublish, listed]
+  );
 
   const applyConfigText = useCallback((): void => {
     try {
@@ -946,8 +994,27 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
         <button className={`btn small${dirty ? "" : " secondary"}`} onClick={() => void save()}>
           保存
         </button>
-        <button className="btn small secondary" onClick={() => void togglePublish()}>
-          {published ? "取消发布" : "发布"}
+        {/* 发布是三件事，不是一个开关。挤在一起的代价见 publish/route.ts 顶上那段。 */}
+        <button
+          className={`btn small${drift > 0 || !published ? "" : " secondary"}`}
+          onClick={() => void publishVersion()}
+          title="把当前草稿打成快照推给玩家。随时可点——改一轮就发一轮"
+        >
+          发新版本{drift > 0 ? `（${drift} 个文件没发）` : ""}
+        </button>
+        <button
+          className="btn small secondary"
+          onClick={() => void toggleLink()}
+          title="拿到链接的人能不能玩。跟挂不挂公开库是两件事"
+        >
+          链接：{published ? "开" : "关"}
+        </button>
+        <button
+          className="btn small secondary"
+          onClick={() => void toggleListed()}
+          title="在公开游戏库里列不列出来。关掉它不会弄死链接"
+        >
+          公开库：{listed ? "挂着" : "没挂"}
         </button>
         {published && (
           <Link className="btn small" href={`/g/${id}`} target="_blank">

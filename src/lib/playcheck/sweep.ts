@@ -135,7 +135,7 @@ const SWEEP = `<script>(function(){
 
   /** 开局流程：一步步往前走，看能走到哪 */
   async function walkOpening(){
-    var steps = [], stuck = null;
+    var steps = [], stuck = null, arrived = false;
     for (var n=1; n<=MAX_STEPS; n++){
       if (overtime()){ notes.push("体检超时，开局只走到第 " + (n-1) + " 步"); break; }
       var before = sig();
@@ -179,9 +179,12 @@ const SWEEP = `<script>(function(){
        * 收手门槛与「扫哪一组」故意分开：这里只管「够不够格让我停下来」，
        * 停下来之后 findNav() 该扫谁还扫谁（真有 4 项的主导航照样扫得到）。
        */
-      if (findNav().length >= 6) break;
+      if (findNav().length >= 6){ arrived = true; break; }
     }
-    return {steps:steps, stuck:stuck};
+    // 走满步数还没认出主导航 = 没走到主界面。这件事必须记下来：
+    // 不记的话，「走了 14 步一路没卡住」跟「走了 14 步走到主界面了」
+    // 在报告里长得一模一样，服务端只能把前者也说成通过。线上就这么绿过一次。
+    return {steps:steps, stuck:stuck, arrived:arrived, walked:steps.length};
   }
 
   /**
@@ -279,11 +282,13 @@ const SWEEP = `<script>(function(){
 
   // 等作品自己启动完再动手。开局体检（BOOT 里那段）是 2.5 秒，这里排在它后面。
   setTimeout(async function(){
-    var report = {bootText:0, steps:[], stuck:null, nav:[], notes:notes, ms:0};
+    var report = {bootText:0, steps:[], walked:0, arrived:false, stuck:null, nav:[], notes:notes, ms:0};
     try{
       report.bootText = text().replace(/\\s+/g,"").length;
       var open = await walkOpening();
       report.steps = open.steps;
+      report.walked = open.walked;
+      report.arrived = open.arrived;
       report.stuck = open.stuck;
       // 开局就走不动的话，导航多半也是假的，但还是扫一眼——
       // 「一排里面很多都点不了」这种问题正好在这里现形

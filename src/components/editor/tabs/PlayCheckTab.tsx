@@ -52,6 +52,9 @@ export default function PlayCheckTab({
   useEffect(reload, [reload, report]);
 
   const stuck = report?.stuck;
+  // 没卡住、却也没走到主界面——单独当一条问题显示。
+  // 不显示的话，这份报告在界面上跟「试玩通过」长得一模一样（线上就绿过一次）。
+  const notArrived = !!report && !report.stuck && !report.arrived && report.bootText > 0;
   const dead = (report?.nav ?? []).filter((n) => !n.changed && !n.already);
   const deadOnPath = (report?.steps ?? []).flatMap((s) => s.dead);
   const empty = (report?.nav ?? []).filter((n) => n.changed && n.textLen < 40 && n.clickable === 0);
@@ -63,7 +66,7 @@ export default function PlayCheckTab({
         <button className="btn small secondary" onClick={onRun} disabled={checking}>
           {checking ? "体检中…" : "再体检一次"}
         </button>
-        {report && (stuck || dead.length > 0 || deadOnPath.length > 0) && onFix && (
+        {report && (stuck || notArrived || dead.length > 0 || deadOnPath.length > 0) && onFix && (
           <button className="btn small" onClick={() => onFix(fixPrompt(report))}>
             让 AI 去修
           </button>
@@ -86,6 +89,20 @@ export default function PlayCheckTab({
                 : `这一屏能点的都试了一遍（${stuck.tried.join("、") || "无"}），点完界面一个字都没变。`}
               {stuck.filled.length > 0 && `（体检已经先替玩家把「${stuck.filled.join("、")}」填上了。）`}
               <div style={{ marginTop: 6, opacity: 0.75 }}>那一屏：{stuck.screen || "（空白）"}</div>
+            </div>
+          )}
+          {notArrived && (
+            <div className="issue error">
+              <div className="path">走了 {report.walked} 步，没走到主界面</div>
+              {report.nav.length > 0
+                ? `一路上只找到一组 ${report.nav.length} 项的页签（${report.nav
+                    .map((n) => n.label)
+                    .join("、")}），多半是某一屏里的分区页签，不是主界面那一排。`
+                : "一路上一组导航都没找到。"}
+              <div style={{ marginTop: 6, opacity: 0.75 }}>
+                作品本来就没有导航栏（纯线性故事）的话，这一条忽略即可；
+                说好有一整排页签的话，就是开局这条路还没通到主界面。
+              </div>
             </div>
           )}
           {deadOnPath.length > 0 && (
@@ -115,10 +132,10 @@ export default function PlayCheckTab({
               {n}
             </div>
           ))}
-          {!stuck && dead.length === 0 && deadOnPath.length === 0 && empty.length === 0 && report.bootText > 0 && (
+          {!stuck && !notArrived && dead.length === 0 && deadOnPath.length === 0 && empty.length === 0 && report.bootText > 0 && (
             <div className="issue">
               <div className="path">试玩通过</div>
-              开局走通 {report.steps.length} 步，导航 {report.nav.length} 项都能切。
+              开局走通 {report.walked} 步走到主界面，导航 {report.nav.length} 项都能切。
               这只说明走得动，不说明好玩，也不说明数值对。
             </div>
           )}
@@ -159,6 +176,13 @@ function fixPrompt(r: PlayCheckReport): string {
         ? `· 开局第 ${r.stuck.step} 步这一屏根本没有能点的东西，玩家到这里就没路了。`
         : `· 开局第 ${r.stuck.step} 步走不下去：能点的都试了一遍（${r.stuck.tried.join("、")}），` +
             `点完界面一个字都没变。那一屏：「${r.stuck.screen}」`
+    );
+  }
+  if (!r.stuck && !r.arrived) {
+    parts.push(
+      `· 体检点了 ${r.walked} 步都没走到有导航栏的主界面` +
+        (r.nav.length ? `（只找到一组 ${r.nav.length} 项的页签：${r.nav.map((n) => n.label).join("、")}）` : "") +
+        `。作品本来就没有导航栏的话忽略这条，否则就是开局这条路还没通到主界面。`
     );
   }
   const onPath = r.steps.flatMap((s) => s.dead);

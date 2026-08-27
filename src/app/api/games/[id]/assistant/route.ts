@@ -7,6 +7,7 @@ import { aiConfigured } from "@/lib/ai/provider";
 import { runAssistant } from "@/lib/ai/agent";
 import { rankLibraryEntries } from "@/lib/library";
 import { clampRounds, runRounds } from "@/lib/ai/auto-build";
+import { describeRuntimeErrors, freshRuntimeErrors } from "@/lib/ai/runtime-errors";
 import { trimHistory } from "@/lib/ai/history";
 import { comparePublished, describeDrift } from "@/lib/publish-drift";
 import { randomBytes } from "node:crypto";
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
           onNote?.("正在写配置…");
         },
         files: {
-          list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size })),
+          list: () => store.fileList(id).map((f) => ({ path: f.path, size: f.size, updatedAt: f.updatedAt })),
           read: (path) => store.fileRead(id, path),
           write: (path, content) => {
             store.fileWrite(id, path, content);
@@ -213,6 +214,18 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       },
       runOne: (hist, n, total) =>
         runOneRound(hist, (note) => store.jobNote(jobId, total > 1 ? `第 ${n}/${total} 轮 · ${note}` : note)),
+      // 上一轮把作品写炸了就别往下盖——在一个打不开的作品上再加十轮页面，
+      // 加多少都是白加（实测最贵的一次教训就是这么来的）。
+      brokenNow: () => {
+        const lastWrite = store
+          .fileList(id)
+          .map((f) => f.updatedAt)
+          .filter(Boolean)
+          .sort()
+          .pop();
+        const fresh = freshRuntimeErrors(store.errorList(id), lastWrite);
+        return fresh.length > 0 ? describeRuntimeErrors(fresh, lastWrite) : null;
+      },
     })
       .then((payload) => store.jobDone(jobId, payload))
       .catch((err: unknown) => {

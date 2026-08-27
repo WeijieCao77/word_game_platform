@@ -43,14 +43,33 @@ for (const g of games) {
   let textLen = 0;
   let clickable = 0;
   let bytes = 0;
+  let snippet = "";
+  let clickedLabel = "";
+  let afterBanner = "";
+  let afterLen = 0;
+  let afterSnippet = "";
   try {
     await page.goto(`${base}/p/${g.id}`, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForTimeout(6000);
     const frame = page.frames().find((f) => f.url().includes(`/play/${g.id}`));
     if (frame) {
       banner = await frame.locator("[data-wgp-error]").first().textContent({ timeout: 2000 }).catch(() => "");
-      textLen = await frame.locator("body").innerText().then((t) => t.trim().length).catch(() => 0);
+      const t0 = await frame.locator("body").innerText().catch(() => "");
+      textLen = t0.trim().length;
+      snippet = t0.replace(/\s+/g, " ").trim().slice(0, 300);
       clickable = await frame.locator("button, a, [role=button], [data-screen], .btn").count().catch(() => 0);
+      // 「打得开」不等于「玩得动」：真去点一下主按钮，再看有没有炸、页面有没有变。
+      // 老板说的「玩不了」十有八九发生在这一步，光看首屏是量不出来的。
+      const btn = frame.locator("button:visible, [role=button]:visible, .btn:visible").first();
+      if ((await btn.count().catch(() => 0)) > 0) {
+        clickedLabel = (await btn.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 30);
+        await btn.click({ timeout: 4000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+        afterBanner = await frame.locator("[data-wgp-error]").first().textContent({ timeout: 1500 }).catch(() => "");
+        const t1 = await frame.locator("body").innerText().catch(() => "");
+        afterLen = t1.trim().length;
+        afterSnippet = t1.replace(/\s+/g, " ").trim().slice(0, 300);
+      }
     } else {
       // 快速模式没有沙箱 iframe，直接量外层
       textLen = await page.locator("body").innerText().then((t) => t.trim().length).catch(() => 0);
@@ -64,12 +83,18 @@ for (const g of games) {
   }
   await page.close();
 
-  const broken = Boolean(banner) || errs.length > 0 || textLen < 40;
-  rows.push({ ...g, banner: (banner ?? "").replace(/\s+/g, " ").trim().slice(0, 160), errs, textLen, clickable, bytes, broken });
+  const bar = ((banner || afterBanner) ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const broken = Boolean(bar) || errs.length > 0 || textLen < 40;
+  rows.push({ ...g, banner: bar, errs, textLen, clickable, bytes, broken, snippet, afterLen, afterSnippet, clickedLabel });
 
-  console.log(`${broken ? "✗ 打不开/报错" : "✓ 能玩"}  ${g.id}  「${g.title}」  mode=${g.mode}  作者=${g.author ?? "-"}  更新=${g.updatedAt ?? "-"}`);
+  console.log(`${broken ? "✗ 打不开/报错" : "✓ 打得开"}  ${g.id}  「${g.title}」  mode=${g.mode}  作者=${g.author ?? "-"}  更新=${g.updatedAt ?? "-"}`);
   console.log(`    正文 ${textLen} 字  可点 ${clickable} 处  index.html ${bytes} 字符`);
-  if (banner) console.log(`    ⚠ 横幅：${rows[rows.length - 1].banner}`);
+  console.log(`    首屏：${snippet || "（一个字都没有）"}`);
+  if (clickedLabel) {
+    console.log(`    点了「${clickedLabel}」之后：正文 ${afterLen} 字`);
+    console.log(`    点后：${afterSnippet || "（一个字都没有）"}`);
+  }
+  if (bar) console.log(`    ⚠ 横幅：${bar}`);
   for (const e of errs.slice(0, 4)) console.log(`    ⚠ 报错：${e}`);
   console.log("");
 }

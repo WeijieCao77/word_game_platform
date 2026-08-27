@@ -22,6 +22,10 @@ on:
         description: "最多让 AI 试几轮"
         required: false
         default: "3"
+      complaint:
+        description: "创作者的原话（玩不了在哪儿）——原样转给 AI"
+        required: false
+        default: ""
 
 jobs:
   fix:
@@ -68,4 +72,5 @@ jobs:
       - name: 交给 AI 修
         env:
           COOKIE: ${{ steps.login.outputs.cookie }}
+          COMPLAINT: ${{ inputs.complaint }}
         run: node scripts/fix-game.mjs "$BASE" "${{ inputs.game_id }}" "${{ inputs.max_rounds }}"

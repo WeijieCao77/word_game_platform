@@ -29,7 +29,14 @@ if (!base || !gameId) {
 const H = { "content-type": "application/json", cookie: COOKIE };
 const CHROME = process.env.CHROME_PATH ?? undefined;
 
-/** 像玩家一样打开一遍，回来报「能不能玩 + 报了什么」 */
+/**
+ * 像玩家一样打开**并且真去玩一下**，回来报「能不能玩 + 卡在哪」。
+ *
+ * 只看「打不打得开」是不够的——老板撞到的第二个坑就是这样：页面渲染得好好的，
+ * 一个 JS 错误都没有，可「你的名字」只有标签、**没有输入框**，点「下一步」
+ * 弹一句「先给自己起个名字」然后原地不动。体检当时判的是「✓ 能玩」。
+ * 所以这里补三样：表单控件对不对得上标签、点主按钮之后页面变没变、有没有卡住。
+ */
 async function boot(label) {
   const browser = await chromium.launch(
     CHROME ? { executablePath: CHROME, args: ["--no-sandbox"] } : { args: ["--no-sandbox"] }
@@ -43,6 +50,8 @@ async function boot(label) {
   let banner = "";
   let text = "";
   let clickable = 0;
+  let moved = 0;
+  const stuck = [];
   try {
     await page.goto(`${base}/p/${gameId}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     // 等久一点：兜底脚本要把报错重发几次给外壳，外壳再送回服务端
@@ -52,18 +61,53 @@ async function boot(label) {
       banner = (await frame.locator("[data-wgp-error]").first().textContent({ timeout: 2000 }).catch(() => "")) ?? "";
       text = (await frame.locator("body").innerText().catch(() => "")).trim();
       clickable = await frame.locator("button, a, [role=button], .btn").count().catch(() => 0);
+
+      // 有标签没控件：`<label>你的名字</label>` 却没有对应的 input/select/textarea
+      const labels = await frame.locator("label").count().catch(() => 0);
+      const fields = await frame
+        .locator("input:visible, select:visible, textarea:visible, [contenteditable=true]:visible")
+        .count()
+        .catch(() => 0);
+      if (labels > fields) {
+        stuck.push(`页面上有 ${labels} 个标签却只有 ${fields} 个能填的控件——有字段渲染不出来（玩家看得到「填什么」，却没地方填）`);
+      }
+
+      // 真去点一下主按钮，看页面动没动
+      const btn = frame.locator("button:visible, [role=button]:visible, .btn:visible").first();
+      if ((await btn.count().catch(() => 0)) > 0) {
+        const label0 = (await btn.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 24);
+        // 能填的先填上，别把「没填必填项」当成 bug
+        for (let i = 0; i < Math.min(fields, 4); i++) {
+          await frame
+            .locator("input:visible, textarea:visible")
+            .nth(i)
+            .fill("测试", { timeout: 2000 })
+            .catch(() => {});
+        }
+        await btn.click({ timeout: 4000 }).catch(() => {});
+        await page.waitForTimeout(2500);
+        const after = (await frame.locator("body").innerText().catch(() => "")).trim();
+        if (after.replace(/\s+/g, "") === text.replace(/\s+/g, "")) {
+          stuck.push(`点了「${label0}」之后页面一个字都没变——第一步就走不下去`);
+        }
+        moved = after.length;
+      }
     }
   } catch (e) {
     errs.push(`打开失败: ${String(e).slice(0, 160)}`);
   }
   await browser.close();
   const bar = banner.replace(/\s+/g, " ").trim();
-  const broken = Boolean(bar) || errs.length > 0 || text.length < 80;
-  console.log(`\n【${label}】${broken ? "✗ 还是打不开" : "✓ 打得开"}　正文 ${text.length} 字　可点 ${clickable} 处`);
+  const broken = Boolean(bar) || errs.length > 0 || text.length < 80 || stuck.length > 0;
+  console.log(
+    `\n【${label}】${broken ? "✗ 玩不了" : "✓ 玩得动"}　正文 ${text.length} 字　可点 ${clickable} 处` +
+      (moved ? `　点一下之后 ${moved} 字` : "")
+  );
   if (bar) console.log(`  横幅：${bar}`);
   for (const e of [...new Set(errs)].slice(0, 4)) console.log(`  报错：${e}`);
-  if (!broken) console.log(`  首屏：${text.replace(/\s+/g, " ").slice(0, 200)}`);
-  return { broken, bar, errs: [...new Set(errs)], text };
+  for (const s2 of stuck) console.log(`  卡住：${s2}`);
+  console.log(`  首屏：${text.replace(/\s+/g, " ").slice(0, 240)}`);
+  return { broken, bar, errs: [...new Set(errs)], stuck, text };
 }
 
 /** 跑一轮 AI（走异步任务那条路，跟作者在工作台里走的是同一条） */
@@ -107,9 +151,10 @@ async function publish() {
 }
 
 // ── 开工 ───────────────────────────────────────────────────────────
+const COMPLAINT = (process.env.COMPLAINT ?? "").trim();
 let state = await boot("修之前");
-if (!state.broken) {
-  console.log("\n这部作品本来就打得开，不用修。");
+if (!state.broken && !COMPLAINT) {
+  console.log("\n这部作品现在玩得动，不用修。");
   process.exit(0);
 }
 
@@ -117,9 +162,21 @@ for (let round = 1; round <= maxRounds; round++) {
   console.log(`\n──────── 第 ${round}/${maxRounds} 轮：交给 AI ────────`);
   // 故意只说一句话。报错应该已经自动摆在它的【运行报错】里了——
   // 要是还得我把报错抄给它，说明那条链路没通。
+  // 现场证据（横幅 / 报错 / 卡在哪）+ 创作者的原话，一起交给 AI。
+  // 报错本身不用抄——平台会自动贴进它的【运行报错】。
+  const evidence = [
+    state.bar ? `页面顶上是一条红色报错横幅：${state.bar}` : "",
+    ...state.stuck.map((x) => `实际去玩的时候：${x}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
   const res = await ask(
-    "玩家打开这部作品是打不开的。看一眼【运行报错】，把它修好；" +
-      "修完把开局那条路径从头走一遍确认不会再抛，再用 read_errors 带 clear: true 清掉记录。"
+    "玩家现在玩不了这部作品。\n" +
+      (COMPLAINT ? `创作者的原话：「${COMPLAINT}」\n` : "") +
+      (evidence ? `${evidence}\n` : "") +
+      "先看【运行报错】（有的话），把问题修好；" +
+      "修完把开局那条路径从头走一遍——加载、首屏渲染、每一个要玩家填的字段真的渲染出来了没有、" +
+      "点第一个按钮能不能走到下一步。确认走得通再交差，然后用 read_errors 带 clear: true 清掉记录。"
   );
   const reply = String(res?.job?.result?.reply ?? res?.reply ?? "").replace(/\s+/g, " ");
   console.log(`  AI：${reply.slice(0, 400)}`);

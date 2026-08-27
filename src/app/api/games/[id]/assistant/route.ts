@@ -9,6 +9,7 @@ import { rankLibraryEntries } from "@/lib/library";
 import { clampRounds, runRounds } from "@/lib/ai/auto-build";
 import { describeRuntimeErrors, freshRuntimeErrors } from "@/lib/ai/runtime-errors";
 import { trimHistory } from "@/lib/ai/history";
+import { describePlayCheck } from "@/lib/playcheck/report";
 import { comparePublished, describeDrift } from "@/lib/publish-drift";
 import { randomBytes } from "node:crypto";
 
@@ -123,6 +124,19 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             onNote?.(`正在写 ${path}…`);
           },
         },
+        // 平台自己去点了一遍的结果。抛异常的错走 errors，点了没反应的走这条——
+        // 后者占了「玩不了」的一大半，而且 read_errors 里一个字都看不到。
+        playCheck: (() => {
+          const r = store.playCheckGet(id);
+          if (!r) return "";
+          const last = store
+            .fileList(id)
+            .map((f) => f.updatedAt ?? "")
+            .filter(Boolean)
+            .sort()
+            .pop();
+          return describePlayCheck(r, last);
+        })(),
         // 草稿改了没发布 = 玩家还在跑旧代码。不说出来的话，AI 会把
         // 「修完还是同一个报错」误判成「这是旧记录」然后停手（实测真发生过）。
         publishDrift: describeDrift(

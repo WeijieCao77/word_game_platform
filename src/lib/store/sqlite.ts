@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
+import { PlayCheckReport } from "@/lib/playcheck/types";
 import { AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
 
 /** ai_jobs 表的一行 */
@@ -253,6 +254,13 @@ export class SqliteGameStore implements GameStore {
         source TEXT NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_game_errors ON game_errors(game_id, at);
+      -- 试玩体检：平台在浏览器里自动玩一遍的结果（@/lib/playcheck）。
+      -- 一部作品只留最新一份——旧报告对不上现在的代码，留着只会把下一轮带偏。
+      CREATE TABLE IF NOT EXISTS game_playcheck (
+        game_id TEXT PRIMARY KEY,
+        at TEXT NOT NULL,
+        report TEXT NOT NULL
+      );
       -- AI 任务：一轮对话在后台跑，前端轮询要结果。
       -- 原来是同步请求干等，最重的那一轮必然被网关掐成 502，
       -- 所以单轮预算只能压到 240 秒——AI 一轮干不完一件事，只能靠轮次堆。
@@ -456,6 +464,7 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("DELETE FROM game_assets WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_files WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_playcheck WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_versions WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
@@ -969,6 +978,27 @@ export class SqliteGameStore implements GameStore {
 
   errorClear(gameId: string): void {
     this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(gameId);
+  }
+
+  playCheckSet(gameId: string, report: PlayCheckReport): void {
+    this.db
+      .prepare(
+        "INSERT INTO game_playcheck (game_id, at, report) VALUES (?, ?, ?) " +
+          "ON CONFLICT(game_id) DO UPDATE SET at = excluded.at, report = excluded.report"
+      )
+      .run(gameId, report.at, JSON.stringify(report));
+  }
+
+  playCheckGet(gameId: string): PlayCheckReport | null {
+    const row = this.db.prepare("SELECT report FROM game_playcheck WHERE game_id = ?").get(gameId) as
+      | { report: string }
+      | undefined;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.report) as PlayCheckReport;
+    } catch {
+      return null;
+    }
   }
 
   /**

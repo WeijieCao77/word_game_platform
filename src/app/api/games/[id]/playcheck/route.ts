@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getStore } from "@/lib/store";
+import { canEditGame } from "@/lib/session";
+import { parsePlayCheck, summarizePlayCheck, describePlayCheck } from "@/lib/playcheck/report";
+import { playCheckHasIssue } from "@/lib/playcheck/types";
+
+export const dynamic = "force-dynamic";
+
+type Params = { params: Promise<{ id: string }> };
+
+/**
+ * 试玩体检的报告出入口。
+ *
+ * 跟 `errors` 那条**故意不一样**：报错谁踩到都算数，所以那边不要编辑钥匙；
+ * 体检是主动跑出来的（工作台的隐藏 iframe 或实测脚本开 `?wgpcheck=1`），
+ * 而且 /play 那一层已经只肯给作者注入体检脚本了，这里就跟着要编辑权限——
+ * 免得有人拿伪造的报告去污染 AI 下一轮的上下文。
+ */
+export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { id } = await params;
+  const store = getStore();
+  if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return NextResponse.json({ error: "请求体不是合法 JSON" }, { status: 400 });
+  }
+  const report = parsePlayCheck(raw);
+  store.playCheckSet(id, report);
+  return NextResponse.json({
+    ok: true,
+    ok_play: !playCheckHasIssue(report),
+    summary: summarizePlayCheck(report),
+    report,
+  });
+}
+
+/** 最近一次体检的结果。作者的「体检」页签和实测脚本都读这里。 */
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { id } = await params;
+  const store = getStore();
+  if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
+  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+  const report = store.playCheckGet(id);
+  if (!report) return NextResponse.json({ report: null, summary: "还没体检过" });
+  return NextResponse.json({
+    report,
+    ok_play: !playCheckHasIssue(report),
+    summary: summarizePlayCheck(report),
+    text: describePlayCheck(report),
+  });
+}

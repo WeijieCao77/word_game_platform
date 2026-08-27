@@ -1,0 +1,71 @@
+name: 让 AI 修一部打不开的作品
+
+# 一部作品死在线上时，规矩是**不许我手工去补那一行**——
+# 老板的铁律：游戏的每一行代码都必须是线上 AI 写进去的，手搓一份塞进去测的就不是平台了。
+#
+# 所以这条流水线做的是把它交回平台自己的通路：
+#   真浏览器打开 → 抓到报错（顺带落进 game_errors）→ 让 AI 修 → 发布 → 再打开看好没好，
+# 修不好就再来一轮。
+#
+# 它同时是「报错自动进上下文」那套修复的实战检验：发给 AI 的话故意只有一句，
+# 报错得靠平台自己摆到它面前。要是它看不见，那说明那套东西没起作用。
+#
+# 容器出口够不到 railway.app，所以只能在 Actions 的 runner 上跑。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "要修的作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+      max_rounds:
+        description: "最多让 AI 试几轮"
+        required: false
+        default: "3"
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm i -D playwright@1.56.0 && npx playwright install --with-deps chromium
+
+      # 作品要归这个账号所有，AI 才动得了它（无主的先在 /admin 里「划归账号」）
+      - name: 登录
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]}")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          user = reply.get("user") or {}
+          print(f"已登录：{user.get('username')}（角色 {user.get('role')}）")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
+      - name: 交给 AI 修
+        env:
+          COOKIE: ${{ steps.login.outputs.cookie }}
+        run: node scripts/fix-game.mjs "$BASE" "${{ inputs.game_id }}" "${{ inputs.max_rounds }}"

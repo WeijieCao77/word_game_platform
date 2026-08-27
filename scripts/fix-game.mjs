@@ -30,6 +30,21 @@ const H = { "content-type": "application/json", cookie: COOKIE };
 const CHROME = process.env.CHROME_PATH ?? undefined;
 
 /**
+ * 什么算「能点的东西」。
+ *
+ * 这一条也是踩出来的：上一版只认 button / [role=button] / .btn，
+ * 于是作品用 <div class="card" onclick=…> 做的「出身三张卡」在体检眼里
+ * 等于不存在，报的是「这一屏一个能点的都没有」——**冤枉了作品**。
+ * 今晚已经因为判据太浅漏掉三条投诉，不能再反过来错杀。
+ * 所以放宽到：语义按钮 + 带 onclick/data-act/data-screen 的元素 + 常见卡片类名 +
+ * 可聚焦元素（tabindex）。宁可多点几下，也不许把「有得点」说成「没得点」。
+ */
+const CLICKABLE =
+  "button:visible, [role=button]:visible, .btn:visible, a[href]:visible, " +
+  "[onclick]:visible, [data-act]:visible, [data-screen]:visible, [tabindex]:visible, " +
+  ".card:visible, .option:visible, .choice:visible, li[data-id]:visible";
+
+/**
  * 像玩家一样打开**并且真去玩一下**，回来报「能不能玩 + 卡在哪」。
  *
  * 只看「打不打得开」是不够的——老板撞到的第二个坑就是这样：页面渲染得好好的，
@@ -61,7 +76,7 @@ async function boot(label) {
     if (frame) {
       banner = (await frame.locator("[data-wgp-error]").first().textContent({ timeout: 2000 }).catch(() => "")) ?? "";
       text = (await frame.locator("body").innerText().catch(() => "")).trim();
-      clickable = await frame.locator("button, a, [role=button], .btn").count().catch(() => 0);
+      clickable = await frame.locator(CLICKABLE).count().catch(() => 0);
 
       // 有标签没控件：`<label>你的名字</label>` 却没有对应的 input/select/textarea
       const labels = await frame.locator("label").count().catch(() => 0);
@@ -89,11 +104,38 @@ async function boot(label) {
         for (let i = 0; i < fn; i++) {
           await fields.nth(i).fill("测试", { timeout: 1500 }).catch(() => {});
         }
-        const next = frame.locator("button:visible, [role=button]:visible, .btn:visible").last();
+        const next = frame.locator(CLICKABLE).last();
         if ((await next.count().catch(() => 0)) === 0) {
           // 一个能点的都没有 = 死路。以前这里直接 break 然后照样判「✓ 玩得动」，
           // 于是「走不下去」被当成「没问题」——同一个毛病栽了第三次。
-          stuck.push(`开局第 ${steps + 1} 屏上一个能点的东西都没有——走不下去了`);
+          // 报「没得点」之前先把这一屏有什么摆出来：到底是作品没画，
+          // 还是我的判据又太窄了。靠猜已经猜错过三次。
+          const shape = await frame
+            .evaluate(() => {
+              const out = [];
+              document.querySelectorAll("body *").forEach((n) => {
+                const r = n.getBoundingClientRect();
+                if (r.width < 8 || r.height < 8) return;
+                const clickish =
+                  n.onclick ||
+                  n.getAttribute("onclick") ||
+                  n.dataset.act ||
+                  n.dataset.screen ||
+                  n.hasAttribute("tabindex");
+                if (!clickish && !/^(BUTTON|A|INPUT|SELECT)$/.test(n.tagName)) return;
+                out.push(
+                  n.tagName.toLowerCase() +
+                    (n.className && typeof n.className === "string" ? "." + n.className.split(/\s+/).slice(0, 2).join(".") : "") +
+                    "「" + (n.textContent || "").replace(/\s+/g, " ").trim().slice(0, 14) + "」"
+                );
+              });
+              return out.slice(0, 12);
+            })
+            .catch(() => []);
+          stuck.push(
+            `开局第 ${steps + 1} 屏上一个能点的东西都没有——走不下去了` +
+              (shape.length ? `（这一屏上像是能点的元素：${shape.join("、")}）` : "（这一屏上连像样的元素都没有）")
+          );
           break;
         }
         const was = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
@@ -149,7 +191,7 @@ async function boot(label) {
       }
 
       // 首屏那个主按钮（只有在开局一步都没走动的情况下才需要单独试）
-      const btn = frame.locator("button:visible, [role=button]:visible, .btn:visible").first();
+      const btn = frame.locator(CLICKABLE).first();
       if (steps === 0 && (await btn.count().catch(() => 0)) > 0) {
         const label0 = (await btn.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 24);
         // 能填的先填上，别把「没填必填项」当成 bug

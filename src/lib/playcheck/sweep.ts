@@ -167,10 +167,19 @@ const SWEEP = `<script>(function(){
         stuck = {step:n, tried:tried, screen:text().slice(0,300), filled:filled, why:"dead-end"};
         break;
       }
-      // 走到有导航的那一屏就收手——开局的活干完了。
-      // 不收手的话它会接着去点导航，把预算烧在开局这一段，
-      // 后面正经的导航扫描反而超时（自测里 6 项只扫到 3 项）。
-      if (findNav().length >= 3) break;
+      /**
+       * 走到**主**导航那一屏才收手。
+       *
+       * 门槛定在 6 项，比 findNav() 自己的判据严：上一版只要 findNav() 认了就停，
+       * 而挑东家那一屏的四个赛区页签，容器类名叫 region-tabs 之类的，
+       * 正好被 navish() 的 nav|tab|menu 认成导航——于是走到第 3 步就收手，
+       * 扫完那四个页签报「试玩通过」，真正的 11 项主导航压根没走到。
+       * 线上连着两次报这个假绿。
+       *
+       * 收手门槛与「扫哪一组」故意分开：这里只管「够不够格让我停下来」，
+       * 停下来之后 findNav() 该扫谁还扫谁（真有 4 项的主导航照样扫得到）。
+       */
+      if (findNav().length >= 6) break;
     }
     return {steps:steps, stuck:stuck};
   }

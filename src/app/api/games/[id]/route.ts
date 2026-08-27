@@ -2,8 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 import { canEditGame, ownershipOf } from "@/lib/session";
 import { GameConfigSchema, validateGameConfig } from "@/lib/schema";
+import { comparePublished } from "@/lib/publish-drift";
 
 export const dynamic = "force-dynamic";
+
+/** 草稿比线上快照多改了几个文件（自由模式用）；没发布过就是 0 */
+function driftCount(store: ReturnType<typeof getStore>, id: string): number {
+  const live = store.versionLive(id);
+  if (!live) return 0;
+  const draft: Record<string, string> = {};
+  for (const f of store.fileList(id)) draft[f.path] = store.fileRead(id, f.path) ?? "";
+  const d = comparePublished(draft, live.files);
+  return d.changed.length + d.removed.length;
+}
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -39,8 +50,18 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
       canEdit && record.published
         ? JSON.stringify(store.versionLive(id)?.config ?? null) !== JSON.stringify(record.config)
         : false,
+    /**
+     * 自由模式的落差要数**文件**，不是配置。
+     *
+     * 上面那个 hasUnpublished 比的是 config——自由模式作品的 config 基本不动，
+     * 于是「改了三轮文件没发布」在界面上一点提示都没有。平台其实早就在算这件事
+     * （`publish-drift.ts`），但**只说给 AI 听**，末尾还写着「先请创作者点发布」，
+     * 而作者的界面上根本没有那个按钮。现在按钮有了，这个数也得给它。
+     */
+    unpublishedFiles: canEdit && record.published ? driftCount(store, id) : 0,
     author: record.author,
     published: record.published,
+    listed: record.listed,
     canEdit,
     // 已绑定账号的作品，钥匙不再单独授权——前端据此提示「请登录归属账号」
     owned: ownership.owned,

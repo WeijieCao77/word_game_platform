@@ -74,7 +74,9 @@ describe("SqliteGameStore 封面存取", () => {
     expect(Array.from(cover.data)).toEqual(Array.from(bytes));
     expect(store.get(id)!.hasCover).toBe(true);
 
+    // 「链接可达」和「公开挂牌」是两件事了：要出现在公开库里得挂牌
     store.setPublished(id, true);
+    store.setListed(id, true);
     expect(store.listPublished().find((g) => g.id === id)!.hasCover).toBe(true);
 
     store.setCover(id, null);
@@ -111,6 +113,7 @@ describe("SqliteGameStore 删除", () => {
     const { id } = store.create({ config: MINI_CONFIG });
     store.addPlay(id);
     store.setPublished(id, true);
+    store.setListed(id, true);
     store.delete(id);
     expect(store.get(id)).toBeNull();
     expect(store.getStats(id).plays).toBe(0);

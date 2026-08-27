@@ -1,5 +1,5 @@
 // 发布门槛的端到端自测：**真起一个服务、真建一部作品、真去点一遍**，
-// 看七道关每一道拦不拦得住、该放的放不放得过。
+// 看每一道关拦不拦得住、该放的放不放得过；后三关量的是「发布拆成三件事」拆干净没有。
 //
 // 为什么光有单元测试不够：`tests/publish-gate.test.ts` 喂的是我自己捏的样例，
 // 而这道门槛最先撞上的那个 bug 只有真作品才会露出来——平台自己的空白模板
@@ -80,14 +80,34 @@ const del = async (path) =>
     headers: { cookie },
   })).status;
 
-const publish = async () => {
+/** 发布接口现在收三件事；不给参数就是老写法 { published: true } = 三件一起做 */
+const publish = async (what = { published: true }) => {
   const r = await fetch(`${B}/api/games/${g.id}/publish`, {
     method: "POST",
     headers: H,
-    body: JSON.stringify({ published: true }),
+    body: JSON.stringify(what),
   });
   const b = await r.json().catch(() => ({}));
-  return { status: r.status, error: b.error, issues: b.issues ?? [], version: b.version };
+  return {
+    status: r.status,
+    error: b.error,
+    issues: b.issues ?? [],
+    version: b.version,
+    published: b.published,
+    listed: b.listed,
+  };
+};
+
+/** 拿一个匿名浏览器（没有 cookie）去够玩家页，看链接通不通 */
+const linkWorksAnonymously = async () => {
+  const r = await fetch(`${B}/play/${g.id}/index.html`);
+  return r.status === 200;
+};
+
+/** 这部作品在公开库里列出来了没有 */
+const inLibrary = async () => {
+  const b = await (await fetch(`${B}/api/games`)).json().catch(() => ({}));
+  return (b.games ?? []).some((x) => x.id === g.id);
 };
 
 /** 跑一次平台自己的试玩体检，并把报告交回服务端 */
@@ -177,10 +197,36 @@ const again = await publish();
 console.log(`${again.status === 200 ? "✓" : "✗"} 发布 → HTTP ${again.status}　第 ${again.version} 版`);
 if (again.status !== 200) fails.push("重新体检之后还是发不出去");
 
+// ⑧⑨⑩ 三件事拆开了没有
+line("⑧ 老写法 { published:true } 照旧三件一起做");
+console.log(`   链接可达=${again.published} 挂公开库=${again.listed}`);
+if (!again.published || !again.listed) fails.push("老写法应该三件一起做");
+if (!(await linkWorksAnonymously())) fails.push("链接开着，匿名却打不开");
+if (!(await inLibrary())) fails.push("挂着牌，公开库里却没有");
+
+line("⑨ 从公开库撤下 —— 链接必须还活着（这条就是拆分的理由）");
+const down = await publish({ listed: false });
+console.log(`   撤下后：链接可达=${down.published} 挂公开库=${down.listed}`);
+const aliveAfterTakedown = await linkWorksAnonymously();
+console.log(`   ${aliveAfterTakedown ? "✓" : "✗"} 匿名还打得开链接`);
+if (!aliveAfterTakedown) fails.push("从公开库撤下之后链接死了——作者和测试者会一起被挡在门外");
+if (await inLibrary()) fails.push("已经撤下了，公开库里还列着");
+
+line("⑩ 已发布的作品，接着发新版本（不用先取消发布）");
+await write("index.html", FAKE_GAME + "\n<!-- 第三版 -->");
+console.log("   体检结论：", await runCheck());
+const v3 = await publish({ publishVersion: true });
+console.log(`${v3.status === 200 ? "✓" : "✗"} 发新版本 → HTTP ${v3.status}　第 ${v3.version} 版`);
+if (v3.status !== 200) {
+  fails.push("已发布的作品发不了新版本");
+  console.log("   ", String(v3.error).split("\n").slice(0, 3).join(" / "));
+}
+if (!(await linkWorksAnonymously())) fails.push("发新版本把链接弄没了");
+
 console.log("");
 if (fails.length) {
   console.log("✗ 有对不上的：");
   for (const f of fails) console.log("   · " + f);
   process.exit(1);
 }
-console.log("✓ 七道关全部如预期");
+console.log("✓ 十道关全部如预期");

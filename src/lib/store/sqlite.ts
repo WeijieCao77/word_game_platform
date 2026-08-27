@@ -73,6 +73,7 @@ interface GameRow {
   chat: string;
   author: string;
   published: number;
+  listed: number;
   edit_key: string;
   created_at: string;
   updated_at: string;
@@ -152,9 +153,26 @@ export class SqliteGameStore implements GameStore {
       "ALTER TABLE games ADD COLUMN mode TEXT NOT NULL DEFAULT 'engine'",
       // 线上正在跑第几版；0 = 还没发布过任何版本
       "ALTER TABLE games ADD COLUMN live_version INTEGER NOT NULL DEFAULT 0",
+      /**
+       * 公开挂牌：在游戏库里列不列出来。
+       *
+       * 原来「发布」一个开关管三件事：打快照、链接能不能玩、挂不挂公开库。
+       * 后果之一是后台「撤下」动的也是同一个字段——**把半成品撤下公开库
+       * ＝ 把作者和测试者的链接一起弄死**。所以把「挂牌」单拎出来：
+       * `published` 从此只管**链接可达**，`listed` 只管**公开库列不列**。
+       *
+       * 老库回填见下面那条 UPDATE：已发布的照旧挂牌，没发布的本来也不在库里。
+       */
+      "ALTER TABLE games ADD COLUMN listed INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
+        // 刚加上 listed 这一列：老库里「已发布」的作品照旧挂在公开库
+        // （没发布的本来就不在库里，保持 0）。只在真的建了列那一次跑，
+        // 之后作者/后台改过的挂牌状态不会被这句覆盖回去。
+        if (/ADD COLUMN listed /.test(ddl)) {
+          this.db.exec("UPDATE games SET listed = 1 WHERE published = 1");
+        }
       } catch {
         // 列已存在
       }
@@ -398,7 +416,7 @@ export class SqliteGameStore implements GameStore {
   get(id: string): GameRecord | null {
     const row = this.db
       .prepare(
-        `SELECT id, config, design_card, chat, author, published, edit_key, created_at, updated_at,
+        `SELECT id, config, design_card, chat, author, published, listed, edit_key, created_at, updated_at,
                 (cover IS NOT NULL) AS has_cover
          FROM games WHERE id = ?`
       )
@@ -418,6 +436,7 @@ export class SqliteGameStore implements GameStore {
       hasCover: row.has_cover === 1,
       author: row.author,
       published: row.published === 1,
+      listed: row.listed === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -610,6 +629,14 @@ export class SqliteGameStore implements GameStore {
     return { likes: totals?.likes ?? 0, plays: totals?.plays ?? 0, playSeconds: totals?.play_seconds ?? 0, daily };
   }
 
+  /** 公开挂牌：在游戏库里列不列出来。跟「链接可达」是两件事 */
+  setListed(id: string, listed: boolean): void {
+    this.db
+      .prepare("UPDATE games SET listed = ?, updated_at = ? WHERE id = ?")
+      .run(listed ? 1 : 0, new Date().toISOString(), id);
+  }
+
+  /** 链接可达：拿到链接的人能不能玩。**不管**挂不挂公开库 */
   setPublished(id: string, published: boolean): void {
     this.db
       .prepare("UPDATE games SET published = ?, updated_at = ? WHERE id = ?")
@@ -658,7 +685,8 @@ export class SqliteGameStore implements GameStore {
     const order =
       sort === "hot" ? "plays DESC, likes DESC, updated_at DESC" : sort === "liked" ? "likes DESC, plays DESC, updated_at DESC" : "updated_at DESC";
     const rows = this.db
-      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 ORDER BY ${order} LIMIT ?`)
+      // 公开库看的是**挂牌**，不是链接可达：撤下挂牌不该把链接一起弄死
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE listed = 1 ORDER BY ${order} LIMIT ?`)
       .all(limit) as GameRow[];
     return rows.map((r) => this.toSummary(r));
   }
@@ -666,7 +694,7 @@ export class SqliteGameStore implements GameStore {
 
   listByAuthor(author: string): GameSummary[] {
     const rows = this.db
-      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE published = 1 AND author = ? ORDER BY updated_at DESC`)
+      .prepare(`SELECT ${SqliteGameStore.SUMMARY_COLS} FROM games WHERE listed = 1 AND author = ? ORDER BY updated_at DESC`)
       .all(author) as GameRow[];
     return rows.map((r) => this.toSummary(r));
   }

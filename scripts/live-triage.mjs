@@ -105,16 +105,26 @@ for (const g of games) {
   await page.close();
 
   const bar = ((banner || afterBanner) ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-  const broken = Boolean(bar) || errs.length > 0 || textLen < 40;
+  // 判据别再只问「有没有字」。
+  //
+  // 上一版是 `textLen < 40` —— 只要页面有 40 个字就算过。这正是今晚栽了三次的
+  // 那个病（见 docs/PITFALLS.md 一.2 / 一.3）：判据比现实浅一层，
+  // 「没检查到」被当成「没问题」。我在 fix-game 里修了，却漏了这个脚本，
+  // 而它恰恰是用来回答老板「哪部能玩」的那一个。
+  const noClick = clickable === 0;
+  const stuckHere = clickedLabel !== "" && afterLen > 0 && afterSnippet.replace(/\s+/g, "") === snippet.replace(/\s+/g, "");
+  const broken = Boolean(bar) || errs.length > 0 || textLen < 40 || noClick || stuckHere;
   rows.push({ ...g, banner: bar, errs, textLen, clickable, bytes, broken, snippet, afterLen, afterSnippet, clickedLabel });
 
-  console.log(`${broken ? "✗ 打不开/报错" : "✓ 打得开"}  ${g.id}  「${g.title}」  mode=${g.mode}  作者=${g.author ?? "-"}  更新=${g.updatedAt ?? "-"}`);
+  console.log(`${broken ? "✗ 玩不了" : "✓ 打得开（只测了首屏 + 点一下）"}  ${g.id}  「${g.title}」  mode=${g.mode}  作者=${g.author ?? "-"}  更新=${g.updatedAt ?? "-"}`);
   console.log(`    正文 ${textLen} 字  可点 ${clickable} 处  index.html ${bytes} 字符`);
   console.log(`    首屏：${snippet || "（一个字都没有）"}`);
   if (clickedLabel) {
     console.log(`    点了「${clickedLabel}」之后：正文 ${afterLen} 字`);
     console.log(`    点后：${afterSnippet || "（一个字都没有）"}`);
   }
+  if (noClick) console.log("    ⚠ 一个能点的东西都没有——玩家进来就卡住了");
+  if (stuckHere) console.log(`    ⚠ 点了「${clickedLabel}」之后页面一个字都没变——推进不下去`);
   if (bar) console.log(`    ⚠ 横幅：${bar}`);
   for (const e of errs.slice(0, 4)) console.log(`    ⚠ 报错：${e}`);
   console.log("");
@@ -124,7 +134,13 @@ await browser.close();
 
 const bad = rows.filter((r) => r.broken);
 console.log("=".repeat(70));
-console.log(`小结：${rows.length} 部里 ${rows.length - bad.length} 部能玩，${bad.length} 部打不开或报错`);
+// 说清楚这个数字是怎么来的：它只测了首屏 + 点一次，不等于「通关无碍」。
+// 把测到哪一步说明白，是这份体检不再自欺的前提。
+console.log(
+  `小结：${rows.length} 部里 ${rows.length - bad.length} 部打得开、点得动，${bad.length} 部玩不了\n` +
+    `（判据：没有报错横幅 / 没有控制台报错 / 首屏有正文 / 有能点的东西 / 点一下页面会变。\n` +
+    ` 这只测到「进得去、点得动」，没有走完开局，也没有逐项验导航。）`
+);
 if (bad.length) {
   console.log("\n打不开的：");
   for (const r of bad) console.log(`  - ${r.id} 「${r.title}」 ${r.banner || r.errs[0] || "页面几乎是空的"}`);

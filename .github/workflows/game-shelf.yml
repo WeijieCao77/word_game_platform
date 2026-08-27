@@ -1,0 +1,86 @@
+name: 游戏库上下架：把一部作品撤下或放回
+
+# 老板的原话是「我不要自己去手动做操作」。后台虽然有按钮，但要他自己登录去点，
+# 而我这边（容器出口够不到 railway.app）又没法直接操作——这条流水线补上这一段。
+#
+# 只动「在不在公开库里」这一个开关：
+#   撤下 = 不出现在公开游戏库，作者带钥匙照样能看能改能重新发布
+#   放回 = 重新挂上公开库
+# **不删任何东西**。删除是不可恢复的，只在后台由管理员二次确认后进行。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+      action:
+        description: "撤下 or 放回"
+        required: true
+        type: choice
+        options:
+          - 撤下
+          - 放回
+        default: 撤下
+
+jobs:
+  shelf:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - name: 登录
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]}")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          u = reply.get("user") or {}
+          print(f"已登录：{u.get('username')}（角色 {u.get('role')}）")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
+      - name: 上下架
+        env:
+          COOKIE: ${{ steps.login.outputs.cookie }}
+          GID: ${{ inputs.game_id }}
+          ACT: ${{ inputs.action }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE, GID, ACT = os.environ["BASE"], os.environ["GID"], os.environ["ACT"]
+          want = ACT == "放回"
+          # 管理员那条路只动公开开关，不碰版本快照——正是这里要的
+          req = urllib.request.Request(f"{BASE}/api/admin/games", method="POST",
+                                       data=json.dumps({"id": GID, "published": want}).encode(),
+                                       headers={"content-type": "application/json",
+                                                "cookie": os.environ["COOKIE"]})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  print(f"{ACT}成功：{r.read().decode()[:200]}")
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::{ACT}失败 HTTP {e.code}：{e.read().decode()[:300]}")
+
+          pub = json.loads(urllib.request.urlopen(f"{BASE}/api/games", timeout=60).read().decode())
+          games = pub.get("games") or []
+          still = [g for g in games if g.get("id") == GID]
+          print(f"公开库现在 {len(games)} 部；这部作品{'仍在库里' if still else '已不在库里'}")
+          PY

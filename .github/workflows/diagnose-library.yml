@@ -1,0 +1,33 @@
+name: 游戏库现场分诊：哪部能玩、哪部打不开
+
+# 老板同一个晚上撞到两件事：
+#   「游戏库里又有两个 val manager，哪个才是能玩的？」
+#   「新出现的 val manager 根本玩不了，显示出错。是不是现在平台新做的游戏都有问题？」
+#
+# 这两个问题都不能靠猜。这条流水线把线上**每一部已发布作品**用真浏览器打开一遍，
+# 报三样：能不能玩、报了什么错、代码量多大（重名的半成品和完整版一眼分得开）。
+#
+# 容器出口够不到 railway.app，所以只能在 Actions 的 runner 上跑。
+
+on:
+  workflow_dispatch:
+    inputs:
+      title_filter:
+        description: "只体检标题里含这个词的作品（留空 = 全库）"
+        required: false
+        default: ""
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # playwright 不是项目依赖（跟其它体检流水线一样按需装）
+      - run: npm i -D playwright@1.56.0 && npx playwright install --with-deps chromium
+      - name: 逐部打开
+        run: node scripts/live-triage.mjs "$BASE" "${{ inputs.title_filter }}"

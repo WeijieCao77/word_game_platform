@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PlayCheckReport } from "@/lib/playcheck/types";
+import { GateIssue } from "@/lib/publish-gate";
 
 /**
  * 体检页签（只有自由模式有）。
@@ -27,6 +28,7 @@ export default function PlayCheckTab({
   summary,
   checking,
   error,
+  gateIssues = [],
   onRun,
   onFix,
 }: {
@@ -36,6 +38,8 @@ export default function PlayCheckTab({
   summary: string;
   checking: boolean;
   error: string;
+  /** 刚才发布被门槛拦下来的原因（没被拦就是空） */
+  gateIssues?: GateIssue[];
   onRun: () => void;
   /** 「让 AI 去修」——把体检结论直接发进对话，作者不用自己抄 */
   onFix?: (message: string) => void;
@@ -72,6 +76,23 @@ export default function PlayCheckTab({
           </button>
         )}
       </div>
+
+      {gateIssues.length > 0 && (
+        <div className="issues" style={{ marginTop: 10 }}>
+          <div className="pane-note" style={{ marginBottom: 6 }}>
+            <strong>刚才发布没成——这几条得先过：</strong>
+          </div>
+          {gateIssues.map((g, i) => (
+            <div key={i} className={`issue ${g.level === "error" ? "error" : "warn"}`}>
+              <div className="path">{g.level === "error" ? "拦住发布" : "不拦，但看一眼"}</div>
+              {g.what}
+              {g.how && (
+                <div style={{ marginTop: 6, opacity: 0.75 }}>怎么办：{g.how}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {report && (
         <div className="issues">

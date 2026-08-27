@@ -9,6 +9,7 @@ import DesignTab from "@/components/editor/tabs/DesignTab";
 import ConfigTab from "@/components/editor/tabs/ConfigTab";
 import CheckTab from "@/components/editor/tabs/CheckTab";
 import PlayCheckTab from "@/components/editor/tabs/PlayCheckTab";
+import { GateIssue } from "@/lib/publish-gate";
 import CoverTab from "@/components/editor/tabs/CoverTab";
 import AssetsSection from "@/components/editor/tabs/AssetsSection";
 import LibraryTab from "@/components/editor/tabs/LibraryTab";
@@ -76,6 +77,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const checkingRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  // 发布被门槛拦下来时那几条。摆在「体检」页签里——作者找「为什么发不了」
+  // 第一个会去的就是那儿，而且拦住它的多半就是体检那一层。
+  const [gateIssues, setGateIssues] = useState<GateIssue[]>([]);
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [loadError, setLoadError] = useState("");
   const [simText, setSimText] = useState("");
@@ -466,9 +470,20 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     });
     const body = await res.json();
     if (!res.ok) {
-      setStatusMsg(body.error ?? "发布失败");
+      // 自由模式的发布门槛会回一串结构化的问题。顶栏那条状态只有一行，
+      // 塞不下——所以只在那儿说一句话，详情摆进「体检」页签，并且切过去。
+      const list = Array.isArray(body.issues) && body.gate === "code" ? (body.issues as GateIssue[]) : [];
+      setGateIssues(list);
+      if (list.length) {
+        const n = list.filter((i) => i.level === "error").length;
+        setStatusMsg(`发不了：${n} 处得先修，详情在「体检」页签`);
+        setTab("playcheck");
+      } else {
+        setStatusMsg(String(body.error ?? "发布失败").split("\n")[0]);
+      }
       return;
     }
+    setGateIssues([]);
     setPublished(body.published);
     setStatusMsg(body.published ? "已发布 ✓ 任何人都能通过链接游玩了" : "已取消发布");
   }, [editKey, id, published, save]);
@@ -1030,6 +1045,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 summary={checkSummary}
                 checking={checking}
                 error={checkErr}
+                gateIssues={gateIssues}
                 onRun={() => void runCheckNow()}
                 onFix={(msg) => {
                   setChatInput(msg);

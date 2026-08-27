@@ -20,6 +20,7 @@
  * 只报告，不拦截：写文件的正常节奏就是「先写新文件、下一步再接进 index.html」，
  * 拦下来反而挡住正常干活。把话说给 AI 听就够了——它看得见就会去接。
  */
+import { isRuntimeAsset } from "@/lib/runtime";
 
 export interface WiringReport {
   /** 存在但没被 index.html 引用的代码文件 */
@@ -34,8 +35,15 @@ function localRefs(html: string): string[] {
   const add = (src: string): void => {
     if (!src) return;
     if (/^(https?:)?\/\//i.test(src) || /^(data|blob|#|mailto:)/i.test(src)) return;
-    // 平台自己提供的运行库与数据表是虚拟文件，不在作品的文件列表里
+    // 平台自己提供的运行库与数据表是虚拟文件，不在作品的文件列表里。
+    //
+    // 这里原来只挡住了 `wgp/...` 这种带斜杠的路径，**漏了 `wgp.js` / `wgp.css`
+    // 这两个虚拟文件名**——而平台自己的空白模板 index.html 引的正是它们。
+    // 后果是每部作品都被报一句「index.html 引用了 wgp.css，可作品里没有这个文件」：
+    // 一直在误导 AI，接进发布门槛之后更会**把每一部作品都拦在发布之外**。
+    // 发布门槛端到端自测第一关就撞上了这个。
     if (/^\/?wgp\//i.test(src)) return;
+    if (isRuntimeAsset(src.replace(/^\.?\//, "").split(/[?#]/)[0])) return;
     out.push(src.replace(/^\.?\//, "").split(/[?#]/)[0]);
   };
   const re = /<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*("|')([^"']+)\1/gi;

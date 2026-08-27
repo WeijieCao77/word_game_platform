@@ -190,6 +190,20 @@ export interface GameStore {
    */
   playCheckSet(gameId: string, report: PlayCheckReport): void;
   playCheckGet(gameId: string): PlayCheckReport | null;
+
+  /**
+   * 「我要一份新体检」的挂号簿。
+   *
+   * 体检只能在浏览器里跑（作品是一整套页面），而 AI 那一轮跑在服务端。
+   * 所以 AI 挂个号，正在轮询这一轮的那个浏览器（作者的工作台，或者实测脚本）
+   * 看见号就去跑一次、把报告 POST 回来，AI 当轮就拿到结果。
+   *
+   * 没人接号也要能收场：挂号有时间戳，等超时就说清「这一轮没人替你跑」，
+   * 不许悄悄当成「体检通过」。
+   */
+  playCheckWant(gameId: string): void;
+  playCheckWantedAt(gameId: string): string | null;
+  playCheckClearWant(gameId: string): void;
   /** 作品形态：engine=配置 + 通用引擎；code=自带页面 */
   gameMode(id: string): GameMode;
   gameSetMode(id: string, mode: GameMode): void;

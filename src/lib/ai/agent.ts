@@ -142,6 +142,20 @@ const TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "play_check",
+      description:
+        "**替你去真浏览器里玩一遍**：从开局往前走、把导航一项项点过去，" +
+        "回来告诉你走到第几步、哪一屏点了没反应、哪几项导航点不动、哪一页是空壳。" +
+        "改完文件想确认「到底修好没有」就调它——不调的话你要等到下一轮才知道，" +
+        "而下一轮的判断可能已经建立在错的假设上。" +
+        "注意它只查「走不走得通」，不查好不好玩、也不查数值。" +
+        "跑一次大概十秒；没人能替你跑的时候它会明说，别把那种情况当成通过。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_files",
       description: "列出这部作品当前有哪些文件（自由模式）。改代码之前先看一眼有什么。",
       parameters: { type: "object", properties: {} },
@@ -341,6 +355,14 @@ export interface AgentContext {
    * 所以平台自己去点一遍，把结果摆进上下文。
    */
   playCheck?: string;
+  /**
+   * 当轮跑一次试玩体检，拿回一段能读的报告。
+   *
+   * 体检只能在浏览器里跑，而这一轮跑在服务端——所以这里挂个号，
+   * 由正在轮询这一轮的那个浏览器（作者的工作台，或者实测脚本）去跑。
+   * 没人接号就如实说，绝不返回一句像「通过」的话。
+   */
+  runPlayCheck?: () => Promise<string>;
   /** 切轨：自由模式写文件时切到 code，创作者同意回切时切回 engine。不传则形态不变 */
   setMode?: (mode: GameMode) => void;
   /**
@@ -585,7 +607,7 @@ export async function runAssistant(
       let result: string;
       try {
         const args = call.function.arguments ? (JSON.parse(call.function.arguments) as Record<string, unknown>) : {};
-        result = runTool(call.function.name, args);
+        result = await runTool(call.function.name, args);
       } catch (err) {
         result = `工具执行失败：${err instanceof Error ? err.message : String(err)}`;
       }
@@ -639,7 +661,9 @@ export async function runAssistant(
       return "\n（已切回快速模式：现在由通用引擎按配置渲染，原来的页面文件仍然保留但不再执行。）";
     }
 
-    function runTool(name: string, args: Record<string, unknown>): string {
+    // async：play_check 要等浏览器那边把体检跑完再回话（见 ctx.runPlayCheck）。
+    // 其余分支照旧同步返回字符串，async 不改变它们的行为。
+    async function runTool(name: string, args: Record<string, unknown>): Promise<string> {
       switch (name) {
         case "update_design_card": {
           if (typeof args.content !== "string") return "参数错误：content 必须是字符串";
@@ -730,6 +754,12 @@ export async function runAssistant(
               : `已写入 ${section}：本批 ${raw.length} 条，该分节现在共 ${merged.length} 条，校验通过。`) +
             switchedBack
           );
+        }
+        case "play_check": {
+          if (!ctx.runPlayCheck) {
+            return "这部作品是快速模式，试玩体检只对自由模式的作品有意义。";
+          }
+          return await ctx.runPlayCheck();
         }
         case "read_errors": {
           if (!ctx.errors) return "这部作品是快速模式，运行时报错走的是三级校验，不在这里。";

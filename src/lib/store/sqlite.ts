@@ -261,6 +261,13 @@ export class SqliteGameStore implements GameStore {
         at TEXT NOT NULL,
         report TEXT NOT NULL
       );
+      -- 「我要一份新体检」的挂号簿：AI 挂号，正在轮询的那个浏览器去跑。
+      -- 单独一张表而不是给上面加一列，是因为「想要一份」和「已经有一份」
+      -- 是两件独立的事：挂号的时候可能一份报告都还没有。
+      CREATE TABLE IF NOT EXISTS game_playcheck_want (
+        game_id TEXT PRIMARY KEY,
+        at TEXT NOT NULL
+      );
       -- AI 任务：一轮对话在后台跑，前端轮询要结果。
       -- 原来是同步请求干等，最重的那一轮必然被网关掐成 502，
       -- 所以单轮预算只能压到 240 秒——AI 一轮干不完一件事，只能靠轮次堆。
@@ -465,6 +472,7 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("DELETE FROM game_files WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_errors WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_playcheck WHERE game_id = ?").run(id);
+    this.db.prepare("DELETE FROM game_playcheck_want WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM game_versions WHERE game_id = ?").run(id);
     this.db.prepare("DELETE FROM games WHERE id = ?").run(id);
   }
@@ -987,6 +995,28 @@ export class SqliteGameStore implements GameStore {
           "ON CONFLICT(game_id) DO UPDATE SET at = excluded.at, report = excluded.report"
       )
       .run(gameId, report.at, JSON.stringify(report));
+    // 报告到了，号就销掉——别让 AI 下一轮又等一次已经跑过的体检
+    this.playCheckClearWant(gameId);
+  }
+
+  playCheckWant(gameId: string): void {
+    this.db
+      .prepare(
+        "INSERT INTO game_playcheck_want (game_id, at) VALUES (?, ?) " +
+          "ON CONFLICT(game_id) DO UPDATE SET at = excluded.at"
+      )
+      .run(gameId, new Date().toISOString());
+  }
+
+  playCheckWantedAt(gameId: string): string | null {
+    const row = this.db
+      .prepare("SELECT at FROM game_playcheck_want WHERE game_id = ?")
+      .get(gameId) as { at: string } | undefined;
+    return row?.at ?? null;
+  }
+
+  playCheckClearWant(gameId: string): void {
+    this.db.prepare("DELETE FROM game_playcheck_want WHERE game_id = ?").run(gameId);
   }
 
   playCheckGet(gameId: string): PlayCheckReport | null {

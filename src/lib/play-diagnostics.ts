@@ -74,10 +74,33 @@ const BOOT = `<script>(function(){
     return false;
   }
 
+  // 平台自己在重启的时候，作品的 js/css 会 502 拿不到——**这不是作品的错**。
+  //
+  // 这一条是被一次真实的误诊逼出来的：线上那部作品每次部署重启的那几分钟里，
+  // screens-setup.js 加载不出来，于是 game.js 调 registerSetup() 报
+  // 「registerSetup is not defined」，横幅血红一片。看的人（包括我）据此判定
+  // 作品写坏了，差点让 AI 去修一个根本不存在的 bug——而它平时是好好的。
+  //
+  // 所以：资源加载失败单独认，说人话（刷新一下），**并且不上报**；
+  // 它引发的后续 "xxx is not defined" 也一并不上报——宁可漏一条，不许冤枉作品。
+  var resourceFailed = 0;
   window.addEventListener("error", function(e){
     if(!e) return;
+    var t = e.target;
+    if (t && t !== window && t.tagName) {
+      var tag = String(t.tagName).toUpperCase();
+      if (tag === "SCRIPT" || tag === "LINK" || tag === "IMG" || tag === "AUDIO" || tag === "VIDEO") {
+        resourceFailed = 1;
+        var where = t.src || t.href || "";
+        bar("有个文件没能加载出来，刷新一下多半就好。",
+            (where ? where.split("/").pop() + " —— " : "") + "平台重启或网络抖动的时候会这样，不是这部作品的问题。");
+        return;
+      }
+    }
     var msg = (e.error && e.error.message) || e.message || "未知错误";
     if (foreign(msg, e.filename)) return;
+    // 上面刚有文件没加载出来：接下来那些 "xxx is not defined" 都是它的连锁反应
+    if (resourceFailed) return;
     var where = e.filename ? (e.filename.split("/").pop() + ":" + e.lineno + ":" + e.colno) : "";
     // Script error. = 浏览器把跨域脚本的详情抹掉了。真出现就说清楚是怎么回事，
     // 别让人以为平台在藏信息。
@@ -99,6 +122,34 @@ const BOOT = `<script>(function(){
     if (foreign(msg, "")) return;
     post(msg, r && r.stack, "Promise");
   });
+
+  // 开局体检：有些「玩不了」一个异常都不抛。
+  //
+  // 老板撞到的那一次：作品好好地画出了「你的名字」这一行，**可它下面根本没有输入框**，
+  // 点「下一步」只弹一句「先给自己起个名字」，然后原地不动——第一步就走死了。
+  // 页面渲染正常、控制台干干净净，前面所有护栏一个都不响。
+  //
+  // 这里只查一件板上钉钉的事：一个 label 的 for 指着一个**页面上不存在**的 id。
+  // 这不是风格问题也不是猜测——它百分之百意味着「写了标签、控件没渲染出来」。
+  // 隐式标签（<label> 包着控件、没有 for）一律不查，免得冤枉正常写法。
+  setTimeout(function(){
+    try{
+      var ls = document.querySelectorAll("label[for]");
+      var bad = [];
+      for (var i = 0; i < ls.length; i++) {
+        var id = ls[i].getAttribute("for");
+        if (id && !document.getElementById(id)) {
+          var t = (ls[i].textContent || "").replace(/\\s+/g, " ").trim().slice(0, 20);
+          bad.push(t ? t + "（for=" + id + "）" : id);
+        }
+        if (bad.length >= 6) break;
+      }
+      if (bad.length) {
+        post("开局体检：这些标签指向的控件根本不存在，玩家看得到「要填什么」却没地方填——"
+             + bad.join("、"), "", "开局体检");
+      }
+    }catch(_){}
+  }, 2500);
 })();</script>`;
 
 /**

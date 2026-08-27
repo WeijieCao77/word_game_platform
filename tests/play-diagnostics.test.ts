@@ -53,6 +53,29 @@ describe("自由模式出口注入：黑屏要变成看得懂的报错", () => {
     expect(() => new vm.Script(code)).not.toThrow();
   });
 
+  it("平台自己重启导致的文件加载失败，不许算在作品头上", () => {
+    // 被一次真实误诊逼出来的：每次部署重启的那几分钟，作品的 screens-setup.js
+    // 502 拿不到，于是报「registerSetup is not defined」，血红一片。
+    // 看的人据此判定作品写坏了——而它平时好好的。
+    const code = /<script>([\s\S]*?)<\/script>/.exec(injectPlayDiagnostics("<head></head>"))![1];
+    expect(code).toContain("resourceFailed");
+    expect(code).toContain("刷新一下多半就好");
+    expect(code).toContain("不是这部作品的问题");
+    // 关键：资源失败那条**不上报**，它引发的连锁 not defined 也不上报
+    expect(code).toContain("if (resourceFailed) return;");
+  });
+
+  it("开局体检只查「标签指向的控件不存在」这一件板上钉钉的事", () => {
+    // 老板撞到的那一次：作品画出了「你的名字」，可下面根本没有输入框，
+    // 点「下一步」原地不动——页面渲染正常、控制台干干净净，一个异常都不抛。
+    const code = /<script>([\s\S]*?)<\/script>/.exec(injectPlayDiagnostics("<head></head>"))![1];
+    expect(code).toContain("label[for]");
+    expect(code).toContain("getElementById");
+    expect(code).toContain("开局体检");
+    // 隐式标签（<label> 包着控件、没有 for）不查——冤枉正常写法比漏掉更糟
+    expect(code).not.toContain('querySelectorAll("label")');
+  });
+
   it("Script error.（跨域遮蔽）要说清是怎么回事，不能让人以为平台在藏信息", () => {
     expect(injectPlayDiagnostics("<head></head>")).toContain("跨域遮蔽");
   });

@@ -1,0 +1,88 @@
+name: 体检可复现性：同一份代码连跑几次
+
+# 量一件事：**同一份代码连跑几次，试玩体检的结论一样吗？**
+#
+# 起因是一次真事故：中间一个游戏文件都没改，两次检查却给了相反的结论
+# （一次「开局第 4 步走不下去」，一次「进到导航、11 项里 1 项坏」）。
+# 我据此判了「上一轮把代码改坏了」，还把这个错误结论喂给 AI 去修。
+#
+# 不可复现的检查器比没有检查器更坏——它不但自己不算数，还会把人和 AI 一起带偏。
+# 所以这条流水线只做一件事：把不稳定量出来，不修任何东西。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "要量的作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+      times:
+        description: "连跑几次"
+        required: false
+        default: "5"
+
+jobs:
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      # 量的必须是线上正在跑的那一版体检代码，否则量了个寂寞
+      - name: 等部署跟上
+        run: |
+          set -e
+          want="$(echo "${{ github.sha }}" | cut -c1-7)"
+          echo "要等的 commit：$want"
+          for i in $(seq 1 40); do
+            got="$(curl -sS --max-time 10 "$BASE/api/health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' || true)"
+            if [ "$got" = "$want" ]; then
+              echo "线上已经是 $got，等 20 秒让容器彻底稳下来"
+              sleep 20
+              exit 0
+            fi
+            echo "  线上还是 ${got:-取不到}，15 秒后再看（第 $i 次）"
+            sleep 15
+          done
+          echo "::error::等了 10 分钟线上还没跟上（要 $want）。先确认部署再重跑。"
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm i -D playwright@1.56.0 && npx playwright install --with-deps chromium
+
+      # 体检脚本只对作者注入，所以要带上归属账号的登录态
+      - name: 登录
+        id: login
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE = os.environ["BASE"]
+          body = json.dumps({"username": os.environ["E2E_USERNAME"], "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]}")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          user = reply.get("user") or {}
+          print(f"已登录：{user.get('username')}（角色 {user.get('role')}）")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cookie={cookie}\n")
+          PY
+
+      - name: 连跑并比对
+        env:
+          COOKIE: ${{ steps.login.outputs.cookie }}
+        run: node scripts/playcheck-repeat.mjs "$BASE" "${{ inputs.game_id }}" "${{ inputs.times }}"

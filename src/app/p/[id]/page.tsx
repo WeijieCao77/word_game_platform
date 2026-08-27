@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getStore } from "@/lib/store";
+import { currentUserFromCookies } from "@/lib/session";
 import CodeGameFrame from "@/components/CodeGameFrame";
 import { GameConfig } from "@/lib/schema";
 
@@ -57,5 +58,32 @@ export default async function CodeGamePage({
   }
 
   const title = (record.config as GameConfig)?.meta?.title ?? "无题";
-  return <CodeGameFrame gameId={id} title={title} editKey={record.published ? undefined : k} />;
+
+  /**
+   * 未发布的作品，归属人凭登录态也该打得开。
+   *
+   * 以前只认地址栏里的 ?k=：归属人登录着点进来，页面本身出得来（同源、带 cookie），
+   * 可 iframe 里的 style.css / game.js 全 403——沙箱是不透明源，它发的子请求算跨站，
+   * SameSite=Lax 的 cookie 一律不带（`/api/games/:id/preview` 的注释里写着这条）。
+   * 玩家看到的是「有个文件没能加载出来」，而作品其实好好的。
+   * 所以在这一层就把通行证换好：有会话且是归属人 → 直接发一张，通行证进路径，
+   * 子请求自然带得上。编辑钥匙不进 HTML。
+   */
+  let previewToken: string | undefined;
+  if (!record.published) {
+    const owner = store.gameOwner(id);
+    if (owner) {
+      const user = await currentUserFromCookies();
+      if (user && user.id === owner) previewToken = store.previewToken(id) ?? undefined;
+    }
+  }
+
+  return (
+    <CodeGameFrame
+      gameId={id}
+      title={title}
+      editKey={record.published ? undefined : k}
+      previewToken={previewToken}
+    />
+  );
 }

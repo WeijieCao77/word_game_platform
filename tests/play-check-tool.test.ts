@@ -105,6 +105,8 @@ describe("体检挂号簿（存储层）", () => {
     at: new Date().toISOString(),
     bootText: 100,
     steps: [],
+    walked: 0,
+    arrived: false,
     stuck: null,
     nav: [],
     notes: [],

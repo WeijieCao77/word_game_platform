@@ -71,8 +71,26 @@ export interface PlayCheckReport {
   at: string;
   /** 开局第一屏的正文字数——0 就是白屏 */
   bootText: number;
-  /** 开局往前走通的每一步 */
+  /** 开局往前走通的每一步（**会被截断到 12 条**，数步数要用 walked） */
   steps: PlayStep[];
+  /**
+   * 真正走通了几步。
+   *
+   * 不能拿 `steps.length` 当步数：那个数组存下来的时候截到 12 条，
+   * 于是走满 14 步的报告会说成「走了 12 步」。线上真出现过这句。
+   */
+  walked: number;
+  /**
+   * 有没有**走到主界面**（认出一排 6 项以上的导航才算）。
+   *
+   * 这一条是线上那次假绿逼出来的：体检走满 14 步都没走到主界面，
+   * 一路上没卡住、也没坏按钮，于是 `stuck` 是 null、`nav` 里是挑东家那一屏
+   * 四个赛区页签——报告长得跟通过一模一样，一句话结论直接写「试玩通过」。
+   * 同一分钟里另一个检查器说的是「开局第 4 步走不下去」。
+   *
+   * **「走了很多步」不等于「走到了」。** 没走到就得说没走到。
+   */
+  arrived: boolean;
   /** 走不下去了就有这一段；一路走到底就是 null */
   stuck: PlayStuck | null;
   /** 导航扫描的结果；没找到导航就是空数组 */
@@ -87,6 +105,10 @@ export interface PlayCheckReport {
 export function playCheckHasIssue(r: PlayCheckReport): boolean {
   if (r.bootText <= 0) return true;
   if (r.stuck) return true;
+  // 没走到主界面 = 这一段没测到。平台在「把没测到说成没问题」上已经栽过五次，
+  // 所以宁可误报：真是纯线性故事没有导航栏，AI 一句话就能打发掉；
+  // 反过来把没走到说成通过，一轮就白费了。
+  if (!r.arrived) return true;
   if (r.nav.some((n) => !n.changed && !n.already)) return true;
   if (r.steps.some((s) => s.dead.length > 0)) return true;
   // 切过去了但那一页几乎什么都没有 = 空壳

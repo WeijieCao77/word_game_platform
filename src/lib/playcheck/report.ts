@@ -40,6 +40,10 @@ export function parsePlayCheck(raw: unknown): PlayCheckReport {
           filled: arr(x.filled).slice(0, 6).map((f) => S(f, 24)),
         };
       }),
+    // 老报告里没有这两个字段：`arrived` 缺省算 false（宁可说没测到），
+    // `walked` 缺省退回截断后的条数——总比编一个数强。
+    walked: Math.max(N(o.walked), arr(o.steps).length),
+    arrived: o.arrived === true,
     stuck,
     nav: arr(o.nav)
       .slice(0, 20)
@@ -63,6 +67,7 @@ export function summarizePlayCheck(r: PlayCheckReport): string {
   if (r.bootText <= 0) return "开局白屏";
   const bad: string[] = [];
   if (r.stuck) bad.push(`开局卡在第 ${r.stuck.step} 步`);
+  else if (!r.arrived) bad.push(`走了 ${r.walked} 步也没走到主界面`);
   const dead = r.nav.filter((n) => !n.changed && !n.already).length;
   if (dead > 0) bad.push(`导航 ${dead}/${r.nav.length} 项点不动`);
   const deadBtn = r.steps.reduce((a, s2) => a + s2.dead.length, 0);
@@ -70,11 +75,15 @@ export function summarizePlayCheck(r: PlayCheckReport): string {
   const empty = r.nav.filter((n) => n.changed && n.textLen < 40 && n.clickable === 0).length;
   if (empty > 0) bad.push(`${empty} 页是空壳`);
   if (bad.length === 0) {
-    // 「导航 0 项都能切」是句空话——一项都没测到，别写得像通过了。
-    // 这个毛病我在别处栽过三次（判据浅、把「没测到」说成「没问题」），这里堵死。
+    // 走到这里 arrived 一定是 true，也就是真认出了一排 6 项以上的主导航，
+    // 「导航 N 项都能切」才是句实话。早先没有 arrived 这一条时，
+    // 挑东家那一屏的四个赛区页签也能凑出这句话——线上假绿过一次。
+    //
+    // 后半句是道保险：万一 arrived 为真、扫的时候导航又不见了（页面自己跳走了），
+    // 「导航 0 项都能切」照样是句空话，别让它出现。
     return r.nav.length > 0
-      ? `试玩通过（走了 ${r.steps.length} 步，导航 ${r.nav.length} 项都能切）`
-      : `开局走通 ${r.steps.length} 步；没找到导航，那一段没测到`;
+      ? `试玩通过（走了 ${r.walked} 步，导航 ${r.nav.length} 项都能切）`
+      : `开局走通 ${r.walked} 步；没找到导航，那一段没测到`;
   }
   return bad.join("、");
 }
@@ -91,10 +100,9 @@ export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): str
     const nav =
       r.nav.length > 0
         ? `导航 ${r.nav.length} 项都能切，没查出「点了没反应」。`
-        : `**但一项导航都没找到**——要么这部作品还没有导航栏，要么体检没走到有导航的那一屏。` +
-          `这一段等于没测到，别当成通过。`;
+        : `**但一项导航都没找到**——这一段等于没测到，别当成通过。`;
     return (
-      `平台刚在浏览器里自动玩了一遍：开局走通 ${r.steps.length} 步，` +
+      `平台刚在浏览器里自动玩了一遍：开局走通 ${r.walked} 步走到了主界面，` +
       nav +
       `（走得动不说明好玩，也不说明数值对。）`
     );
@@ -107,6 +115,24 @@ export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): str
 
   if (r.bootText <= 0) {
     lines.push("· 开局白屏：页面加载完之后，正文一个字都没有。");
+  }
+
+  // 没卡住、却也没走到主界面——这一条单独说，不然它长得跟通过一样。
+  if (!r.stuck && !r.arrived) {
+    lines.push(
+      `· 体检一路点了 ${r.walked} 步，**始终没走到有导航栏的主界面**` +
+        (r.nav.length
+          ? `（只找到一组 ${r.nav.length} 项的页签：${r.nav
+              .map((n) => n.label)
+              .join("、")}——这多半是某一屏里的分区页签，不是主界面那一排）`
+          : `（一组导航都没找到）`) +
+        `。`
+    );
+    lines.push(
+      `  这一条怎么读：如果这部作品**本来就没有导航栏**（纯线性故事），忽略即可；` +
+        `如果它说好有俱乐部/阵容/赛程那样一整排页签，那就是开局这条路还没通到主界面——` +
+        `**别把「走了很多步」当成走通了**。`
+    );
   }
 
   if (r.stuck) {

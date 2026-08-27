@@ -9,6 +9,10 @@ import { playCheckHasIssue } from "@/lib/playcheck/types";
 const good = {
   bootText: 800,
   steps: [{ label: "开始", filled: [] }],
+  // 「走到主界面了」是通过的必要条件之一，样例里必须显式带上——
+  // 少了它这份报告就该被判成「没测到」，见下面那一组。
+  walked: 1,
+  arrived: true,
   stuck: null,
   nav: [
     { label: "阵容", changed: true, textLen: 900, clickable: 12 },
@@ -53,6 +57,61 @@ describe("试玩体检 · 收报告", () => {
     const r = parsePlayCheck(undefined);
     expect(r.bootText).toBe(0);
     expect(r.nav).toEqual([]);
+  });
+});
+
+// 线上真绿过一次：体检走满一路都没走到主界面，路上没卡住也没坏按钮，
+// 于是 stuck 是 null、nav 里是某一屏的四个分区页签——报告长得跟通过一模一样，
+// 一句话结论直接写「试玩通过（导航 4 项都能切）」。同一分钟另一个检查器说的是
+// 「开局第 4 步走不下去」。**「走了很多步」不等于「走到了」。**
+describe("试玩体检 · 走了很多步但没走到主界面", () => {
+  const wandered = {
+    ...good,
+    walked: 14,
+    arrived: false,
+    steps: new Array(12).fill({ label: "Americas", dead: [], filled: [] }),
+    nav: [
+      { label: "Americas", changed: true, textLen: 500, clickable: 9 },
+      { label: "EMEA", changed: true, textLen: 500, clickable: 9 },
+      { label: "Pacific", changed: true, textLen: 500, clickable: 9 },
+      { label: "China", changed: true, textLen: 500, clickable: 9 },
+    ],
+  };
+
+  it("没走到主界面就是有问题，不许算通过", () => {
+    expect(playCheckHasIssue(parsePlayCheck(wandered))).toBe(true);
+  });
+
+  it("一句话结论里绝不能出现「试玩通过」", () => {
+    const s = summarizePlayCheck(parsePlayCheck(wandered));
+    expect(s).not.toContain("试玩通过");
+    expect(s).toContain("没走到主界面");
+  });
+
+  it("给 AI 的话要说清「走了很多步不等于走通了」，还要留下自辩的口子", () => {
+    const text = describePlayCheck(parsePlayCheck(wandered));
+    expect(text).toContain("始终没走到有导航栏的主界面");
+    expect(text).toContain("别把「走了很多步」当成走通了");
+    // 纯线性故事本来就没有导航栏，得让 AI 一句话就能打发掉，而不是被逼着乱改
+    expect(text).toContain("本来就没有导航栏");
+  });
+
+  it("步数说实话：steps 存下来截到 12 条，不许把 14 步说成 12 步", () => {
+    const r = parsePlayCheck(wandered);
+    expect(r.steps.length).toBe(12);
+    expect(r.walked).toBe(14);
+    expect(summarizePlayCheck(r)).toContain("14 步");
+  });
+
+  it("老报告里没有 arrived 这个字段——一律按「没测到」算，不许当通过", () => {
+    const legacy = { ...good };
+    delete (legacy as { arrived?: boolean }).arrived;
+    delete (legacy as { walked?: number }).walked;
+    const r = parsePlayCheck(legacy);
+    expect(r.arrived).toBe(false);
+    expect(playCheckHasIssue(r)).toBe(true);
+    // walked 缺省退回条数，别编数
+    expect(r.walked).toBe(1);
   });
 });
 
@@ -212,18 +271,28 @@ describe("试玩体检 · 自测逼出来的两条", () => {
 describe("试玩体检 · 「没测到」不许说成「通过」", () => {
   // 线上第一次真跑就露出来了：报告写「试玩通过（走了 8 步，导航 0 项都能切）」——
   // 一项都没点到，却读起来像全过了。判据浅、把没测到说成没问题，这是第四次栽在同一件事上。
-  const noNav = { ...good, steps: [{ label: "开始", dead: [], filled: [] }], nav: [] };
+  const noNav = { ...good, arrived: false, steps: [{ label: "开始", dead: [], filled: [] }], nav: [] };
 
   it("一项导航都没找到时，结论里不许出现「都能切」", () => {
     const s = summarizePlayCheck(parsePlayCheck(noNav));
     expect(s).not.toContain("都能切");
-    expect(s).toContain("没测到");
+    expect(s).not.toContain("试玩通过");
   });
 
   it("给 AI 的话也要挑明这一段没测到", () => {
     const text = describePlayCheck(parsePlayCheck(noNav));
-    expect(text).toContain("没找到");
-    expect(text).toContain("别当成通过");
+    expect(text).toContain("一组导航都没找到");
+    expect(text).toContain("别把「走了很多步」当成走通了");
+  });
+
+  // 保险丝：万一「走到主界面了」和「一项导航都没扫到」同时出现（页面自己跳走了），
+  // 「导航 0 项都能切」照样是句空话
+  it("说走到了主界面、却一项导航都没扫到——也不许说成通过", () => {
+    const weird = { ...good, arrived: true, nav: [] };
+    const s = summarizePlayCheck(parsePlayCheck(weird));
+    expect(s).not.toContain("都能切");
+    expect(s).toContain("没测到");
+    expect(describePlayCheck(parsePlayCheck(weird))).toContain("别当成通过");
   });
 
   it("真扫到导航时照旧说「都能切」", () => {

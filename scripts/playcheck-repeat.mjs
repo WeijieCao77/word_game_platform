@@ -77,8 +77,9 @@ function fingerprint(r) {
   const dead = r.nav.filter((n) => !n.changed && !n.already).map((n) => n.label);
   const onPath = r.steps.flatMap((s) => s.dead);
   return [
-    `走${r.steps.length}步`,
+    `走${r.walked ?? r.steps.length}步`,
     stuck,
+    r.arrived ? "到主界面" : "没到主界面",
     `导航${r.nav.length}项`,
     dead.length ? `点不动[${dead.join(",")}]` : "导航全通",
     onPath.length ? `路上坏[${onPath.join(",")}]` : "路上无坏钮",

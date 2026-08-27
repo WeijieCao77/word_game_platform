@@ -67,7 +67,15 @@ export async function GET(
   //   2. cookie（工作台预览换来的通行证——**子资源只有这一条走得通**：
   //      index.html 里相对引用的 style.css / game.js，浏览器不会带上 ?k=）
   //   3. ?k=（直接开链接时的兜底）
-  if (!record.published && !isAuthor) return new NextResponse("not published", { status: 403 });
+  if (!record.published && !isAuthor) {
+    // 拒绝也要带上 ACAO。沙箱是不透明源，它取子资源算跨域——不带这个头的话，
+    // 浏览器把 403 变成一句「blocked by CORS policy」，看的人（和 AI）会去查
+    // 一个根本不存在的跨域配置问题，而真相只是「这作品没发布」。
+    return new NextResponse("not published", {
+      status: 403,
+      headers: { "access-control-allow-origin": "*" },
+    });
+  }
 
   // 作品自己的文件优先，没有再看两种虚拟文件：
   //   1. 运行库 wgp.js / wgp.css——写一个同名文件就顶掉了

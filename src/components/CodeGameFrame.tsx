@@ -24,11 +24,20 @@ export default function CodeGameFrame({
   gameId,
   title,
   editKey,
+  previewToken,
 }: {
   gameId: string;
   title: string;
   /** 未发布的作品要带钥匙才看得到（作者自己预览） */
   editKey?: string;
+  /**
+   * 服务端已经换好的预览通行证。
+   *
+   * 归属人凭登录态打开未发布作品时走这条：**cookie 救不了沙箱里的子请求**
+   * （不透明源 = 跨站，SameSite=Lax 不带 cookie），所以通行证必须进路径。
+   * 页面那一层拿得到会话，就在那儿换好直接发下来——比把编辑钥匙塞进 HTML 干净。
+   */
+  previewToken?: string;
 }): React.ReactElement {
   const shellRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -37,7 +46,7 @@ export default function CodeGameFrame({
   // 自由模式的作品也要计游玩、时长与点赞——跟快速模式共用同一套口径，
   // 不然它们在游戏库的「最热」里永远是零，作者的后台数据也是空的。
   // 作者自己带着钥匙预览时不计（跟 GamePlayer 的 preview 一个道理）。
-  const { likes, liked, toggleLike } = usePlayStats(editKey ? "preview" : "play", gameId);
+  const { likes, liked, toggleLike } = usePlayStats(editKey || previewToken ? "preview" : "play", gameId);
   // 存档、就绪、报错回传全在这一个钩子里——编辑器的预览页签用的是同一份，
   // 保证「作者预览到的」和「玩家玩到的」是同一个环境（见 components/game-frame.ts）
   const { ready, clearSave, markReady } = useGameFrameBridge({ gameId, frameRef, saveKey });
@@ -51,9 +60,9 @@ export default function CodeGameFrame({
   // 未发布的作品先换一张预览通行证，并把它放进**路径**——
   // index.html 里相对引用的 style.css / game.js 才带得上（见 lib/preview-token.ts）。
   // 换到之前先不加载 iframe，免得先渲染一张裸页再闪一下。
-  const [pass, setPass] = useState(editKey ? "" : "-");
+  const [pass, setPass] = useState(previewToken ? `k~${previewToken}/` : editKey ? "" : "-");
   useEffect(() => {
-    if (!editKey) return;
+    if (previewToken || !editKey) return;
     let alive = true;
     void fetch(`/api/games/${gameId}/preview`, { method: "POST", headers: { "x-edit-key": editKey } })
       .then(async (r) => {
@@ -65,7 +74,7 @@ export default function CodeGameFrame({
     return () => {
       alive = false;
     };
-  }, [editKey, gameId]);
+  }, [editKey, gameId, previewToken]);
 
   const src = `/play/${gameId}/${pass === "-" ? "" : pass}index.html`;
 

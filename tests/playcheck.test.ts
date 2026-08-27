@@ -208,3 +208,25 @@ describe("试玩体检 · 自测逼出来的两条", () => {
     expect(describePlayCheck(r)).not.toContain("阵容");
   });
 });
+
+describe("试玩体检 · 「没测到」不许说成「通过」", () => {
+  // 线上第一次真跑就露出来了：报告写「试玩通过（走了 8 步，导航 0 项都能切）」——
+  // 一项都没点到，却读起来像全过了。判据浅、把没测到说成没问题，这是第四次栽在同一件事上。
+  const noNav = { ...good, steps: [{ label: "开始", dead: [], filled: [] }], nav: [] };
+
+  it("一项导航都没找到时，结论里不许出现「都能切」", () => {
+    const s = summarizePlayCheck(parsePlayCheck(noNav));
+    expect(s).not.toContain("都能切");
+    expect(s).toContain("没测到");
+  });
+
+  it("给 AI 的话也要挑明这一段没测到", () => {
+    const text = describePlayCheck(parsePlayCheck(noNav));
+    expect(text).toContain("没找到");
+    expect(text).toContain("别当成通过");
+  });
+
+  it("真扫到导航时照旧说「都能切」", () => {
+    expect(summarizePlayCheck(parsePlayCheck(good))).toContain("都能切");
+  });
+});

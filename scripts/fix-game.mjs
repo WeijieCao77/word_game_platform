@@ -52,11 +52,28 @@ const CLICKABLE =
  * 弹一句「先给自己起个名字」然后原地不动。体检当时判的是「✓ 能玩」。
  * 所以这里补三样：表单控件对不对得上标签、点主按钮之后页面变没变、有没有卡住。
  */
-async function boot(label) {
+/**
+ * 打开作品真玩一下。
+ *
+ * `asPlayer=false`（默认）**带着会话 cookie**——回炉验的是草稿，也就是 AI 刚改完的那一版。
+ * 这一条是被自己的错逼出来的：上一版 boot() 开的是一个**没有 cookie 的匿名浏览器**，
+ * 而那部作品当时已经从公开库撤下（published=false），于是 /play 一律回 403，
+ * 首屏只有「not published」13 个字。脚本据此判「✗ 玩不了」，三轮全废——
+ * 而平台自己的试玩体检（带 cookie，看草稿）第 1 轮之后就报了「试玩通过」。
+ * 我还在 PR 里写了「boot() 带着会话 cookie」，那句话是错的，现在把它做成真的。
+ *
+ * `asPlayer=true` 才开匿名浏览器——那是最后发布完确认玩家侧真的能玩，用途完全不同。
+ */
+async function boot(label, asPlayer = false) {
   const browser = await chromium.launch(
     CHROME ? { executablePath: CHROME, args: ["--no-sandbox"] } : { args: ["--no-sandbox"] }
   );
-  const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const eq = COOKIE.indexOf("=");
+  if (!asPlayer && eq > 0) {
+    await ctx.addCookies([{ name: COOKIE.slice(0, eq), value: COOKIE.slice(eq + 1), url: base }]);
+  }
+  const page = await ctx.newPage();
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message.slice(0, 200)));
   page.on("console", (m) => {
@@ -216,18 +233,26 @@ async function boot(label) {
   }
   await browser.close();
   const bar = banner.replace(/\s+/g, " ").trim();
+  // 「没发布」不是「作品坏了」——分开说，不然三轮都在跟一句 403 较劲。
+  const notPublished = /not published/i.test(text) && text.length < 40;
   const broken =
+    notPublished ||
     Boolean(bar) || errs.length > 0 || text.length < 80 || stuck.length > 0 || dead.length > 0;
   console.log(
     `\n【${label}】${broken ? "✗ 玩不了" : "✓ 玩得动"}　正文 ${text.length} 字　可点 ${clickable} 处` +
       (moved ? `　点一下之后 ${moved} 字` : "")
   );
+  if (notPublished) {
+    console.log(
+      `  这不是作品的毛病：它现在没发布，${asPlayer ? "玩家" : "这次打开"}被 /play 挡在 403 外面。`
+    );
+  }
   if (bar) console.log(`  横幅：${bar}`);
   for (const e of [...new Set(errs)].slice(0, 4)) console.log(`  报错：${e}`);
   for (const s2 of stuck) console.log(`  卡住：${s2}`);
   for (const d of dead.slice(0, 12)) console.log(`  导航：${d}`);
   console.log(`  首屏：${text.replace(/\s+/g, " ").slice(0, 240)}`);
-  return { broken, bar, errs: [...new Set(errs)], stuck, dead, text };
+  return { broken, notPublished, bar, errs: [...new Set(errs)], stuck, dead, text };
 }
 
 /**
@@ -390,7 +415,14 @@ for (let round = 1; round <= maxRounds; round++) {
     // 回炉全程走草稿：boot() 带着会话 cookie 打开，看到的本来就是草稿，
     // 不发布也验得了。玩家那边保持不动，直到它真的能玩。
     await publish();
-    console.log(`\n✓ 修好了（用了 ${round} 轮），已发布给玩家。`);
+    // 草稿好了不等于玩家那边好了：发布之后再用**匿名**浏览器验一遍，
+    // 这一步才是玩家真正看到的东西（也顺带验证快照真的推上去了）。
+    const live = await boot("发布之后（玩家视角）", true);
+    if (live.broken) {
+      console.log("\n✗ 草稿是好的，可玩家那边还是不行——发布这一步没把新版本推上去。");
+      process.exit(1);
+    }
+    console.log(`\n✓ 修好了（用了 ${round} 轮），玩家那边也验过了。`);
     process.exit(0);
   }
 }

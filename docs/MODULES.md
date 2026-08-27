@@ -37,6 +37,7 @@
 | **自由模式**：作品炸了怎么让 AI 知道 | 沙箱注入 `src/lib/play-diagnostics.ts` → 外壳 `game-frame.ts` → `api/games/[id]/errors` → 上下文 `src/lib/ai/runtime-errors.ts`（每轮自动贴【运行报错】） |
 | **自由模式**：三道静态护栏 | 一级语法 `src/lib/syntax-check.ts`；接线（文件有没有被引）`src/lib/wiring.ts`；缺失引用（调了没定义的名字）`src/lib/js-refs.ts`。三条都在 `agent.ts` 的 write_file 回执里给 |
 | **自由模式**：草稿改了没发布 | `src/lib/publish-drift.ts`（玩家看的是上一次发布的快照，不说出来 AI 会误判） |
+| **自由模式**：发布拦不拦得住 | `src/lib/publish-gate.ts`（语法 + 接线 + 没定义的名字 + 试玩体检，四层合成一道门槛） |
 | **线上作品到底能不能玩** | `scripts/live-triage.mjs` + `.github/workflows/diagnose-library.yml`（真浏览器逐部打开、点一下主按钮） |
 | **自由模式**：作者怎么看 AI 写了什么 | `src/components/editor/tabs/FilesTab.tsx` + 文件 API `src/app/api/games/[id]/files/route.ts` |
 | **自由模式**：新建入口与起手页 | `src/app/new/page.tsx` 的 `blank-code` + `src/lib/blank-code.ts` |

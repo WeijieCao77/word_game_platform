@@ -84,3 +84,37 @@ describe("接线体检：文件都写好了，游戏却打不开", () => {
     expect(checkWiring({ "game.js": "" })).toEqual({ orphans: [], broken: [] });
   });
 });
+
+describe("平台的虚拟运行库不算「缺文件」", () => {
+  // 发布门槛端到端自测第一关撞出来的：平台自己的空白模板 index.html 引的就是
+  // wgp.js / wgp.css，而它们是 /play 那一层虚拟出来的，不在作品的文件列表里。
+  // 原来只挡住了带斜杠的 wgp/...，于是**每一部作品**都被报一句「wgp.css 不存在」——
+  // 一直在误导 AI，接进发布门槛之后会把每部作品都拦在发布之外。
+  it("wgp.js / wgp.css 不报缺失", () => {
+    const r = checkWiring({
+      "index.html": `<link rel=stylesheet href="wgp.css"><script src="wgp.js"></script><script src="game.js"></script>`,
+      "game.js": "",
+    });
+    expect(r.broken).toEqual([]);
+  });
+
+  it("带 ./ 前缀和查询串也认得出来", () => {
+    const r = checkWiring({
+      "index.html": `<link rel=stylesheet href="./wgp.css?v=3"><script src="/wgp.js"></script>`,
+    });
+    expect(r.broken).toEqual([]);
+  });
+
+  it("作品自己写了同名文件也不算缺（以作者的为准）", () => {
+    const r = checkWiring({
+      "index.html": `<script src="wgp.js"></script>`,
+      "wgp.js": "",
+    });
+    expect(r.broken).toEqual([]);
+  });
+
+  it("真缺的文件照样报", () => {
+    const r = checkWiring({ "index.html": `<script src="missing.js"></script>` });
+    expect(r.broken).toEqual(["missing.js"]);
+  });
+});

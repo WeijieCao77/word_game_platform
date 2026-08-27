@@ -213,8 +213,18 @@ const SWEEP = `<script>(function(){
       var shortOnes = 0;
       for (var m=0;m<items.length;m++) if (label(items[m]).length <= 8) shortOnes++;
       if (shortOnes < 3) continue;
-      // 挂在 <nav> / role=navigation / .nav|.tab|.menu 里的更可信，排前面
-      groups.push({ items: items, score: items.length + (navish(items[0]) ? 100 : 0) });
+      /**
+       * 只有「像主导航」的才算数——线上报过一次假绿：
+       * 挑东家那一屏有四个赛区页签，体检把它当成主导航，扫完四项报
+       * 「试玩通过，导航 4 项都能切」，而真正的 11 项主导航根本没走到，
+       * 里面还有一项「总览」点了没反应。**假绿比不报还坏。**
+       *
+       * 判据两选一：挂在 <nav>/role=navigation/.nav|.tab|.menu 里，
+       * 或者足够长（≥6 项）。都不满足就当没找到——宁可报「这一段没测到」。
+       */
+      var inNav = navish(items[0]);
+      if (!inNav && items.length < 6) continue;
+      groups.push({ items: items, score: items.length + (inNav ? 100 : 0) });
     }
     groups.sort(function(a,b){ return b.score - a.score; });
     return groups.length ? groups[0].items.slice(0, MAX_NAV).map(label) : [];

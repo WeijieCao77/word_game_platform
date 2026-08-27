@@ -274,6 +274,63 @@ async function ask(message, retried = false) {
   throw new Error("等了 20 分钟还没跑完");
 }
 
+/**
+ * 让**平台自己的**试玩体检跑一遍（`?wgpcheck=1`），并把报告交回平台。
+ *
+ * 跟上面 boot() 里那套走查的分工是：boot 是**我的**眼睛，报告打在日志里给人看；
+ * 这一条是**平台的**眼睛——报告存进服务端，下一轮自动出现在 AI 的【试玩体检】里。
+ * 「点了没反应」这类问题一个异常都不抛，不走这条路 AI 就是瞎的。
+ *
+ * 这里只当浏览器司机：真正去点的那段代码是平台在出口注入的，不是这个脚本写的。
+ * 按铁律 1，能力必须长在平台里，脚本只负责开一次页面。
+ */
+async function platformCheck(label) {
+  const browser = await chromium.launch(
+    CHROME ? { executablePath: CHROME, args: ["--no-sandbox"] } : { args: ["--no-sandbox"] }
+  );
+  let report = null;
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 420, height: 820 } });
+    const eq = COOKIE.indexOf("=");
+    if (eq > 0) {
+      await ctx.addCookies([
+        { name: COOKIE.slice(0, eq), value: COOKIE.slice(eq + 1), url: base },
+      ]);
+    }
+    const page = await ctx.newPage();
+    // 顶层打开时 parent === self，体检脚本 postMessage 给 parent 就落在这一页上
+    await page.addInitScript(() => {
+      window.__pc = null;
+      window.addEventListener("message", (e) => {
+        const d = e.data || {};
+        if (d.type === "wgp:playcheck") window.__pc = d.data;
+        // 体检要从开局走，所以存档一律回空
+        if (d.type === "wgp:load") window.postMessage({ type: "wgp:loaded", data: null }, "*");
+      });
+    });
+    await page.goto(`${base}/play/${gameId}/index.html?wgpcheck=1&t=${Date.now()}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    await page.waitForFunction("window.__pc", null, { timeout: 40000 }).catch(() => {});
+    report = await page.evaluate("window.__pc").catch(() => null);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+  if (!report) {
+    console.log(`  平台试玩体检（${label}）：没跑出结果——作品可能连打开都没打开`);
+    return null;
+  }
+  const r = await fetch(`${base}/api/games/${gameId}/playcheck`, {
+    method: "POST",
+    headers: H,
+    body: JSON.stringify(report),
+  });
+  const b = await r.json().catch(() => ({}));
+  console.log(`  平台试玩体检（${label}）：${r.ok ? b.summary : JSON.stringify(b).slice(0, 200)}`);
+  return b.summary ?? null;
+}
+
 async function publish() {
   const r = await fetch(`${base}/api/games/${gameId}/publish`, {
     method: "POST",
@@ -287,6 +344,8 @@ async function publish() {
 // ── 开工 ───────────────────────────────────────────────────────────
 const COMPLAINT = (process.env.COMPLAINT ?? "").trim();
 let state = await boot("修之前");
+// 让平台自己也看一眼：结果会自动进 AI 下一轮的【试玩体检】
+await platformCheck("修之前");
 if (!state.broken && !COMPLAINT) {
   console.log("\n这部作品现在玩得动，不用修。");
   process.exit(0);
@@ -322,6 +381,8 @@ for (let round = 1; round <= maxRounds; round++) {
   console.log(`  AI：${reply.slice(0, 400)}`);
   await publish();
   state = await boot(`第 ${round} 轮之后`);
+  // 修完再体检一遍：好没好由平台自己说，而且这份结果就是下一轮 AI 的上下文
+  await platformCheck(`第 ${round} 轮之后`);
   if (!state.broken) {
     console.log(`\n✓ 修好了（用了 ${round} 轮）。`);
     process.exit(0);

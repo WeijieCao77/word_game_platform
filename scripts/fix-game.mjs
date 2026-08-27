@@ -52,6 +52,7 @@ async function boot(label) {
   let clickable = 0;
   let moved = 0;
   const stuck = [];
+  const dead = [];
   try {
     await page.goto(`${base}/p/${gameId}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     // 等久一点：兜底脚本要把报错重发几次给外壳，外壳再送回服务端
@@ -70,6 +71,37 @@ async function boot(label) {
         .catch(() => 0);
       if (labels > fields) {
         stuck.push(`页面上有 ${labels} 个标签却只有 ${fields} 个能填的控件——有字段渲染不出来（玩家看得到「填什么」，却没地方填）`);
+      }
+
+      // 导航体检：挂在导航上的每一项都点一遍，看点不点得进去、里面有没有真东西。
+      //
+      // 老板的第三次投诉就是这个：「这一排里面很多都点不了」。
+      // 平台的铁律写着「不许写占位页」——挂在导航上就必须点得进去、里面必须有真东西。
+      // 这一层就是量那条律的：点了没反应的、点进去几乎空白的、挂着但是禁用的，全报出来。
+      const nav = frame.locator(
+        "nav button:visible, nav a:visible, .wgp-nav-item:visible, [data-screen]:visible"
+      );
+      const navN = Math.min(await nav.count().catch(() => 0), 30);
+      for (let i = 0; i < navN; i++) {
+        const item = nav.nth(i);
+        const name = (await item.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 12);
+        if (!name) continue;
+        const off =
+          (await item.isDisabled().catch(() => false)) ||
+          (await item.getAttribute("aria-disabled").catch(() => null)) === "true";
+        if (off) {
+          dead.push(`${name}：挂在导航上却是禁用的`);
+          continue;
+        }
+        const before = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
+        await item.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(900);
+        const after = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
+        if (after === before) dead.push(`${name}：点了一点反应都没有`);
+        else if (after.length < 150) dead.push(`${name}：点进去几乎是空的（只有 ${after.length} 字）`);
+      }
+      if (navN > 0) {
+        console.log(`  导航 ${navN} 项，其中 ${dead.length} 项有问题`);
       }
 
       // 真去点一下主按钮，看页面动没动
@@ -98,7 +130,8 @@ async function boot(label) {
   }
   await browser.close();
   const bar = banner.replace(/\s+/g, " ").trim();
-  const broken = Boolean(bar) || errs.length > 0 || text.length < 80 || stuck.length > 0;
+  const broken =
+    Boolean(bar) || errs.length > 0 || text.length < 80 || stuck.length > 0 || dead.length > 0;
   console.log(
     `\n【${label}】${broken ? "✗ 玩不了" : "✓ 玩得动"}　正文 ${text.length} 字　可点 ${clickable} 处` +
       (moved ? `　点一下之后 ${moved} 字` : "")
@@ -106,8 +139,9 @@ async function boot(label) {
   if (bar) console.log(`  横幅：${bar}`);
   for (const e of [...new Set(errs)].slice(0, 4)) console.log(`  报错：${e}`);
   for (const s2 of stuck) console.log(`  卡住：${s2}`);
+  for (const d of dead.slice(0, 12)) console.log(`  导航：${d}`);
   console.log(`  首屏：${text.replace(/\s+/g, " ").slice(0, 240)}`);
-  return { broken, bar, errs: [...new Set(errs)], stuck, text };
+  return { broken, bar, errs: [...new Set(errs)], stuck, dead, text };
 }
 
 /** 跑一轮 AI（走异步任务那条路，跟作者在工作台里走的是同一条） */
@@ -167,6 +201,12 @@ for (let round = 1; round <= maxRounds; round++) {
   const evidence = [
     state.bar ? `页面顶上是一条红色报错横幅：${state.bar}` : "",
     ...state.stuck.map((x) => `实际去玩的时候：${x}`),
+    ...(state.dead.length
+      ? [
+          "导航上这些项点不进去或者里面是空的：\n" + state.dead.map((x) => "  - " + x).join("\n"),
+          "平台的铁律：挂在导航上就必须点得进去、里面必须有真东西；还没做的页宁可先从导航里拿掉。",
+        ]
+      : []),
   ]
     .filter(Boolean)
     .join("\n");

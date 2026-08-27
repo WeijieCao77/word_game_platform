@@ -331,6 +331,16 @@ export interface AgentContext {
    * 所以有落差就明写进上下文。
    */
   publishDrift?: string;
+  /**
+   * 试玩体检的结果，写成一段话（见 lib/playcheck/）。
+   *
+   * 【运行报错】只看得见**抛出来的异常**，而「玩不了」有一大半一个异常都不抛：
+   * 标签写着「你的名字」下面却没有输入框、导航六项四项点不动、按钮点了界面纹丝不动。
+   * 这些东西 read_errors 里永远是空的，模型于是照老经验判「没有报错记录 = 没问题」
+   * 然后收工——实测里连着四轮九个版本卡在同一个开局，就是这么来的。
+   * 所以平台自己去点一遍，把结果摆进上下文。
+   */
+  playCheck?: string;
   /** 切轨：自由模式写文件时切到 code，创作者同意回切时切回 engine。不传则形态不变 */
   setMode?: (mode: GameMode) => void;
   /**
@@ -481,6 +491,7 @@ export async function runAssistant(
         `【游戏信息】${JSON.stringify(config.meta)}\n\n` +
         fileBlock() +
         runtimeErrorBlock() +
+        (ctx.playCheck ? `\n\n【试玩体检】\n${ctx.playCheck}` : "") +
         (ctx.publishDrift ? `\n\n【发布状态】\n${ctx.publishDrift}` : "") +
         legacyEngineBlock
       : `【当前设计卡】\n${designCard}\n\n` +

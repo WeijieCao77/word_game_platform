@@ -2,7 +2,7 @@
 // 这些类型被 page.tsx 和 editor/ 下多个模块同时引用，
 // 放在这里是为了让子模块不必反过来 import 页面文件。
 
-export type Tab = "preview" | "files" | "design" | "config" | "check" | "library" | "cover";
+export type Tab = "preview" | "files" | "design" | "config" | "check" | "playcheck" | "library" | "cover";
 
 export interface ChatMsg {
   role: "user" | "assistant" | "system";

@@ -4,6 +4,7 @@ import { canEditGame } from "@/lib/session";
 import { runtimeAsset } from "@/lib/runtime";
 import { datasetSourcesFor, wrapDataset } from "@/lib/dataset";
 import { injectPlayDiagnostics } from "@/lib/play-diagnostics";
+import { injectPlayCheck } from "@/lib/playcheck/sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +85,17 @@ export async function GET(
   const ext = rel.split(".").pop()?.toLowerCase() ?? "txt";
   // 入口页出口注入：兜底诊断 + 给脚本标 crossorigin。
   // 作品的文件一个字都没改——所有已有作品立刻受益，不必等 AI 再写一轮。
-  const body = ext === "html" || ext === "htm" ? injectPlayDiagnostics(content) : content;
+  const isHtml = ext === "html" || ext === "htm";
+  // 试玩体检模式：再叠一段会自己去点的脚本（@/lib/playcheck）。
+  // 两道闸门都是故意的——**玩家绝不能被塞进一个自动点击器**：
+  //   1. 要显式带 ?wgpcheck=1（工作台的隐藏 iframe 和实测脚本才会这么开）
+  //   2. 要有编辑权限（作者本人或带钥匙的调用方）
+  const wantCheck = new URL(req.url).searchParams.get("wgpcheck") === "1" && isAuthor;
+  const body = isHtml
+    ? wantCheck
+      ? injectPlayCheck(injectPlayDiagnostics(content))
+      : injectPlayDiagnostics(content)
+    : content;
   return new NextResponse(body, {
     headers: {
       "content-type": MIME[ext] ?? MIME.txt,

@@ -1,6 +1,8 @@
 // 存储层接口。v1 用 SQLite（一游戏一行 JSON），
 // 将来换 Postgres 只需要重新实现这个接口。
 
+import { PlayCheckReport } from "@/lib/playcheck/types";
+
 /** 作品形态：engine = 一份配置喂通用引擎；code = 自由模式，作品自带一套页面 */
 export type GameMode = "engine" | "code";
 
@@ -181,6 +183,13 @@ export interface GameStore {
   errorAdd(gameId: string, e: { message: string; stack?: string; source?: string }): void;
   errorList(gameId: string): { at: string; message: string; stack: string; source: string }[];
   errorClear(gameId: string): void;
+
+  /**
+   * 试玩体检的最新一份报告（`@/lib/playcheck`）。
+   * 只留最新一份——旧的体检对不上现在的代码，留着只会误导下一轮。
+   */
+  playCheckSet(gameId: string, report: PlayCheckReport): void;
+  playCheckGet(gameId: string): PlayCheckReport | null;
   /** 作品形态：engine=配置 + 通用引擎；code=自带页面 */
   gameMode(id: string): GameMode;
   gameSetMode(id: string, mode: GameMode): void;

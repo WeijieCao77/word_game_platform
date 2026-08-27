@@ -8,6 +8,7 @@ import PreviewTab from "@/components/editor/tabs/PreviewTab";
 import DesignTab from "@/components/editor/tabs/DesignTab";
 import ConfigTab from "@/components/editor/tabs/ConfigTab";
 import CheckTab from "@/components/editor/tabs/CheckTab";
+import PlayCheckTab from "@/components/editor/tabs/PlayCheckTab";
 import CoverTab from "@/components/editor/tabs/CoverTab";
 import AssetsSection from "@/components/editor/tabs/AssetsSection";
 import LibraryTab from "@/components/editor/tabs/LibraryTab";
@@ -16,6 +17,8 @@ import SplitHandle, { useSplit } from "@/components/editor/SplitHandle";
 import { buildTourSteps } from "@/components/editor/tourSteps";
 import { compressAsset, compressCover, withAssetSection } from "@/components/editor/assets";
 import { AssetItem, ChatMsg, LibAssetItem, Tab } from "@/components/editor/types";
+import { runPlayCheck } from "@/components/playcheck-run";
+import { PlayCheckReport } from "@/lib/playcheck/types";
 import { GameConfig, ValidationIssue, validateGameConfig } from "@/lib/schema";
 import { simulate, summarizeReport } from "@/lib/simulate";
 import { parseCardStatus } from "@/lib/ai/designcard";
@@ -61,6 +64,13 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [designCard, setDesignCard] = useState("");
   const [published, setPublished] = useState(false);
   const [tab, setTab] = useState<Tab>("preview");
+  // 试玩体检：平台开一个看不见的沙箱 iframe 真去点一遍（见 @/components/playcheck-run）。
+  // 「点了没反应」这类问题一个异常都不抛，前面所有护栏都照不到——
+  // 老板那三次投诉（名字没地方填、一排点不了、点了就卡）全在这个盲区里。
+  const [checkReport, setCheckReport] = useState<PlayCheckReport | null>(null);
+  const [checkSummary, setCheckSummary] = useState("");
+  const [checkErr, setCheckErr] = useState("");
+  const [checking, setChecking] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
@@ -69,6 +79,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [previewNonce, setPreviewNonce] = useState(0);
   // 自由模式：作品形态与文件清单（快速模式下 files 一直是 null，页签也不出现）
   const [mode, setMode] = useState<"engine" | "code">("engine");
+  // 一轮跑完时要判断当前形态，可闭包里的 state 是那一轮开始时的旧值——用 ref 接住
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const [files, setFiles] = useState<FileItem[] | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -489,6 +502,31 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     setSimText(summarizeReport(report));
   }, [config]);
 
+  /**
+   * 跑一次试玩体检。
+   *
+   * 平台开一个屏幕外的沙箱 iframe，把作品从开局点一遍：走得下去吗、
+   * 导航点得动吗、切过去那一页有没有真东西。结果存进服务端，
+   * **下一轮 AI 的上下文里就会出现【试玩体检】**——这才是它的主要用途：
+   * 以前这类问题一个异常都不抛，AI 每轮拿到的都是「没有报错记录」，
+   * 于是连着四轮修不动一个开局。
+   */
+  const runCheckNow = useCallback(async (): Promise<void> => {
+    if (!editKey || checking) return;
+    setChecking(true);
+    setCheckErr("");
+    const r = await runPlayCheck(id, editKey);
+    setChecking(false);
+    if (r.error) {
+      setCheckErr(r.error);
+      setStatusMsg(`试玩体检没跑成：${r.error}`);
+      return;
+    }
+    setCheckReport(r.report);
+    setCheckSummary(r.summary);
+    setStatusMsg(`试玩体检：${r.summary}`);
+  }, [editKey, id, checking]);
+
   // ---- 内容库：筛选/搜索、插入到本作、把本作卡片分享出去 ----
 
   const changeLibCategory = useCallback(
@@ -763,8 +801,12 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
     } finally {
       setChatBusy(false);
       setJobNote("");
+      // 每轮干完自动体检一次。**这一步是给 AI 跑的，不是给作者跑的**：
+      // 结果存进服务端后会自动出现在下一轮的【试玩体检】里。
+      // 指望作者记得点是靠不住的，而不跑的话 AI 下一轮又是个瞎子。
+      if (modeRef.current === "code") void runCheckNow();
     }
-  }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save]);
+  }, [chat, chatBusy, chatInput, config, dirty, editKey, id, reloadFiles, save, runCheckNow]);
 
   // 连续搭建的轮数。10 轮是个有依据的默认：实测最好的一次就是 12 轮到 4,500 行。
   const [autoRounds, setAutoRounds] = useState(10);
@@ -915,6 +957,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                   [
                     ["preview", "预览试玩"],
                     ["files", `文件${files ? ` (${files.length})` : ""}`],
+                    // 自由模式的「校验」：通用引擎那套规则在这儿用不上，
+                    // 能量的是「真去点一遍走不走得通」——外加运行报错。
+                    ["playcheck", `体检${checking ? " …" : ""}`],
                     ["design", "设计卡"],
                     ["config", "配置"],
                     ["cover", "封面·素材"],
@@ -961,6 +1006,21 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 onConfigText={setConfigText}
                 onApply={applyConfigText}
                 onRevert={revertConfigText}
+              />
+            )}
+            {tab === "playcheck" && (
+              <PlayCheckTab
+                gameId={id}
+                editKey={editKey}
+                report={checkReport}
+                summary={checkSummary}
+                checking={checking}
+                error={checkErr}
+                onRun={() => void runCheckNow()}
+                onFix={(msg) => {
+                  setChatInput(msg);
+                  setStatusMsg("体检结论已经放进对话框，点发送就行");
+                }}
               />
             )}
             {tab === "check" && (

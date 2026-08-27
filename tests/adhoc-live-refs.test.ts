@@ -44,6 +44,26 @@ describe.skipIf(!base || !game)(`线上作品接线体检：${game}`, () => {
 
     const missing = checkMissingRefs(files);
     console.log(`\n【缺失引用体检】\n${describeMissingRefs(missing) || "没发现问题"}`);
+
+    // 加载顺序：浏览器就是按这个顺序执行的，谁在前谁在后决定了
+    // 「调用的时候那个名字到底存不存在」
+    const order: string[] = [];
+    const sre = /<script\b[^>]*?\bsrc\s*=\s*("|')([^"']+)\1([^>]*)>/gi;
+    let sm: RegExpExecArray | null;
+    while ((sm = sre.exec(index))) order.push(`${sm[2]}${/defer|module|async/i.test(sm[3]) ? "  [" + sm[3].trim() + "]" : ""}`);
+    console.log(`\n【index.html 里的加载顺序】\n${order.join("\n")}`);
+
+    // 追一个具体的名字：它在哪儿定义、在哪儿被调用。
+    // 浏览器报了 xxx is not defined 而静态体检说没问题时，用这个看到底差在哪。
+    const name = process.env.LIVE_NAME;
+    if (name) {
+      console.log(`\n【追 ${name}】`);
+      for (const [path, body] of Object.entries(files)) {
+        body.split("\n").forEach((ln, i) => {
+          if (ln.includes(name)) console.log(`  ${path}:${i + 1}  ${ln.trim().slice(0, 160)}`);
+        });
+      }
+    }
     // 只报告不断言——这是一条给人看的诊断，不是 CI 门槛
     expect(Object.keys(files).length).toBeGreaterThan(0);
   });

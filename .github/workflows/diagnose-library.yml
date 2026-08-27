@@ -20,6 +20,10 @@ on:
         description: "再给这部作品做一次接线 + 缺失引用体检（填作品 id）"
         required: false
         default: ""
+      refs_name:
+        description: "追一个具体的名字：它在哪儿定义、在哪儿被调用（配合 refs_game）"
+        required: false
+        default: ""
 
 jobs:
   triage:
@@ -44,4 +48,5 @@ jobs:
         env:
           LIVE_BASE: https://word-game-platform-production.up.railway.app
           LIVE_GAME: ${{ inputs.refs_game }}
+          LIVE_NAME: ${{ inputs.refs_name }}
         run: npx vitest run tests/adhoc-live-refs.test.ts

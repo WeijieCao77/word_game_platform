@@ -90,7 +90,12 @@ async function boot(label) {
           await fields.nth(i).fill("测试", { timeout: 1500 }).catch(() => {});
         }
         const next = frame.locator("button:visible, [role=button]:visible, .btn:visible").last();
-        if ((await next.count().catch(() => 0)) === 0) break;
+        if ((await next.count().catch(() => 0)) === 0) {
+          // 一个能点的都没有 = 死路。以前这里直接 break 然后照样判「✓ 玩得动」，
+          // 于是「走不下去」被当成「没问题」——同一个毛病栽了第三次。
+          stuck.push(`开局第 ${steps + 1} 屏上一个能点的东西都没有——走不下去了`);
+          break;
+        }
         const was = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
         await next.click({ timeout: 3000 }).catch(() => {});
         await page.waitForTimeout(1200);
@@ -101,7 +106,16 @@ async function boot(label) {
           break;
         }
       }
-      if (steps > 0) console.log(`  开局走了 ${steps} 步${(await hasNav()) ? "，进到有导航的界面" : "，还是没看到导航"}`);
+      // 走到底也没看见导航 = 这次体检**没能验到导航**。
+      // 这不叫通过，叫测不了——测不了就不许报「玩得动」，不然又是一次自欺。
+      const reachedNav = await hasNav();
+      if (steps > 0) console.log(`  开局走了 ${steps} 步${reachedNav ? "，进到有导航的界面" : "，还是没看到导航"}`);
+      if (!reachedNav) {
+        stuck.push(
+          `走了 ${steps} 步也没走到有导航的界面——作品说好有俱乐部/阵容/赛程那一整排页签，` +
+            `玩家却进不去；先让开局这条路能一直走到主界面`
+        );
+      }
 
       // 导航体检：挂在导航上的每一项都点一遍，看点不点得进去、里面有没有真东西。
       //

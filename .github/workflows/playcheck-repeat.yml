@@ -87,6 +87,11 @@ jobs:
               f.write(f"cookie={cookie}\n")
           PY
 
+      # 先验体检器自己。它坏了的话，下面量出来的一切都不算数——
+      # 这一步用一份**我们自己写的、已知能走通**的假作品，走不通就是走查坏了。
+      - name: 体检器自检
+        run: node scripts/playcheck-selftest.mjs
+
       - name: 连跑并比对
         env:
           COOKIE: ${{ steps.login.outputs.cookie }}

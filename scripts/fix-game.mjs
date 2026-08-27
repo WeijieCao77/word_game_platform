@@ -45,15 +45,14 @@ const CLICKABLE =
   ".card:visible, .option:visible, .choice:visible, li[data-id]:visible";
 
 /**
- * 像玩家一样打开**并且真去玩一下**，回来报「能不能玩 + 卡在哪」。
+ * 打开作品，只回答一件事：**打不打得开**。
  *
- * 只看「打不打得开」是不够的——老板撞到的第二个坑就是这样：页面渲染得好好的，
- * 一个 JS 错误都没有，可「你的名字」只有标签、**没有输入框**，点「下一步」
- * 弹一句「先给自己起个名字」然后原地不动。体检当时判的是「✓ 能玩」。
- * 所以这里补三样：表单控件对不对得上标签、点主按钮之后页面变没变、有没有卡住。
- */
-/**
- * 打开作品真玩一下。
+ * 查的是「玩之前就露馅」的那几样：白屏、报错横幅、JS 异常、没发布被 403 挡在外面、
+ * 以及「有标签没控件」——`<label>你的名字</label>` 却没有对应的输入框。
+ * 最后这条是老板撞见的那个坑：页面渲染得好好的、一个 JS 错误都没有，
+ * 可名字没地方填，点「下一步」弹一句提示然后原地不动。
+ *
+ * **玩不玩得动不在这里判**，那是 `platformCheck()` 的活（理由见函数体里那段注释）。
  *
  * `asPlayer=false`（默认）**带着会话 cookie**——回炉验的是草稿，也就是 AI 刚改完的那一版。
  * 这一条是被自己的错逼出来的：上一版 boot() 开的是一个**没有 cookie 的匿名浏览器**，
@@ -82,9 +81,7 @@ async function boot(label, asPlayer = false) {
   let banner = "";
   let text = "";
   let clickable = 0;
-  let moved = 0;
-  const stuck = [];
-  const dead = [];
+  const flaws = [];
   try {
     await page.goto(`${base}/p/${gameId}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     // 等久一点：兜底脚本要把报错重发几次给外壳，外壳再送回服务端
@@ -102,131 +99,24 @@ async function boot(label, asPlayer = false) {
         .count()
         .catch(() => 0);
       if (labels > fields) {
-        stuck.push(`页面上有 ${labels} 个标签却只有 ${fields} 个能填的控件——有字段渲染不出来（玩家看得到「填什么」，却没地方填）`);
+        flaws.push(`页面上有 ${labels} 个标签却只有 ${fields} 个能填的控件——有字段渲染不出来（玩家看得到「填什么」，却没地方填）`);
       }
 
-      // 先把开局走完，再谈导航。
+      // 走开局、点导航这些**不在这里做**了——那是平台自己的试玩体检的活。
       //
-      // 这一条是被自己的盲点逼出来的：玩家一进去是「捏人第 1 步 / 4」，
-      // 那一屏根本没有导航栏——导航要走完创建流程才出现。上一版体检只看首屏，
-      // 于是 navN=0、一项都没点，还判了「✓ 玩得动」，等于把老板的投诉漏过去了。
-      // 所以像玩家一样往前走：把能填的填上、点主按钮，最多 10 步，
-      // 走到出现导航为止（或者页面不再变化）。
-      const hasNav = async () =>
-        (await frame.locator("nav button:visible, .wgp-nav-item:visible, [data-screen]:visible").count().catch(() => 0)) > 0;
-      let steps = 0;
-      while (steps < 10 && !(await hasNav())) {
-        const fields = frame.locator("input:visible, textarea:visible");
-        const fn = Math.min(await fields.count().catch(() => 0), 4);
-        for (let i = 0; i < fn; i++) {
-          await fields.nth(i).fill("测试", { timeout: 1500 }).catch(() => {});
-        }
-        const next = frame.locator(CLICKABLE).last();
-        if ((await next.count().catch(() => 0)) === 0) {
-          // 一个能点的都没有 = 死路。以前这里直接 break 然后照样判「✓ 玩得动」，
-          // 于是「走不下去」被当成「没问题」——同一个毛病栽了第三次。
-          // 报「没得点」之前先把这一屏有什么摆出来：到底是作品没画，
-          // 还是我的判据又太窄了。靠猜已经猜错过三次。
-          const shape = await frame
-            .evaluate(() => {
-              const out = [];
-              document.querySelectorAll("body *").forEach((n) => {
-                const r = n.getBoundingClientRect();
-                if (r.width < 8 || r.height < 8) return;
-                const clickish =
-                  n.onclick ||
-                  n.getAttribute("onclick") ||
-                  n.dataset.act ||
-                  n.dataset.screen ||
-                  n.hasAttribute("tabindex");
-                if (!clickish && !/^(BUTTON|A|INPUT|SELECT)$/.test(n.tagName)) return;
-                out.push(
-                  n.tagName.toLowerCase() +
-                    (n.className && typeof n.className === "string" ? "." + n.className.split(/\s+/).slice(0, 2).join(".") : "") +
-                    "「" + (n.textContent || "").replace(/\s+/g, " ").trim().slice(0, 14) + "」"
-                );
-              });
-              return out.slice(0, 12);
-            })
-            .catch(() => []);
-          stuck.push(
-            `开局第 ${steps + 1} 屏上一个能点的东西都没有——走不下去了` +
-              (shape.length ? `（这一屏上像是能点的元素：${shape.join("、")}）` : "（这一屏上连像样的元素都没有）")
-          );
-          break;
-        }
-        const was = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
-        await next.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(1200);
-        const now = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
-        steps += 1;
-        if (now === was) {
-          stuck.push(`开局第 ${steps} 步点下去，页面一个字都没变——走不下去了`);
-          break;
-        }
-      }
-      // 走到底也没看见导航 = 这次体检**没能验到导航**。
-      // 这不叫通过，叫测不了——测不了就不许报「玩得动」，不然又是一次自欺。
-      const reachedNav = await hasNav();
-      if (steps > 0) console.log(`  开局走了 ${steps} 步${reachedNav ? "，进到有导航的界面" : "，还是没看到导航"}`);
-      if (!reachedNav) {
-        stuck.push(
-          `走了 ${steps} 步也没走到有导航的界面——作品说好有俱乐部/阵容/赛程那一整排页签，` +
-            `玩家却进不去；先让开局这条路能一直走到主界面`
-        );
-      }
-
-      // 导航体检：挂在导航上的每一项都点一遍，看点不点得进去、里面有没有真东西。
+      // 原来这里手搓了一套走查：每一步只点 CLICKABLE 的最后一个，点了页面不变就
+      // 当场放弃。于是平台有了**两个**「玩不玩得动」的判据，而且给过相反的结论：
+      // 对账那一轮 3 次里 2 次这套说「走 5 步看见导航 11 项」，平台走查说「走 14 步
+      // 没到主界面」；另外 1 次这套自己说「第 5 步走不下去」。
       //
-      // 老板的第三次投诉就是这个：「这一排里面很多都点不了」。
-      // 平台的铁律写着「不许写占位页」——挂在导航上就必须点得进去、里面必须有真东西。
-      // 这一层就是量那条律的：点了没反应的、点进去几乎空白的、挂着但是禁用的，全报出来。
-      const nav = frame.locator(
-        "nav button:visible, nav a:visible, .wgp-nav-item:visible, [data-screen]:visible"
-      );
-      const navN = Math.min(await nav.count().catch(() => 0), 30);
-      for (let i = 0; i < navN; i++) {
-        const item = nav.nth(i);
-        const name = (await item.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 12);
-        if (!name) continue;
-        const off =
-          (await item.isDisabled().catch(() => false)) ||
-          (await item.getAttribute("aria-disabled").catch(() => null)) === "true";
-        if (off) {
-          dead.push(`${name}：挂在导航上却是禁用的`);
-          continue;
-        }
-        const before = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
-        await item.click({ timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(900);
-        const after = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
-        if (after === before) dead.push(`${name}：点了一点反应都没有`);
-        else if (after.length < 150) dead.push(`${name}：点进去几乎是空的（只有 ${after.length} 字）`);
-      }
-      if (navN > 0) {
-        console.log(`  导航 ${navN} 项，其中 ${dead.length} 项有问题`);
-      }
-
-      // 首屏那个主按钮（只有在开局一步都没走动的情况下才需要单独试）
-      const btn = frame.locator(CLICKABLE).first();
-      if (steps === 0 && (await btn.count().catch(() => 0)) > 0) {
-        const label0 = (await btn.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 24);
-        // 能填的先填上，别把「没填必填项」当成 bug
-        for (let i = 0; i < Math.min(fields, 4); i++) {
-          await frame
-            .locator("input:visible, textarea:visible")
-            .nth(i)
-            .fill("测试", { timeout: 2000 })
-            .catch(() => {});
-        }
-        await btn.click({ timeout: 4000 }).catch(() => {});
-        await page.waitForTimeout(2500);
-        const after = (await frame.locator("body").innerText().catch(() => "")).trim();
-        if (after.replace(/\s+/g, "") === text.replace(/\s+/g, "")) {
-          stuck.push(`点了「${label0}」之后页面一个字都没变——第一步就走不下去`);
-        }
-        moved = after.length;
-      }
+      // 两个判据打架的时候，实测的退出码只认这一套——**等于在拿一把平台自己都
+      // 看不见的尺子给 AI 打分**。AI 手里只有 play_check（平台走查）那把尺子，
+      // 它照着量出「通过」，实测却红着退出，那这一轮就白跑了。
+      //
+      // 所以这里只留这一套**独有**的东西——「打不打得开」：白屏、报错横幅、
+      // JS 异常、没发布被 403 挡住、有标签没控件。玩不玩得动交给 platformCheck()。
+      // 走查本身有没有坏，由 scripts/playcheck-selftest.mjs 用一份已知能走通的
+      // 假作品盯着，不再靠另搓一个走查器来互相验。
     }
   } catch (e) {
     errs.push(`打开失败: ${String(e).slice(0, 160)}`);
@@ -235,12 +125,12 @@ async function boot(label, asPlayer = false) {
   const bar = banner.replace(/\s+/g, " ").trim();
   // 「没发布」不是「作品坏了」——分开说，不然三轮都在跟一句 403 较劲。
   const notPublished = /not published/i.test(text) && text.length < 40;
+  // 只回答一件事：**打不打得开**。玩不玩得动是 platformCheck() 的活。
   const broken =
     notPublished ||
-    Boolean(bar) || errs.length > 0 || text.length < 80 || stuck.length > 0 || dead.length > 0;
+    Boolean(bar) || errs.length > 0 || text.length < 80 || flaws.length > 0;
   console.log(
-    `\n【${label}】${broken ? "✗ 玩不了" : "✓ 玩得动"}　正文 ${text.length} 字　可点 ${clickable} 处` +
-      (moved ? `　点一下之后 ${moved} 字` : "")
+    `\n【${label}】${broken ? "✗ 打不开" : "✓ 打得开"}　正文 ${text.length} 字　可点 ${clickable} 处`
   );
   if (notPublished) {
     console.log(
@@ -249,10 +139,9 @@ async function boot(label, asPlayer = false) {
   }
   if (bar) console.log(`  横幅：${bar}`);
   for (const e of [...new Set(errs)].slice(0, 4)) console.log(`  报错：${e}`);
-  for (const s2 of stuck) console.log(`  卡住：${s2}`);
-  for (const d of dead.slice(0, 12)) console.log(`  导航：${d}`);
+  for (const f of flaws) console.log(`  毛病：${f}`);
   console.log(`  首屏：${text.replace(/\s+/g, " ").slice(0, 240)}`);
-  return { broken, notPublished, bar, errs: [...new Set(errs)], stuck, dead, text };
+  return { broken, notPublished, bar, errs: [...new Set(errs)], flaws, text };
 }
 
 /**
@@ -356,7 +245,9 @@ async function platformCheck(label) {
   }
   if (!report) {
     console.log(`  平台试玩体检（${label}）：没跑出结果——作品可能连打开都没打开`);
-    return null;
+    // **没跑成不等于通过。** 平台在「把没测到说成没问题」上已经栽过五次，
+    // 这里明确回 ran:false，让调用方去说清楚，而不是当成一次沉默的通过。
+    return { ran: false, ok: false, summary: "体检没跑出结果", text: "" };
   }
   const r = await fetch(`${base}/api/games/${gameId}/playcheck`, {
     method: "POST",
@@ -364,8 +255,12 @@ async function platformCheck(label) {
     body: JSON.stringify(report),
   });
   const b = await r.json().catch(() => ({}));
-  console.log(`  平台试玩体检（${label}）：${r.ok ? b.summary : JSON.stringify(b).slice(0, 200)}`);
-  return b.summary ?? null;
+  if (!r.ok) {
+    console.log(`  平台试玩体检（${label}）：报告没收下 ${JSON.stringify(b).slice(0, 200)}`);
+    return { ran: false, ok: false, summary: "报告没收下", text: "" };
+  }
+  console.log(`  平台试玩体检（${label}）：${b.summary}`);
+  return { ran: true, ok: b.ok_play === true, summary: b.summary ?? "", text: b.text ?? "" };
 }
 
 async function publish() {
@@ -380,29 +275,56 @@ async function publish() {
 
 // ── 开工 ───────────────────────────────────────────────────────────
 const COMPLAINT = (process.env.COMPLAINT ?? "").trim();
-let state = await boot("修之前");
-// 让平台自己也看一眼：结果会自动进 AI 下一轮的【试玩体检】
-await platformCheck("修之前");
-if (!state.broken && !COMPLAINT) {
+
+/**
+ * 一部作品「行不行」，由两半合起来说，各管各的那一半：
+ *
+ *   - `boot()`      —— **打不打得开**：白屏、报错横幅、JS 异常、没发布被挡、有标签没控件
+ *   - `platformCheck()` —— **玩不玩得动**：平台自己的试玩体检，跟 AI 手里 play_check
+ *                          拿到的是同一份报告、同一套判据
+ *
+ * 第二半故意用平台自己那把尺子：**实测不能拿一把 AI 看不见的尺子给它打分**。
+ * 走查本身准不准，由 playcheck-selftest.mjs 盯着。
+ *
+ * 还有一条硬规矩：体检**没跑成**的时候一律算不行，并且要说出来是「没测到」
+ * 而不是「没问题」——这个坑平台已经踩过五次了。
+ */
+async function verdict(label, { asPlayer = false } = {}) {
+  const open = await boot(label, asPlayer);
+  // 玩家视角是匿名打开的，平台只肯给作者注入体检脚本，那一趟只验「打不打得开」
+  if (asPlayer) return { ...open, ok: !open.broken, check: null };
+  const check = await platformCheck(label);
+  const ok = !open.broken && check.ran && check.ok;
+  console.log(
+    `  合起来：${ok ? "✓ 玩得动" : "✗ 还不行"}` +
+      `（打开 ${open.broken ? "✗" : "✓"} / 试玩 ${check.ran ? (check.ok ? "✓" : "✗") : "没跑成"}）`
+  );
+  if (!open.broken && !check.ran) {
+    console.log("  注意：试玩体检没跑成，**这不等于通过**——它只是没测到。");
+  }
+  return { ...open, ok, check };
+}
+
+let state = await verdict("修之前");
+if (state.ok && !COMPLAINT) {
   console.log("\n这部作品现在玩得动，不用修。");
   process.exit(0);
 }
 
 for (let round = 1; round <= maxRounds; round++) {
   console.log(`\n──────── 第 ${round}/${maxRounds} 轮：交给 AI ────────`);
-  // 故意只说一句话。报错应该已经自动摆在它的【运行报错】里了——
-  // 要是还得我把报错抄给它，说明那条链路没通。
-  // 现场证据（横幅 / 报错 / 卡在哪）+ 创作者的原话，一起交给 AI。
   // 报错本身不用抄——平台会自动贴进它的【运行报错】。
+  //
+  // 「哪儿不行」的原话**直接取平台试玩体检那一段**，跟 AI 自己调 play_check
+  // 拿到的是同一段字。脚本不再另编一套说法：一套尺子量、一套尺子说，
+  // 才不会出现「AI 照着一套改到通过、实测按另一套判红」。
   const evidence = [
     state.bar ? `页面顶上是一条红色报错横幅：${state.bar}` : "",
-    ...state.stuck.map((x) => `实际去玩的时候：${x}`),
-    ...(state.dead.length
-      ? [
-          "导航上这些项点不进去或者里面是空的：\n" + state.dead.map((x) => "  - " + x).join("\n"),
-          "平台的铁律：挂在导航上就必须点得进去、里面必须有真东西；还没做的页宁可先从导航里拿掉。",
-        ]
-      : []),
+    ...state.flaws.map((x) => `打开的时候就看出来：${x}`),
+    state.check && !state.check.ran
+      ? "（平台的试玩体检这一轮没跑成，所以这里没有走查结论——**这不等于体检通过**，只是没测到。）"
+      : "",
+    state.check && state.check.ran && !state.check.ok && state.check.text ? state.check.text : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -411,15 +333,15 @@ for (let round = 1; round <= maxRounds; round++) {
       (COMPLAINT ? `创作者的原话：「${COMPLAINT}」\n` : "") +
       (evidence ? `${evidence}\n` : "") +
       "先看【运行报错】（有的话），把问题修好；" +
-      "修完把开局那条路径从头走一遍——加载、首屏渲染、每一个要玩家填的字段真的渲染出来了没有、" +
-      "点第一个按钮能不能走到下一步。确认走得通再交差，然后用 read_errors 带 clear: true 清掉记录。"
+      "**改完必须调一次 play_check 自己验**——上面那段结论就是它给的，" +
+      "你手里那把尺子和我这边判好没好用的是同一把。它说还有问题就接着修，" +
+      "别写完就交差等下一轮。最后用 read_errors 带 clear: true 清掉记录。"
   );
   const reply = String(res?.job?.result?.reply ?? res?.reply ?? "").replace(/\s+/g, " ");
   console.log(`  AI：${reply.slice(0, 400)}`);
-  state = await boot(`第 ${round} 轮之后`);
-  // 修完再体检一遍：好没好由平台自己说，而且这份结果就是下一轮 AI 的上下文
-  await platformCheck(`第 ${round} 轮之后`);
-  if (!state.broken) {
+  // 修完再验一遍：好没好由平台自己说，而且这份结果就是下一轮 AI 的上下文
+  state = await verdict(`第 ${round} 轮之后`);
+  if (state.ok) {
     // **修好了才发布。**
     //
     // 原来是每轮先发布再验，于是一部还坏着的作品被一遍遍推回公开游戏库——
@@ -429,8 +351,8 @@ for (let round = 1; round <= maxRounds; round++) {
     await publish();
     // 草稿好了不等于玩家那边好了：发布之后再用**匿名**浏览器验一遍，
     // 这一步才是玩家真正看到的东西（也顺带验证快照真的推上去了）。
-    const live = await boot("发布之后（玩家视角）", true);
-    if (live.broken) {
+    const live = await verdict("发布之后（玩家视角）", { asPlayer: true });
+    if (!live.ok) {
       console.log("\n✗ 草稿是好的，可玩家那边还是不行——发布这一步没把新版本推上去。");
       process.exit(1);
     }

@@ -34,6 +34,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     ok: true,
     ok_play: !playCheckHasIssue(report),
     summary: summarizePlayCheck(report),
+    // 给 AI 看的那一整段也一并带上：实测脚本要拿它当「这一轮到底哪儿不行」的原话，
+    // 免得脚本自己再编一套说法——平台对「玩不玩得动」只能有一种说法。
+    text: describePlayCheck(report),
     report,
   });
 }

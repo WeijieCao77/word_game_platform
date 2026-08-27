@@ -73,6 +73,36 @@ async function boot(label) {
         stuck.push(`页面上有 ${labels} 个标签却只有 ${fields} 个能填的控件——有字段渲染不出来（玩家看得到「填什么」，却没地方填）`);
       }
 
+      // 先把开局走完，再谈导航。
+      //
+      // 这一条是被自己的盲点逼出来的：玩家一进去是「捏人第 1 步 / 4」，
+      // 那一屏根本没有导航栏——导航要走完创建流程才出现。上一版体检只看首屏，
+      // 于是 navN=0、一项都没点，还判了「✓ 玩得动」，等于把老板的投诉漏过去了。
+      // 所以像玩家一样往前走：把能填的填上、点主按钮，最多 10 步，
+      // 走到出现导航为止（或者页面不再变化）。
+      const hasNav = async () =>
+        (await frame.locator("nav button:visible, .wgp-nav-item:visible, [data-screen]:visible").count().catch(() => 0)) > 0;
+      let steps = 0;
+      while (steps < 10 && !(await hasNav())) {
+        const fields = frame.locator("input:visible, textarea:visible");
+        const fn = Math.min(await fields.count().catch(() => 0), 4);
+        for (let i = 0; i < fn; i++) {
+          await fields.nth(i).fill("测试", { timeout: 1500 }).catch(() => {});
+        }
+        const next = frame.locator("button:visible, [role=button]:visible, .btn:visible").last();
+        if ((await next.count().catch(() => 0)) === 0) break;
+        const was = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
+        await next.click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(1200);
+        const now = (await frame.locator("body").innerText().catch(() => "")).replace(/\s+/g, "");
+        steps += 1;
+        if (now === was) {
+          stuck.push(`开局第 ${steps} 步点下去，页面一个字都没变——走不下去了`);
+          break;
+        }
+      }
+      if (steps > 0) console.log(`  开局走了 ${steps} 步${(await hasNav()) ? "，进到有导航的界面" : "，还是没看到导航"}`);
+
       // 导航体检：挂在导航上的每一项都点一遍，看点不点得进去、里面有没有真东西。
       //
       // 老板的第三次投诉就是这个：「这一排里面很多都点不了」。
@@ -104,9 +134,9 @@ async function boot(label) {
         console.log(`  导航 ${navN} 项，其中 ${dead.length} 项有问题`);
       }
 
-      // 真去点一下主按钮，看页面动没动
+      // 首屏那个主按钮（只有在开局一步都没走动的情况下才需要单独试）
       const btn = frame.locator("button:visible, [role=button]:visible, .btn:visible").first();
-      if ((await btn.count().catch(() => 0)) > 0) {
+      if (steps === 0 && (await btn.count().catch(() => 0)) > 0) {
         const label0 = (await btn.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 24);
         // 能填的先填上，别把「没填必填项」当成 bug
         for (let i = 0; i < Math.min(fields, 4); i++) {

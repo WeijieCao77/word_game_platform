@@ -423,6 +423,48 @@ body.splitting * {
 .preview-code {
   overflow: hidden;
   background: var(--panel);
+  position: relative;
+}
+
+/* 预览里作品抛异常时压在上面的那条。
+   以前作者只能看到沙箱内部那条血红横幅——它是画在作品页面里的，
+   平台这边什么都不知道，AI 也就一无所知。现在报错会回传给平台，
+   顺手在编辑器里也说一句，并给一个「让 AI 去修」的按钮：
+   作者不用自己去抄那段报错原文（老板原话：我不要自己去手动做操作）。 */
+.preview-crash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 5;
+  background: #7f1d1d;
+  color: #fff;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.preview-crash-title {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.preview-crash-where {
+  opacity: 0.85;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.preview-crash .btn {
+  margin-left: auto;
+  background: #fff;
+  color: #7f1d1d;
+  border-color: #fff;
 }
 
 .preview-code-frame {

@@ -3,6 +3,7 @@ import { simulate, summarizeReport } from "@/lib/simulate";
 import { ChatMessage, ToolDef, callChat } from "./provider";
 import { SKILL_PACKS, buildSystemPrompt } from "./prompt";
 import { GameMode } from "@/lib/store/types";
+import { describeRuntimeErrors } from "./runtime-errors";
 import { DESIGN_CARD_TEMPLATE, configUnlocked, parseCardStatus } from "./designcard";
 import { LibraryEntry } from "@/lib/library";
 import { viewFile } from "./file-view";
@@ -125,9 +126,10 @@ const TOOLS: ToolDef[] = [
     function: {
       name: "read_errors",
       description:
-        "看这部作品在浏览器里抛过什么异常（自由模式）。**每一轮动手之前先看一眼**——" +
-        "自由模式没有校验器，作品炸了不会有人通知你，这里就是唯一的线索。" +
-        "修完之后带 clear: true 再调一次，把旧错清掉，免得下一轮被它误导。",
+        "自由模式作品的运行时报错。**有报错的话已经自动贴在上下文的【运行报错】里了，" +
+        "不用再调这个工具去问一遍**（那只是白花一次往返）。" +
+        "这个工具真正的用处是修完之后带 clear: true 调一次把旧记录清掉——" +
+        "不清的话下一轮分不出你到底修好没有。",
       parameters: {
         type: "object",
         properties: {
@@ -313,7 +315,8 @@ export interface AgentContext {
    * 快速模式的作品不该看到它们，免得 AI 分心去写代码。
    */
   files?: {
-    list: () => { path: string; size: number }[];
+    /** updatedAt 用来分辨报错是「这一版抛的」还是「上一版留下的」，没有也能跑 */
+    list: () => { path: string; size: number; updatedAt?: string }[];
     read: (path: string) => string | null;
     write: (path: string, content: string) => void;
   };
@@ -447,6 +450,25 @@ export async function runAssistant(
       `结局 → 结局判定，实体/联赛 → 数据与赛程。要看某条的全文用 read_config 按 id 取。\n` +
       `它们不再由通用引擎执行，最终得由你的代码把它们呈现出来。）\n${summarizeConfig(config)}`
     : "";
+  /**
+   * 作品在浏览器里抛过的异常，自动摆进上下文。
+   *
+   * 以前这件事只能靠 AI 自己想起来调 read_errors——它经常不调，于是出现过
+   * 「AI 说做好了、作者点开预览一片血红」。快速模式的校验结果是每轮强塞的，
+   * 自由模式没道理靠自觉。有错才出现这一段，没错一个字都不占。
+   */
+  const runtimeErrorBlock = (): string => {
+    const list = ctx.errors?.list() ?? [];
+    if (list.length === 0) return "";
+    const files = ctx.files?.list() ?? [];
+    const lastWrite = files
+      .map((f) => f.updatedAt ?? "")
+      .filter(Boolean)
+      .sort()
+      .pop();
+    const text = describeRuntimeErrors(list, lastWrite);
+    return text ? `\n\n【运行报错】\n${text}` : "";
+  };
   const hasFiles = (ctx.files?.list() ?? []).length > 0;
   const legacyFilesBlock = hasFiles
     ? `\n\n${fileBlock().replace("【当前文件】", "【自由模式留下的文件】（这部作品写过页面，文件都还在。\n" +
@@ -457,6 +479,7 @@ export async function runAssistant(
       ? `【当前设计卡】\n${designCard}\n\n` +
         `【游戏信息】${JSON.stringify(config.meta)}\n\n` +
         fileBlock() +
+        runtimeErrorBlock() +
         (ctx.publishDrift ? `\n\n【发布状态】\n${ctx.publishDrift}` : "") +
         legacyEngineBlock
       : `【当前设计卡】\n${designCard}\n\n` +

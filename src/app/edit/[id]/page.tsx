@@ -544,8 +544,10 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
    * 差距的大头是「没跑够」——靠人一句句催，一次坐下最多几轮，
    * 而一部一万三千行的作品要三四十轮。
    */
-  const sendChat = useCallback(async (rounds = 1): Promise<void> => {
-    const text = chatInput.trim() || (rounds > 1 ? "接着做，照剩余清单往下搭。" : "");
+  // ask 是「不经过输入框直接说一句」——预览报错时的「让 AI 去修」走的就是这条路，
+  // 作者不用自己去抄那段报错原文（老板的原话：我不要自己去手动做操作）
+  const sendChat = useCallback(async (rounds = 1, ask?: string): Promise<void> => {
+    const text = (ask ?? chatInput).trim() || (rounds > 1 ? "接着做，照剩余清单往下搭。" : "");
     if (!text || chatBusy || !editKey) return;
     const nextChat: ChatMsg[] = [...chat, { role: "user", content: text }];
     setChat(nextChat);
@@ -940,6 +942,7 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
                 previewNonce={previewNonce}
                 mode={mode}
                 editKey={editKey ?? ""}
+                onFixError={(m) => void sendChat(1, m)}
               />
             )}
             {tab === "files" && (

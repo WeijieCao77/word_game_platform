@@ -188,8 +188,14 @@ async function boot(label) {
   return { broken, bar, errs: [...new Set(errs)], stuck, dead, text };
 }
 
-/** 跑一轮 AI（走异步任务那条路，跟作者在工作台里走的是同一条） */
-async function ask(message) {
+/**
+ * 跑一轮 AI（走异步任务那条路，跟作者在工作台里走的是同一条）。
+ *
+ * 容器重启会把跑到一半的那一轮打死——服务端自己给的提示就是
+ * 「把刚才那句话再发一次就行」。这种情况自动重发一次，不要让整条流水线红着退出：
+ * 实测里两次都是我一边改环境变量（会触发重新部署）一边派活，自己把自己掐了。
+ */
+async function ask(message, retried = false) {
   const r = await fetch(`${base}/api/games/${gameId}/assistant`, {
     method: "POST",
     headers: H,
@@ -213,7 +219,15 @@ async function ask(message) {
       console.log(`  · ${note}`);
     }
     if (j.status === "done") return jr;
-    if (j.status === "error") throw new Error(j.error || "这一轮失败了");
+    if (j.status === "error") {
+      const why = j.error || "这一轮失败了";
+      if (!retried && /服务重启|重启了/.test(why)) {
+        console.log(`  ↻ ${why}\n  （多半是平台正在重新部署，等 60 秒重发一次）`);
+        await new Promise((s2) => setTimeout(s2, 60000));
+        return ask(message, true);
+      }
+      throw new Error(why);
+    }
   }
   throw new Error("等了 20 分钟还没跑完");
 }

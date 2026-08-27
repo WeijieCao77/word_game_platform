@@ -32,11 +32,23 @@ const MIME: Record<string, string> = {
 };
 
 /** 只许平常的相对路径：不许 .. 上跳、不许绝对路径、不许奇怪字符 */
+/**
+ * 出口这一层的路径校验。
+ *
+ * 字符集跟写入那一层（api/games/:id/files 的 badPath）保持一致：ASCII 收紧，
+ * 非 ASCII 放行——中文创作者的数据表就叫「队伍表.csv」，作品里写
+ * <script src="data/队伍表.js">，这里拦掉的话文件存进去了却取不出来。
+ * 两层判据必须同步改，只改一层就是「传得上、读不到」。
+ *
+ * 结构性规则一条不松：`..`、开头斜杠、反斜杠、控制字符、超长，一概拒绝。
+ */
 function safePath(parts: string[]): string | null {
   const p = parts.join("/");
   if (!p || p.length > 200) return null;
   if (p.includes("..") || p.startsWith("/") || p.includes("\\")) return null;
-  if (!/^[A-Za-z0-9/._-]+$/.test(p)) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(p)) return null;
+  if (!/^[A-Za-z0-9/._\u0080-\uffff-]+$/.test(p)) return null;
   return p;
 }
 

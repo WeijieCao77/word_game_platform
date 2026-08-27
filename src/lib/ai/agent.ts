@@ -9,6 +9,7 @@ import { LibraryEntry } from "@/lib/library";
 import { viewFile } from "./file-view";
 import { checkFileSyntax, describeProblem } from "@/lib/syntax-check";
 import { checkWiring, describeWiring } from "@/lib/wiring";
+import { checkMissingRefs, describeMissingRefs } from "@/lib/js-refs";
 
 // 驻场策划 agent 循环：带四个工具，改坏了会被校验器当场打回并自动重试。
 
@@ -519,11 +520,28 @@ export async function runAssistant(
    */
   const wiringNote = (): string => {
     if (!ctx.files) return "";
+    const list = ctx.files.list();
     const bag: Record<string, string> = {};
-    for (const f of ctx.files.list()) bag[f.path] = "";
+    for (const f of list) bag[f.path] = "";
     const idx = Object.keys(bag).find((p) => /(^|\/)index\.html$/i.test(p));
     if (idx) bag[idx] = ctx.files.read(idx) ?? "";
-    const note = describeWiring(checkWiring(bag));
+    const notes = [describeWiring(checkWiring(bag))];
+
+    // 第二级：谁调了一个谁都没定义的名字。
+    //
+    // 线上真死过一部作品：registerSetup is not defined（game.js:308:3），
+    // 玩家点开只剩 64 个字。语法检查查不出来（那行是合法 JS），
+    // 接线体检也查不出来（文件都引了）——只有把代码通读一遍才看得见。
+    // 通读要真内容，所以这里把 js 都读出来；太大的作品直接跳过（这层只是提醒）。
+    const jsBytes = list.filter((f) => /\.(js|mjs)$/i.test(f.path)).reduce((n, f) => n + f.size, 0);
+    if (idx && jsBytes > 0 && jsBytes <= 3_000_000) {
+      for (const f of list) {
+        if (f.path !== idx && /\.(js|mjs)$/i.test(f.path)) bag[f.path] = ctx.files.read(f.path) ?? "";
+      }
+      notes.push(describeMissingRefs(checkMissingRefs(bag)));
+    }
+
+    const note = notes.filter(Boolean).join("\n");
     return note ? `\n${note}` : "";
   };
 

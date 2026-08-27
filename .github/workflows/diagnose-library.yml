@@ -16,6 +16,10 @@ on:
         description: "只体检标题里含这个词的作品（留空 = 全库）"
         required: false
         default: ""
+      refs_game:
+        description: "再给这部作品做一次接线 + 缺失引用体检（填作品 id）"
+        required: false
+        default: ""
 
 jobs:
   triage:
@@ -31,3 +35,13 @@ jobs:
       - run: npm i -D playwright@1.56.0 && npx playwright install --with-deps chromium
       - name: 逐部打开
         run: node scripts/live-triage.mjs "$BASE" "${{ inputs.title_filter }}"
+
+      # 打不开的作品单独再体检一层：把它的代码抓下来通读，
+      # 直接指出「谁调了一个谁都没定义的名字」「哪个文件没被引进来」。
+      # 这两层护栏就是照着线上真死掉的作品写的，那就得拿真作品来验。
+      - name: 接线与缺失引用体检（可选，填了作品 id 才跑）
+        if: inputs.refs_game != ''
+        env:
+          LIVE_BASE: https://word-game-platform-production.up.railway.app
+          LIVE_GAME: ${{ inputs.refs_game }}
+        run: npx vitest run tests/adhoc-live-refs.test.ts

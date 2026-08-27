@@ -101,6 +101,62 @@ describe("缺失引用体检", () => {
   });
 });
 
+describe("加载顺序：定义有了，可调的时候还没有", () => {
+  const html = (body: string): string => `<!doctype html><html><head></head><body>${body}</body></html>`;
+
+  it("线上那部 VAL MANAGER 的死法：启动时调了排在后面那个文件里的函数", () => {
+    const files = {
+      "index.html": html('<script src="game.js"></script><script src="screens-setup.js"></script>'),
+      // game.js 里 init() 在顶层被调用，函数体里调了后面文件才定义的 registerSetup
+      "game.js": ["function init(){", "  registerSetup();", "}", "init();"].join("\n"),
+      "screens-setup.js": "function registerSetup(){ return 1; }",
+    };
+    const found = checkMissingRefs(files);
+    expect(found.map((f) => [f.name, f.kind])).toEqual([["registerSetup", "too-late"]]);
+    expect(found[0].definedIn).toBe("screens-setup.js");
+    const text = describeMissingRefs(found);
+    expect(text).toContain("还没加载");
+    expect(text).toContain('window.addEventListener("load"');
+  });
+
+  it("顺序对就不报（后面的文件调前面的，天经地义）", () => {
+    const files = {
+      "index.html": html('<script src="core.js"></script><script src="screens.js"></script>'),
+      "core.js": "function show(id){ return id; }",
+      "screens.js": "show('home');",
+    };
+    expect(checkMissingRefs(files)).toEqual([]);
+  });
+
+  it("**点击时才跑的**不算——这是最常见的正常写法，报了就是误报", () => {
+    const files = {
+      "index.html": html('<script src="game.js"></script><script src="screens.js"></script>'),
+      // onClick 没有在加载时被调用，它跑的时候 screens.js 早就在了
+      "game.js": ["function onClick(){", "  renderSquad();", "}", "document.body.onclick = onClick;"].join("\n"),
+      "screens.js": "function renderSquad(){}",
+    };
+    expect(checkMissingRefs(files)).toEqual([]);
+  });
+
+  it("包在 load 事件里的启动代码不算——那正是我们推荐的写法", () => {
+    const files = {
+      "index.html": html('<script src="game.js"></script><script src="screens.js"></script>'),
+      "game.js": 'window.addEventListener("load", function(){ registerSetup(); });',
+      "screens.js": "function registerSetup(){}",
+    };
+    expect(checkMissingRefs(files)).toEqual([]);
+  });
+
+  it("立即执行函数里的照样算加载时执行", () => {
+    const files = {
+      "index.html": html('<script src="game.js"></script><script src="screens.js"></script>'),
+      "game.js": "(function(){ registerSetup(); })();",
+      "screens.js": "function registerSetup(){}",
+    };
+    expect(checkMissingRefs(files).map((f) => f.kind)).toEqual(["too-late"]);
+  });
+});
+
 describe("抹字面量：抹的时候行号不许错位", () => {
   it("多行模板串抹完，后面的行号还是对的", () => {
     const src = ["const t = `第一行", "第二行`;", "boom();"].join("\n");

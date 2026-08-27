@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePlayStats } from "@/components/player/hooks";
+import { useGameFrameBridge } from "@/components/game-frame";
 
 /**
  * 自由模式作品的运行外壳。
@@ -32,81 +33,14 @@ export default function CodeGameFrame({
   const shellRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [full, setFull] = useState(false);
-  const [ready, setReady] = useState(false);
   const saveKey = `wgp_codesave_${gameId}`;
   // 自由模式的作品也要计游玩、时长与点赞——跟快速模式共用同一套口径，
   // 不然它们在游戏库的「最热」里永远是零，作者的后台数据也是空的。
   // 作者自己带着钥匙预览时不计（跟 GamePlayer 的 preview 一个道理）。
   const { likes, liked, toggleLike } = usePlayStats(editKey ? "preview" : "play", gameId);
-
-  const post = useCallback((msg: unknown) => {
-    frameRef.current?.contentWindow?.postMessage(msg, "*");
-  }, []);
-
-  const readSave = useCallback((): unknown => {
-    try {
-      const raw = localStorage.getItem(saveKey);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  }, [saveKey]);
-
-  useEffect(() => {
-    const onMsg = (e: MessageEvent): void => {
-      // 只认自己那个 iframe 发来的消息
-      if (e.source !== frameRef.current?.contentWindow) return;
-      const data = e.data as { type?: string; data?: unknown };
-      if (data?.type === "wgp:ready") {
-        setReady(true);
-      } else if (data?.type === "wgp:save") {
-        try {
-          localStorage.setItem(saveKey, JSON.stringify(data.data ?? null));
-        } catch {
-          // 隐私模式/存储满：存不下就算了，不该让游戏崩
-        }
-      } else if (data?.type === "wgp:load") {
-        post({ type: "wgp:loaded", data: readSave() });
-      } else if (data?.type === "wgp:clear") {
-        try {
-          localStorage.removeItem(saveKey);
-        } catch {
-          /* 同上 */
-        }
-      } else if (data?.type === "wgp:error") {
-        // 作品在浏览器里抛异常了。快速模式有三级校验当场打回，自由模式原本一条
-        // 护栏都没有——AI 写完就交差，玩家看到白屏，作者看到的是「AI 说做好了」。
-        // 送回服务端存起来，AI 下一轮用 read_errors 就读得到。
-        const e2 = (data.data ?? {}) as { message?: string; stack?: string; source?: string };
-        if (e2.message) {
-          void fetch(`/api/games/${gameId}/errors`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(e2),
-            keepalive: true,
-          }).catch(() => {
-            /* 报错通道自己出错不该再惊动玩家 */
-          });
-        }
-      }
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [post, readSave, saveKey, gameId]);
-
-  // 竞态兜底：iframe 常常在 React 水合之前就 load 完，游戏那一句 wgp:ready 与
-  // wgp:load 发出来时外壳还没挂上监听——两条都会石沉大海，结果是遮罩不散、
-  // 存档不回来（而且 onLoad 也不会补发，load 事件早过去了）。
-  // 所以挂载后主动补两次：把存档推给游戏，并给遮罩一个时间下限。
-  // 这两次补发都在第一秒内，玩家还来不及点任何东西，不会盖掉新进度。
-  useEffect(() => {
-    const timers = [
-      setTimeout(() => post({ type: "wgp:loaded", data: readSave() }), 250),
-      setTimeout(() => post({ type: "wgp:loaded", data: readSave() }), 900),
-      setTimeout(() => setReady(true), 1500),
-    ];
-    return () => timers.forEach(clearTimeout);
-  }, [post, readSave]);
+  // 存档、就绪、报错回传全在这一个钩子里——编辑器的预览页签用的是同一份，
+  // 保证「作者预览到的」和「玩家玩到的」是同一个环境（见 components/game-frame.ts）
+  const { ready, clearSave, markReady } = useGameFrameBridge({ gameId, frameRef, saveKey });
 
   useEffect(() => {
     const onFs = (): void => setFull(Boolean(document.fullscreenElement));
@@ -147,11 +81,7 @@ export default function CodeGameFrame({
         <button
           className="linklike"
           onClick={() => {
-            try {
-              localStorage.removeItem(saveKey);
-            } catch {
-              /* 同上 */
-            }
+            clearSave();
             if (frameRef.current) frameRef.current.src = src;
           }}
         >
@@ -183,7 +113,7 @@ export default function CodeGameFrame({
           // 关键：不给 allow-same-origin。游戏拿到的是不透明源，
           // 读不到平台的 cookie/存储，也访问不了 parent 的 DOM。
           sandbox="allow-scripts"
-          onLoad={() => setTimeout(() => setReady(true), 1200)}
+          onLoad={() => setTimeout(markReady, 1200)}
         />
         )}
       </div>

@@ -148,3 +148,60 @@ describe("连续搭建：AI 照剩余清单自己往下跑", () => {
     ).rejects.toThrow("限流");
   });
 });
+
+/**
+ * 上一轮把作品写炸了，下一轮不许接着往上盖。
+ *
+ * 这是连续搭建最贵的一种失败：第 3 轮写出一个开局就抛异常的版本，
+ * 第 4…20 轮在一个打不开的作品上继续加页面——十几轮、几百万 token 全白干，
+ * 而且作者本来就是去忙别的了，中途没人叫停。
+ */
+describe("连续搭建：作品炸了就先修，别往下盖", () => {
+  const start: Turn[] = [{ role: "user", content: "照说明书开搭" }];
+
+  it("上一轮之后有报错 → 下一轮说的是「先别往下搭」，还带上报错原文", async () => {
+    const said: string[] = [];
+    await runRounds({
+      rounds: 2,
+      history: start,
+      runOne: async (hist) => {
+        said.push(String(hist[hist.length - 1].content));
+        return { reply: "写完了" };
+      },
+      brokenNow: () => "1. 【这一版抛的】registerSetup is not defined（game.js:308:3）",
+    });
+    expect(said[1]).toContain("先别往下搭");
+    expect(said[1]).toContain("registerSetup is not defined");
+    expect(said[1]).not.toContain(KEEP_GOING);
+  });
+
+  it("没有报错就照常「接着做」，并把修了几轮如实报上来", async () => {
+    let broken = true;
+    const r = await runRounds({
+      rounds: 3,
+      history: start,
+      runOne: async () => ({ reply: "写完了" }),
+      // 第一轮之后是坏的，修完之后就好了
+      brokenNow: () => {
+        const now = broken;
+        broken = false;
+        return now ? "炸了" : null;
+      },
+    });
+    expect(r.fixRounds).toBe(1);
+    expect(r.roundsRun).toBe(3);
+  });
+
+  it("不传 brokenNow 的调用方一切照旧（老路径不受影响）", async () => {
+    const said: string[] = [];
+    await runRounds({
+      rounds: 2,
+      history: start,
+      runOne: async (hist) => {
+        said.push(String(hist[hist.length - 1].content));
+        return { reply: "写完了" };
+      },
+    });
+    expect(said[1]).toBe(KEEP_GOING);
+  });
+});

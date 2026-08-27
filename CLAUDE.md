@@ -9,6 +9,10 @@
    现在跑到哪一步、下一步干什么、环境上必踩的坑
 0.5. [`docs/PLATFORM.md`](docs/PLATFORM.md) — **平台定位一页纸**（老板拍板的结论）：
    目的、服务对象、两条路的关系、边界与明确不做。**所有新想法先过这页纸**
+0.8. [`docs/PITFALLS.md`](docs/PITFALLS.md) — **踩过的坑清单**：每次犯的错记在这，
+   交活之前照最后那张自查表过一遍，别再犯第二次
+0.9. [`docs/DESIGN-REVIEW.md`](docs/DESIGN-REVIEW.md) — **平台功能设计体检**（2026-08-27）：
+   六条设计问题、各自的代价与改法、建议的动手顺序
 1. [`docs/STATUS.md`](docs/STATUS.md) — 平台现在能干什么、做到哪一步、有哪些坑
 2. [`docs/MODULES.md`](docs/MODULES.md) — **模块地图：要改某个东西，该看哪几个文件**
 3. [`docs/schema.md`](docs/schema.md) — 底层设计：内容卡 schema、表达式语言、三级校验

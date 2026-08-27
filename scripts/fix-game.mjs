@@ -274,11 +274,23 @@ async function ask(message, retried = false) {
   if (!job) return body;
   const deadline = Date.now() + 20 * 60 * 1000;
   let note = "";
+  let checking = false;
   while (Date.now() < deadline) {
     await new Promise((s) => setTimeout(s, 5000));
     const jr = await fetch(`${base}/api/games/${gameId}/assistant?job=${job}`, { headers: { cookie: COOKIE } })
       .then((x) => x.json())
       .catch(() => null);
+    // AI 在这一轮里挂号要一份体检——它跑在服务端开不了浏览器，这个脚本能开。
+    // 接了号跑一次、把报告 POST 回去，服务端那一轮当场接着往下走。
+    // 不接的话 AI 等 90 秒会收到「没人替你跑」，那一轮就白等了。
+    if (jr?.checkWanted && !checking) {
+      checking = true;
+      platformCheck("AI 当轮要的")
+        .catch(() => null)
+        .finally(() => {
+          checking = false;
+        });
+    }
     const j = jr?.job;
     if (!j) continue;
     if (j.note && j.note !== note) {

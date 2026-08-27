@@ -34,6 +34,9 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     if (!job || job.gameId !== id) return NextResponse.json({ error: "没有这个任务" }, { status: 404 });
     return NextResponse.json({
       job: { id: job.id, status: job.status, note: job.note, error: job.error, updatedAt: job.updatedAt },
+      // AI 在这一轮里挂了号要一份体检——正在轮询的那个浏览器看见就去跑一次、
+      // 把报告 POST 回 /playcheck，服务端那一轮当场就能接着往下走。
+      checkWanted: store.playCheckWantedAt(id) !== null,
       ...(job.status === "done" ? (job.result as object) : {}),
     });
   }
@@ -123,6 +126,37 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
             if (store.gameMode(id) !== "code") store.gameSetMode(id, "code");
             onNote?.(`正在写 ${path}…`);
           },
+        },
+        /**
+         * AI 当轮自己要一份体检。
+         *
+         * 这一条是「几天做不出来」和「两天做出 demo」的分界：人写代码是改一次跑一次
+         * 看一眼，而这里的 AI 原来是写完就交、下一轮才知道对不对——中间还可能被
+         * 一个错的结论带偏（实测里真发生过，我据此判了「上一轮把代码改坏了」，
+         * 其实是那次检查撞上了容器重启）。
+         *
+         * 体检只能在浏览器里跑，这一轮跑在服务端，所以挂个号让正在轮询这一轮的
+         * 那个浏览器去跑。等不到人接号就如实说——**绝不返回一句像「通过」的话**。
+         */
+        runPlayCheck: async () => {
+          const before = store.playCheckGet(id)?.at ?? "";
+          store.playCheckWant(id);
+          onNote?.("正在请工作台跑一次试玩体检…");
+          const deadline = Date.now() + 90_000;
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const fresh = store.playCheckGet(id);
+            if (fresh && fresh.at > before) {
+              store.playCheckClearWant(id);
+              return describePlayCheck(fresh);
+            }
+          }
+          store.playCheckClearWant(id);
+          return (
+            "这一轮没人替你跑体检（作者的工作台没开着，实测脚本也没在跑），等了 90 秒没等到。\n" +
+            "**这不等于体检通过**——它只是没跑成。别把它当成「走得通」的证据：" +
+            "该静态核对的照样核对，该说不确定的就说不确定。"
+          );
         },
         // 平台自己去点了一遍的结果。抛异常的错走 errors，点了没反应的走这条——
         // 后者占了「玩不了」的一大半，而且 read_errors 里一个字都看不到。

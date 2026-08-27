@@ -71,6 +71,9 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
   const [checkSummary, setCheckSummary] = useState("");
   const [checkErr, setCheckErr] = useState("");
   const [checking, setChecking] = useState(false);
+  // AI 挂号要体检时，这一页替它跑。用 ref 而不是 state：轮询每 2 秒一次，
+  // 用 state 挡重入会因为闭包拿到旧值而重复触发。
+  const checkingRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
@@ -660,6 +663,17 @@ export default function EditPage({ params }: { params: Promise<{ id: string }> }
           }).catch(() => null);
           if (!p || !p.ok) continue; // 网络抖一下不该让这一轮白跑
           const pb = await p.json();
+          // AI 在这一轮里要一份体检：它跑在服务端，开不了浏览器，
+          // 而这一页正开着——就由这一页去跑，跑完 POST 回去，
+          // 服务端那一轮当场接着往下走。这就是「写完能自己验」的那条线。
+          if (pb.checkWanted && !checkingRef.current) {
+            checkingRef.current = true;
+            void runPlayCheck(id, editKey)
+              .catch(() => null)
+              .finally(() => {
+                checkingRef.current = false;
+              });
+          }
           if (pb.job?.status === "done") done = pb;
           else if (pb.job?.status === "error") throw new Error(pb.job.error || "这一轮失败了");
           else if (pb.job?.note) setJobNote(pb.job.note);

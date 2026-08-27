@@ -157,6 +157,19 @@ const SWEEP = `<script>(function(){
     // 走过哪些屏。用来认出「这一下把我带回了看过的地方」——见上面 boring 那段。
     var seenScreens = {};
     try{ seenScreens[sig()] = 1; }catch(_){}
+    /**
+     * 哪些标签**后来被证明是好使的**。
+     *
+     * 「点了没反应」只有在这个按钮**从头到尾都没反应**的时候才算数。
+     * 本地真跑一遍才看见这个假阳性：走查一进挑东家那一屏就在 Americas 赛区，
+     * 它点了一下「Americas」——当然一个字都不变，于是记成「点了没反应」；
+     * 可再走两步它点「Americas」切回来的时候，界面明明变了。
+     * **玩家点自己已经在的那个页签，本来就该没反应。**
+     *
+     * 这个假阳性是有代价的：线上那一轮 AI 就是照着「Americas 点了没反应」
+     * 去改的，把「点已选中的页签」改成强制重绘——为了迁就一份错报告改了代码。
+     */
+    var worked = {};
     for (var n=1; n<=MAX_STEPS; n++){
       if (overtime()){ notes.push("体检超时，开局只走到第 " + (n-1) + " 步"); break; }
       var before = sig();
@@ -201,6 +214,7 @@ const SWEEP = `<script>(function(){
           // （不算「点了没反应」——它确实有反应，只是没把人往前带。）
           if (seenScreens[after]) boring[name] = true;
           seenScreens[after] = 1;
+          worked[name] = 1;
           // 走通了不等于路上没坏按钮：前面那些点了没动静的，一个个记下来。
           // 老板撞见的「起名字没地方填、点下一步原地不动」就藏在这里——
           // 体检当时接着点到导航才走动，差点把这一步判成「走通了」。
@@ -229,6 +243,10 @@ const SWEEP = `<script>(function(){
     // 走满步数还没认出主导航 = 没走到主界面。这件事必须记下来：
     // 不记的话，「走了 14 步一路没卡住」跟「走了 14 步走到主界面了」
     // 在报告里长得一模一样，服务端只能把前者也说成通过。线上就这么绿过一次。
+    // 把「后来证明好使」的那些从坏按钮名单里划掉——见上面 worked 那段。
+    for (var s2=0; s2<steps.length; s2++){
+      steps[s2].dead = steps[s2].dead.filter(function(d){ return !worked[d]; });
+    }
     return {steps:steps, stuck:stuck, arrived:arrived, walked:steps.length};
   }
 

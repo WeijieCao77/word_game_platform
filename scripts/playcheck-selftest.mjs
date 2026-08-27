@@ -76,7 +76,9 @@ var NAV = ${JSON.stringify(NAV)};
 function render(){
   var h = "";
   if (screen === 1){
-    h = "<h1>先把自己捏出来</h1><label>你的名字</label><input id=nm>" +
+    h = "<h1>先把自己捏出来</h1><p>年龄换声望，声望换一份更好的第一份工作，代价是成长变慢。" +
+        "先填个名字，再挑一支愿意要你的战队——这一屏的字数要够，免得被当成白屏。</p>" +
+        "<label>你的名字</label><input id=nm>" +
         "<button onclick='if(document.getElementById(\\"nm\\").value){screen=2;render()}'>下一步：挑东家</button>";
   } else if (screen === 2){
     h = "<h1>挑一支战队</h1><div class='region-tabs'>" +
@@ -128,6 +130,11 @@ if (report.stuck) problems.push(`半路卡住了（第 ${report.stuck.step} 步�
 if (report.nav.length !== NAV.length) problems.push(`导航应该扫到 ${NAV.length} 项，实际 ${report.nav.length} 项`);
 const deadNav = report.nav.filter((n) => !n.changed && !n.already).map((n) => n.label);
 if (deadNav.length) problems.push(`这些导航项被冤枉成点不动：${deadNav.join("、")}`);
+// 这份假作品里**没有一个坏按钮**。报出来的都是冤枉的——
+// 走查一进挑东家那一屏就在 Americas，它点一下「Americas」自然不变，
+// 于是记成「点了没反应」。玩家点自己已经在的那个页签本来就没反应。
+const deadOnPath = report.steps.flatMap((s) => s.dead);
+if (deadOnPath.length) problems.push(`这些按钮被冤枉成点了没反应：${deadOnPath.join("、")}`);
 
 if (problems.length) {
   console.log("\n✗ 体检器自己有问题：");

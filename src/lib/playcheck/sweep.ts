@@ -72,10 +72,28 @@ const SWEEP = `<script>(function(){
    * 所以先按语义挑主按钮，挑不出来再按 DOM 顺序。
    */
   var PRIMARY = /(下一步|下一頁|继续|繼續|开始|開始|确定|確定|确认|確認|进入|進入|完成|提交|创建|創建|出发|出發|next|start|continue|confirm|submit|begin|play)/i;
+
+  /**
+   * 「点了会变，但变回一个看过的屏」的那些东西——**在原地打转**。
+   *
+   * 这是线上对账量出来的：挑东家那一屏有四个赛区页签，点哪个都换一批战队，
+   * 每一下 sig() 都真的变了，于是每一下都算「走通一步」。走查就这么在
+   * Americas / EMEA / Pacific / China 之间来回点满 14 步，一次都没点到战队卡片，
+   * 报「走了 14 步没走到主界面」。而同一时刻另一个走查器 5 步就进了 11 项主导航。
+   *
+   * **「界面变了」不等于「往前走了」。** 所以把这些标签记下来沉到最后：
+   * 第一次点某个页签是探路（该点），第二次点它就是打转（先去试别的）。
+   */
+  var boring = {};
+
   function ordered(cands){
-    var a = [], b = [];
-    for (var i = 0; i < cands.length; i++) (PRIMARY.test(label(cands[i])) ? a : b).push(cands[i]);
-    return a.concat(b);
+    var a = [], b = [], c = [];
+    for (var i = 0; i < cands.length; i++) {
+      var name = label(cands[i]);
+      if (boring[name]) c.push(cands[i]);
+      else (PRIMARY.test(name) ? a : b).push(cands[i]);
+    }
+    return a.concat(b).concat(c);
   }
 
   function label(el){
@@ -136,6 +154,9 @@ const SWEEP = `<script>(function(){
   /** 开局流程：一步步往前走，看能走到哪 */
   async function walkOpening(){
     var steps = [], stuck = null, arrived = false;
+    // 走过哪些屏。用来认出「这一下把我带回了看过的地方」——见上面 boring 那段。
+    var seenScreens = {};
+    try{ seenScreens[sig()] = 1; }catch(_){}
     for (var n=1; n<=MAX_STEPS; n++){
       if (overtime()){ notes.push("体检超时，开局只走到第 " + (n-1) + " 步"); break; }
       var before = sig();
@@ -145,17 +166,41 @@ const SWEEP = `<script>(function(){
         stuck = {step:n, tried:[], screen:text().slice(0,300), filled:filled, why:"no-clickable"};
         break;
       }
-      var tried = [], moved = false;
-      var order = ordered(cands);
-      for (var i=0; i<order.length && i<MAX_TRY && !overtime(); i++){
-        var el = order[i];
-        if (!document.contains(el) || !visible(el)) continue;
-        var name = label(el);
+      /**
+       * 一步之内换着候选试，直到有一个真把界面往前带。
+       *
+       * **每试一次都重新采集候选**，这一条是本地复现逼出来的：
+       * 作品只要是「innerHTML = ...」整片重画（绝大多数自由模式作品都这么写），
+       * 点完第一下，之前抓到的那一批元素全部脱离文档，document.contains() 一律为假。
+       * 旧写法拿着那张**过期名单**往下走，剩下的候选一个不落地被 continue 跳过——
+       * 于是「一步最多试 10 个」名存实亡，**每一步实际只试得成一个**，
+       * 跟当场放弃没有区别。本地复现里它点了一下「Americas」（当前就在这个赛区，
+       * 点了自然没变）就报了「这一屏点遍了都没反应」，而旁边三个页签、三张战队卡片
+       * 一下都没碰过。
+       *
+       * 按名字记「这一步试过谁」，而不是按元素——重画之后元素是新的，名字还是那个。
+       */
+      var tried = [], moved = false, triedNames = {};
+      for (var t=0; t<MAX_TRY && !overtime(); t++){
+        var order = ordered(clickables());
+        var el = null, name = "";
+        for (var i=0; i<order.length; i++){
+          var nm = label(order[i]);
+          if (triedNames[nm]) continue;
+          el = order[i]; name = nm; break;
+        }
+        if (!el) break;
+        triedNames[name] = 1;
         tried.push(name);
         await click(el);
-        if (sig() !== before){
+        var after = sig();
+        if (after !== before){
           moved = true;
-          screenOf[name] = sig();
+          screenOf[name] = after;
+          // 变到一个看过的屏 = 打转。下一步别再优先点它了。
+          // （不算「点了没反应」——它确实有反应，只是没把人往前带。）
+          if (seenScreens[after]) boring[name] = true;
+          seenScreens[after] = 1;
           // 走通了不等于路上没坏按钮：前面那些点了没动静的，一个个记下来。
           // 老板撞见的「起名字没地方填、点下一步原地不动」就藏在这里——
           // 体检当时接着点到导航才走动，差点把这一步判成「走通了」。

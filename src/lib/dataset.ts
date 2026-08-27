@@ -104,7 +104,9 @@ export function isDatasetPath(path: string): boolean {
  * 请求 data/roster.js 时，先找 data/roster.csv，再找 data/roster.json。
  */
 export function datasetSourcesFor(jsPath: string): { name: string; candidates: string[] } | null {
-  const m = /^data\/([A-Za-z0-9._-]+)\.js$/.exec(jsPath);
+  // 名字允许非 ASCII：中文表名（data/队伍表.js）也要认得出来，
+  // 不然中文创作者只能用一串看不懂的哈希当表名。
+  const m = /^data\/([A-Za-z0-9._\u0080-\uffff-]+)\.js$/.exec(jsPath);
   if (!m) return null;
   const name = m[1];
   return { name, candidates: [`data/${name}.csv`, `data/${name}.json`] };

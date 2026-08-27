@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { dataPathFromUpload, dataNameOf } from "@/lib/file-budget";
 
 // 文件页签：自由模式专用。
 //
@@ -106,53 +107,87 @@ export default function FilesTab({
    * 自己手上的真实数据。传成 data/xxx.csv 之后，平台会在 /play 下虚拟出
    * data/xxx.js，作品里 <script src> 引进来、代码里 WGP.data("xxx") 取用。
    */
-  const upload = async (file: File): Promise<void> => {
-    const clean = file.name.replace(/[^A-Za-z0-9._-]/g, "-");
-    if (!/\.(csv|json)$/i.test(clean)) {
-      setMsg("数据表只收 .csv 或 .json");
+  /**
+   * 一次传一批（也可以直接选整个文件夹）。
+   *
+   * 原来一次只收一个（`files?.[0]`），几十张表就得点几十次——老板问的正是这件事。
+   * 选文件夹时用的是 `webkitRelativePath`，层级压成横线保留下来
+   * （`teams/pacific.csv` → `data/teams-pacific.csv`），不然两个文件夹里的同名文件
+   * 会互相覆盖，而数据表的孪生 js 只认 `data/` 下平铺的一层。
+   *
+   * 一个个顺着传，不并发：并发几十个请求既会打满连接，出错了也说不清是哪一个。
+   */
+  const uploadMany = async (list: File[]): Promise<void> => {
+    const files = list.filter((f) => /\.(csv|json)$/i.test(f.name));
+    const skipped = list.length - files.length;
+    if (files.length === 0) {
+      setMsg(`数据表只收 .csv 或 .json${skipped ? `（跳过了 ${skipped} 个别的文件）` : ""}`);
       return;
     }
     setBusy(true);
-    setMsg("");
-    try {
-      const content = await file.text();
-      const path = `data/${clean.toLowerCase()}`;
-      const res = await fetch(`/api/games/${gameId}/files`, {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-edit-key": editKey },
-        body: JSON.stringify({ path, content }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "上传失败");
-      const name = clean.toLowerCase().replace(/\.(csv|json)$/i, "");
-      setMsg(`已存为 ${path}，代码里用 WGP.data("${name}") 取`);
-      onReload();
-      onPreviewRefresh();
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "上传失败");
-    } finally {
-      setBusy(false);
+    const done: string[] = [];
+    const failed: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setMsg(`正在传 ${i + 1}/${files.length}：${f.name}`);
+      const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+      const path = dataPathFromUpload(rel);
+      try {
+        const content = await f.text();
+        const res = await fetch(`/api/games/${gameId}/files`, {
+          method: "PUT",
+          headers: { "content-type": "application/json", "x-edit-key": editKey },
+          body: JSON.stringify({ path, content }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "上传失败");
+        done.push(dataNameOf(path));
+      } catch (e) {
+        failed.push(`${f.name}（${e instanceof Error ? e.message : "上传失败"}）`);
+      }
     }
+    setBusy(false);
+    const parts: string[] = [];
+    if (done.length) {
+      // 名字要摆出来：作者得知道代码里该怎么取，压平之后名字跟原文件名可能不一样
+      const names = done.slice(0, 6).map((n) => `"${n}"`).join("、");
+      parts.push(
+        `传好 ${done.length} 张：${names}${done.length > 6 ? " 等" : ""}，代码里用 WGP.data(名字) 取`
+      );
+    }
+    if (failed.length) parts.push(`${failed.length} 个没传上：${failed.slice(0, 3).join("；")}`);
+    if (skipped) parts.push(`跳过 ${skipped} 个非 csv/json`);
+    setMsg(parts.join("　·　"));
+    onReload();
+    onPreviewRefresh();
+  };
+
+  const pick = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const list = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (list.length) void uploadMany(list);
   };
 
   const uploadRow = (
     <div className="files-upload">
       <label className="btn small">
         上传数据表
+        <input type="file" accept=".csv,.json" multiple hidden disabled={busy} onChange={pick} />
+      </label>
+      <label className="btn small secondary">
+        选整个文件夹
+        {/* webkitdirectory 不是标准属性，React 的类型里没有，所以要绕一下 */}
         <input
           type="file"
-          accept=".csv,.json"
           hidden
           disabled={busy}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            e.target.value = "";
-            if (f) void upload(f);
-          }}
+          onChange={pick}
+          {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
         />
       </label>
       <span className="pane-note">
-        几百个实体（选手名单、赛程、角色表）传成 CSV，比让 AI 一条条写进代码省得多
+        几百个实体（选手名单、赛程、角色表）传成 CSV，比让 AI 一条条写进代码省得多。
+        可以一次选多个，或者直接选一整个文件夹（子目录会压成 队伍-太平洋 这样的名字）。
       </span>
     </div>
   );

@@ -381,7 +381,7 @@ export const SKILL_PACKS: Record<string, { desc: string; body: string }> = {
   （线上真死过一部：registerSetup is not defined，整部作品只剩 64 个字。）
   挂在 load 里，所有文件都加载完才开跑，谁前谁后都不影响。
 - 改之前**先 read_file 看原文**，不要凭印象重写——重写会把创作者之前认可的东西弄丢。
-- 单个文件上限 40 万字符，一部作品最多 60 个文件。
+- 单文件上限 40 万字符；代码 60 个，data/ 数据表另算 200。
 - 另外两个：**patch_file 改已有文件（日常改动的默认选择）**、
   read_errors 看作品炸没炸。
 - **别把锅甩给运行库**：说「WGP 的某个函数有毛病」要先给能复现的证据，

@@ -108,6 +108,7 @@ describe("体检挂号簿（存储层）", () => {
     walked: 0,
     arrived: false,
     stuck: null,
+    numbers: { nan: [], huge: [], noisy: [], earlyEnd: "" },
     nav: [],
     notes: [],
     ms: 1000,

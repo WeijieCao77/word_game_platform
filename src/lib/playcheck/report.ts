@@ -1,4 +1,4 @@
-import { PlayCheckReport, PlayNavItem, PlayStuck, playCheckHasIssue } from "./types";
+import { PlayCheckReport, PlayNavItem, PlayNumbers, PlayStuck, playCheckHasIssue } from "./types";
 
 /**
  * 服务端这一半：把浏览器发回来的东西**当外人的输入**收，再翻译成 AI 看得懂的一段话。
@@ -57,8 +57,22 @@ export function parsePlayCheck(raw: unknown): PlayCheckReport {
           clickable: N(x.clickable),
         };
       }),
+    numbers: parseNumbers(o.numbers),
     notes: arr(o.notes).slice(0, 6).map((t) => S(t, 120)),
     ms: N(o.ms),
+  };
+}
+
+/** 数值那一段也一样当外人的输入收：限条数、限长度 */
+function parseNumbers(raw: unknown): PlayNumbers {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const list = (v: unknown, len: number): string[] =>
+    arr(v).slice(0, 6).map((x) => S(x, len)).filter(Boolean);
+  return {
+    nan: list(o.nan, 60),
+    huge: list(o.huge, 32),
+    noisy: list(o.noisy, 32),
+    earlyEnd: S(o.earlyEnd, 60),
   };
 }
 
@@ -74,6 +88,7 @@ export function summarizePlayCheck(r: PlayCheckReport): string {
   if (deadBtn > 0) bad.push(`开局路上 ${deadBtn} 个按钮点了没反应`);
   const empty = r.nav.filter((n) => n.changed && n.textLen < 40 && n.clickable === 0).length;
   if (empty > 0) bad.push(`${empty} 页是空壳`);
+  if (r.numbers.nan.length > 0) bad.push(`玩家眼前有 ${r.numbers.nan.length} 处 NaN/undefined`);
   if (bad.length === 0) {
     // 走到这里 arrived 一定是 true，也就是真认出了一排 6 项以上的主导航，
     // 「导航 N 项都能切」才是句实话。早先没有 arrived 这一条时，
@@ -101,11 +116,19 @@ export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): str
       r.nav.length > 0
         ? `导航 ${r.nav.length} 项都能切，没查出「点了没反应」。`
         : `**但一项导航都没找到**——这一段等于没测到，别当成通过。`;
-    return (
+    const head =
       `平台刚在浏览器里自动玩了一遍：开局走通 ${r.walked} 步走到了主界面，` +
       nav +
-      `（走得动不说明好玩，也不说明数值对。）`
-    );
+      `（走得动不说明好玩，也不说明数值对。）`;
+    /**
+     * 走得动，但数值那几条**只提醒不算硬伤**的还是要说。
+     *
+     * 这一句是被自己的测试逼出来的：原来这里直接 return 了，于是一部
+     * 「走得动、可是胜率显示成 30.000000000000004%」的作品，
+     * AI 那一轮**一个字都看不到**这件事——白查了。
+     */
+    const soft = describeNumbers(r.numbers);
+    return soft.length ? [head, "另外这几条不算硬伤，但值得看一眼：", ...soft].join("\n") : head;
   }
   const lines: string[] = [];
   lines.push("平台刚在浏览器里自动玩了一遍这部作品，查到下面这些问题。");
@@ -175,6 +198,7 @@ export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): str
         `。没做完的页面不许挂进导航。`
     );
   }
+  lines.push(...describeNumbers(r.numbers));
   for (const n of r.notes) lines.push(`· ${n}`);
 
   if (lastWriteAt && lastWriteAt > r.at) {
@@ -184,4 +208,39 @@ export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): str
   }
   lines.push("修的时候先修「走不下去」那一条：开局过不去，后面做得再多玩家也看不到。");
   return lines.join("\n");
+}
+
+/**
+ * 数值那几条写成人话。
+ *
+ * 只有第一条是硬伤（玩家眼前直接看到 NaN），后三条是**提醒**——
+ * 措辞上要分清楚，不然 AI 会去改本来没错的东西（今天为这个赔过两轮）。
+ */
+export function describeNumbers(n: PlayNumbers): string[] {
+  const lines: string[] = [];
+  if (n.nan.length) {
+    lines.push(
+      `· **玩家眼前直接出现了 NaN / undefined**：${n.nan.join("；")}。` +
+        `这是算错了或者读了个不存在的字段，玩家看到的就是这几个字母。`
+    );
+  }
+  if (n.huge.length) {
+    lines.push(
+      `· 有几个数字大得不正常（${n.huge.join("、")}）。` +
+        `多半是乘法或者累加炸了；真是故意的就忽略这条。`
+    );
+  }
+  if (n.noisy.length) {
+    lines.push(
+      `· 有几个数字小数点后拖了一长串（${n.noisy.join("、")}）——` +
+        `浮点噪声没格式化就端给玩家了，显示的时候取整或者保留一两位。`
+    );
+  }
+  if (n.earlyEnd) {
+    lines.push(
+      `· ${n.earlyEnd}。玩家还没玩上就结束了，确认这不是必死的开局；` +
+        `真是设计如此（比如序章就是个小结局）就忽略这条。`
+    );
+  }
+  return lines;
 }

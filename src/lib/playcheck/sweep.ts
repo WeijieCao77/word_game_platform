@@ -33,6 +33,59 @@ const SWEEP = `<script>(function(){
   function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
   function text(){ try{ return (document.body && document.body.innerText) || ""; }catch(_){ return ""; } }
+
+  /**
+   * 数值这一层：**不懂这个游戏也能判断的那几样毛病**。
+   *
+   * 快速模式有 600 局模拟兜底（全结局可达、全卡片触发、开局即死率 0），
+   * 自由模式**一局都不跑**——数值全在 AI 写的 js 里，平台没有形式化模型可模拟。
+   * 老板的原话是「这个游戏全是问题，不仅是功能，还有数值」。
+   *
+   * 这里只做通用的那一小步：每走一步、每切一页，把玩家**眼前那一屏**扫一遍，
+   * 挑出四种跟玩法无关的毛病。判据全部选「误报代价低、漏报才要命」的那一侧，
+   * 拿不准的一律不报——今天已经为假阳性赔过两轮了。
+   */
+  var numbers = { nan: [], huge: [], noisy: [], earlyEnd: "" };
+
+  // 「玩家眼前出现 NaN」这种事没有任何辩解余地。\b 边界防止误伤
+  // undefinedBehavior 之类的正常词。
+  var NAN_RE = /(^|[^A-Za-z0-9_])(NaN|Infinity|-Infinity|undefined|\[object Object\])([^A-Za-z0-9_]|$)/;
+  // 数字：允许千分位和小数
+  var NUM_RE = /-?\d[\d,]*(?:\.\d+)?/g;
+  // 开局就结束：只在最前面几步查，措辞取最没有歧义的那几个
+  var END_RE = /(游戏结束|游戏失败|Game Over|你被解雇|再来一局|重新开始一局|以失败告终)/i;
+
+  function push(list, v){
+    if (list.length < 6 && list.indexOf(v) < 0) list.push(v);
+  }
+
+  /** 扫一屏。step 是当前走到第几步（0 = 开局第一屏） */
+  function sampleNumbers(step){
+    var t = text();
+    var m = NAN_RE.exec(t);
+    if (m){
+      // 把它周围的字一起带上——光说「有个 NaN」没法定位
+      var at = t.indexOf(m[2]);
+      // 前后各取一小段，够看出「哪个字段坏了」就行——取太长反而看不清
+      push(numbers.nan, t.slice(Math.max(0, at - 10), at + m[2].length + 8).replace(/\s+/g, " ").trim());
+    }
+    var nums = t.match(NUM_RE) || [];
+    for (var i = 0; i < nums.length && i < 400; i++){
+      var raw = nums[i];
+      var v = Number(raw.replace(/,/g, ""));
+      if (!isFinite(v)) continue;
+      // 荒谬量级：一万亿。正常作品的钱、声望、分数都到不了这儿
+      if (Math.abs(v) >= 1e12) push(numbers.huge, raw);
+      // 小数点后一长串 = 浮点噪声没格式化就端给玩家（0.1+0.2 那一类）
+      var dot = raw.indexOf(".");
+      if (dot >= 0 && raw.length - dot - 1 >= 8) push(numbers.noisy, raw);
+    }
+    // 开局三步之内就弹结束——玩家还没玩就完了
+    if (step <= 3 && !numbers.earlyEnd){
+      var e = END_RE.exec(t);
+      if (e) numbers.earlyEnd = "第 " + step + " 步就出现了「" + e[1] + "」";
+    }
+  }
   // 屏幕指纹：正文压掉空白。够用又便宜——界面真变了，这串必然跟着变。
   function sig(){ return text().replace(/\\s+/g,"").slice(0,6000); }
 
@@ -157,6 +210,8 @@ const SWEEP = `<script>(function(){
     // 走过哪些屏。用来认出「这一下把我带回了看过的地方」——见上面 boring 那段。
     var seenScreens = {};
     try{ seenScreens[sig()] = 1; }catch(_){}
+    // 第一屏玩家一进来就在看，走第一步之前先采一次
+    try{ sampleNumbers(0); }catch(_){}
     /**
      * 哪些标签**后来被证明是好使的**。
      *
@@ -219,6 +274,7 @@ const SWEEP = `<script>(function(){
           // 老板撞见的「起名字没地方填、点下一步原地不动」就藏在这里——
           // 体检当时接着点到导航才走动，差点把这一步判成「走通了」。
           steps.push({label: name, dead: tried.slice(0, -1), filled: filled});
+          sampleNumbers(n);
           break;
         }
       }
@@ -322,6 +378,8 @@ const SWEEP = `<script>(function(){
       var after = sig();
       var changed = after !== before;
       if (changed) screenOf[names[i]] = after;
+      // 每一页都是玩家会盯着看的地方，数值毛病最常露在这些页上
+      try{ sampleNumbers(99); }catch(_){}
       out.push({
         label: names[i],
         changed: changed,
@@ -373,7 +431,7 @@ const SWEEP = `<script>(function(){
 
   // 等作品自己启动完再动手。开局体检（BOOT 里那段）是 2.5 秒，这里排在它后面。
   setTimeout(async function(){
-    var report = {bootText:0, steps:[], walked:0, arrived:false, stuck:null, nav:[], notes:notes, ms:0};
+    var report = {bootText:0, steps:[], walked:0, arrived:false, stuck:null, nav:[], numbers:numbers, notes:notes, ms:0};
     try{
       report.bootText = text().replace(/\\s+/g,"").length;
       var open = await walkOpening();
@@ -388,6 +446,7 @@ const SWEEP = `<script>(function(){
       notes.push("体检自己出错了：" + String((err && err.message) || err).slice(0,120));
     }
     report.ms = Date.now() - T0;
+    report.numbers = numbers;
     report.notes = notes;
     send(report);
   }, 2600);

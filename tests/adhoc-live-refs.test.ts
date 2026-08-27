@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkMissingRefs, describeMissingRefs } from "@/lib/js-refs";
+import { checkMissingRefs, describeMissingRefs, loadTimeCalls, stripLiterals } from "@/lib/js-refs";
 import { checkWiring, describeWiring } from "@/lib/wiring";
 
 // 线上作品的接线体检：
@@ -59,9 +59,24 @@ describe.skipIf(!base || !game)(`线上作品接线体检：${game}`, () => {
     if (name) {
       console.log(`\n【追 ${name}】`);
       for (const [path, body] of Object.entries(files)) {
-        body.split("\n").forEach((ln, i) => {
-          if (ln.includes(name)) console.log(`  ${path}:${i + 1}  ${ln.trim().slice(0, 160)}`);
+        const lines = body.split("\n");
+        lines.forEach((ln, i) => {
+          if (!ln.includes(name)) return;
+          console.log(`  ${path}:${i + 1}  ${ln.trim().slice(0, 160)}`);
+          // 上下文：判「这一行是不是加载时就跑」全看它被什么包着
+          if (!/^\s*(function|const|let|var)\b/.test(ln)) {
+            console.log("  ── 上下文 ──");
+            for (let k = Math.max(0, i - 14); k <= Math.min(lines.length - 1, i + 4); k++) {
+              console.log(`  ${k + 1 === i + 1 ? ">" : " "} ${k + 1}: ${lines[k].slice(0, 120)}`);
+            }
+          }
         });
+      }
+      // 体检自己认为「加载时会执行」的调用有哪些——判据对不对，看这个
+      for (const [path, body] of Object.entries(files)) {
+        if (!/\.(js|mjs)$/i.test(path)) continue;
+        const eager = loadTimeCalls(stripLiterals(body)).map((c) => c.name);
+        console.log(`  【${path}】体检认定加载时会调：${[...new Set(eager)].slice(0, 40).join(" ") || "（无）"}`);
       }
     }
     // 只报告不断言——这是一条给人看的诊断，不是 CI 门槛

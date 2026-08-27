@@ -15,9 +15,9 @@
  */
 
 /** 一次体检最多跑多久（毫秒）。到点就把已经查到的发出来，不要干等。 */
-const BUDGET_MS = 14000;
-/** 开局最多往前走几步 */
-const MAX_STEPS = 8;
+const BUDGET_MS = 20000;
+/** 开局最多往前走几步（捏人流程动辄四五步，走不到主界面就永远测不到导航） */
+const MAX_STEPS = 14;
 /** 每一屏最多试点几个东西 */
 const MAX_TRY = 10;
 /** 导航最多扫几项 */
@@ -60,6 +60,22 @@ const SWEEP = `<script>(function(){
       for (var j=0;j<out.length;j++) if (out[j] !== el && el.contains(out[j])) return false;
       return true;
     });
+  }
+
+  /**
+   * 「往前走」的那个按钮，优先点它。
+   *
+   * 这一条是线上实测逼出来的：体检按 DOM 顺序挨个点，点中的往往是「上一步」
+   * 或者某张卡片，于是在开局那几屏里来回打转，走满 8 步也没走到主界面，
+   * 报「没找到导航」——而同一部作品，先填字段再点主按钮，四步就进主界面、
+   * 导航 11 项。**测不到导航，老板那条「一排点不了」就永远验不到。**
+   * 所以先按语义挑主按钮，挑不出来再按 DOM 顺序。
+   */
+  var PRIMARY = /(下一步|下一頁|继续|繼續|开始|開始|确定|確定|确认|確認|进入|進入|完成|提交|创建|創建|出发|出發|next|start|continue|confirm|submit|begin|play)/i;
+  function ordered(cands){
+    var a = [], b = [];
+    for (var i = 0; i < cands.length; i++) (PRIMARY.test(label(cands[i])) ? a : b).push(cands[i]);
+    return a.concat(b);
   }
 
   function label(el){
@@ -130,8 +146,9 @@ const SWEEP = `<script>(function(){
         break;
       }
       var tried = [], moved = false;
-      for (var i=0; i<cands.length && i<MAX_TRY && !overtime(); i++){
-        var el = cands[i];
+      var order = ordered(cands);
+      for (var i=0; i<order.length && i<MAX_TRY && !overtime(); i++){
+        var el = order[i];
         if (!document.contains(el) || !visible(el)) continue;
         var name = label(el);
         tried.push(name);
@@ -150,6 +167,10 @@ const SWEEP = `<script>(function(){
         stuck = {step:n, tried:tried, screen:text().slice(0,300), filled:filled, why:"dead-end"};
         break;
       }
+      // 走到有导航的那一屏就收手——开局的活干完了。
+      // 不收手的话它会接着去点导航，把预算烧在开局这一段，
+      // 后面正经的导航扫描反而超时（自测里 6 项只扫到 3 项）。
+      if (findNav().length >= 3) break;
     }
     return {steps:steps, stuck:stuck};
   }
@@ -158,6 +179,23 @@ const SWEEP = `<script>(function(){
    * 找导航：一堆并排的、字很短的可点元素。
    * 不认作品的类名（每部作品都不一样），只认这个形状——同一个爹下面 3 个以上短标签。
    */
+  // 开局流程里的操作按钮（下一步/上一步/重来…）不是导航。
+  // 不排掉的话，捏人那一屏的三个按钮就会被当成导航栏：体检以为「到主界面了」
+  // 当场收手，然后把这三个按钮当导航扫一遍——自测里就是这么错的。
+  var FLOW = /(上一步|上一頁|返回|重来|重來|重置|取消|放弃|放棄|back|prev|previous|cancel|reset)/i;
+  function navish(el){
+    try{
+      var p = el.parentElement;
+      for (var i = 0; i < 3 && p; i++, p = p.parentElement) {
+        var tag = String(p.tagName || "").toUpperCase();
+        if (tag === "NAV") return true;
+        if (String(p.getAttribute("role") || "") === "navigation") return true;
+        if (/(^|[\s_-])(nav|tab|tabs|menu|sidebar)([\s_-]|$)/i.test(String(p.className || ""))) return true;
+      }
+    }catch(_){}
+    return false;
+  }
+
   function findNav(){
     var cs = clickables(), groups = [], byParent = [];
     for (var i=0;i<cs.length;i++){
@@ -169,13 +207,16 @@ const SWEEP = `<script>(function(){
     }
     for (var k=0;k<byParent.length;k++){
       var g = byParent[k];
-      if (g.items.length < 3) continue;
+      // 流程按钮先剔掉，再看剩下的够不够像一排导航
+      var items = g.items.filter(function(el){ return !FLOW.test(label(el)) && !PRIMARY.test(label(el)); });
+      if (items.length < 3) continue;
       var shortOnes = 0;
-      for (var m=0;m<g.items.length;m++) if (label(g.items[m]).length <= 8) shortOnes++;
+      for (var m=0;m<items.length;m++) if (label(items[m]).length <= 8) shortOnes++;
       if (shortOnes < 3) continue;
-      groups.push(g);
+      // 挂在 <nav> / role=navigation / .nav|.tab|.menu 里的更可信，排前面
+      groups.push({ items: items, score: items.length + (navish(items[0]) ? 100 : 0) });
     }
-    groups.sort(function(a,b){ return b.items.length - a.items.length; });
+    groups.sort(function(a,b){ return b.score - a.score; });
     return groups.length ? groups[0].items.slice(0, MAX_NAV).map(label) : [];
   }
 

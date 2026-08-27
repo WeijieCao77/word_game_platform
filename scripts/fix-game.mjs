@@ -379,12 +379,18 @@ for (let round = 1; round <= maxRounds; round++) {
   );
   const reply = String(res?.job?.result?.reply ?? res?.reply ?? "").replace(/\s+/g, " ");
   console.log(`  AI：${reply.slice(0, 400)}`);
-  await publish();
   state = await boot(`第 ${round} 轮之后`);
   // 修完再体检一遍：好没好由平台自己说，而且这份结果就是下一轮 AI 的上下文
   await platformCheck(`第 ${round} 轮之后`);
   if (!state.broken) {
-    console.log(`\n✓ 修好了（用了 ${round} 轮）。`);
+    // **修好了才发布。**
+    //
+    // 原来是每轮先发布再验，于是一部还坏着的作品被一遍遍推回公开游戏库——
+    // 老板为此投诉过一次（「游戏库里新出现的 val manager 根本玩不了」）。
+    // 回炉全程走草稿：boot() 带着会话 cookie 打开，看到的本来就是草稿，
+    // 不发布也验得了。玩家那边保持不动，直到它真的能玩。
+    await publish();
+    console.log(`\n✓ 修好了（用了 ${round} 轮），已发布给玩家。`);
     process.exit(0);
   }
 }

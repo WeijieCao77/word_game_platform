@@ -69,7 +69,13 @@ export function summarizePlayCheck(r: PlayCheckReport): string {
   if (deadBtn > 0) bad.push(`开局路上 ${deadBtn} 个按钮点了没反应`);
   const empty = r.nav.filter((n) => n.changed && n.textLen < 40 && n.clickable === 0).length;
   if (empty > 0) bad.push(`${empty} 页是空壳`);
-  if (bad.length === 0) return `试玩通过（走了 ${r.steps.length} 步，导航 ${r.nav.length} 项都能切）`;
+  if (bad.length === 0) {
+    // 「导航 0 项都能切」是句空话——一项都没测到，别写得像通过了。
+    // 这个毛病我在别处栽过三次（判据浅、把「没测到」说成「没问题」），这里堵死。
+    return r.nav.length > 0
+      ? `试玩通过（走了 ${r.steps.length} 步，导航 ${r.nav.length} 项都能切）`
+      : `开局走通 ${r.steps.length} 步；没找到导航，那一段没测到`;
+  }
   return bad.join("、");
 }
 
@@ -82,10 +88,15 @@ export function summarizePlayCheck(r: PlayCheckReport): string {
  */
 export function describePlayCheck(r: PlayCheckReport, lastWriteAt?: string): string {
   if (!playCheckHasIssue(r)) {
+    const nav =
+      r.nav.length > 0
+        ? `导航 ${r.nav.length} 项都能切，没查出「点了没反应」。`
+        : `**但一项导航都没找到**——要么这部作品还没有导航栏，要么体检没走到有导航的那一屏。` +
+          `这一段等于没测到，别当成通过。`;
     return (
       `平台刚在浏览器里自动玩了一遍：开局走通 ${r.steps.length} 步，` +
-      `导航 ${r.nav.length} 项都能切，没查出「点了没反应」。` +
-      `（这只说明走得动，不说明好玩，也不说明数值对。）`
+      nav +
+      `（走得动不说明好玩，也不说明数值对。）`
     );
   }
   const lines: string[] = [];

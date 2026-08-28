@@ -7,6 +7,7 @@ import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
 import { PlayCheckReport } from "@/lib/playcheck/types";
 import { AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
+import { revivePlayCheck } from "@/lib/playcheck/report";
 
 /** ai_jobs 表的一行 */
 interface AiJobRow {
@@ -1053,7 +1054,11 @@ export class SqliteGameStore implements GameStore {
       | undefined;
     if (!row) return null;
     try {
-      return JSON.parse(row.report) as PlayCheckReport;
+      // **不能写成 `as PlayCheckReport`**：库里躺着的可能是几个版本之前存下的形状。
+      // 线上真炸过一次——旧报告没有 numbers 那一段，
+      // `r.numbers.nan` 当场把整轮对话打断（Cannot read properties of undefined）。
+      // 类型断言不是校验，从库里回来的东西必须过一遍整形。
+      return revivePlayCheck(JSON.parse(row.report));
     } catch {
       return null;
     }

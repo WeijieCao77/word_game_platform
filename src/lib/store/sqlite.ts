@@ -6,7 +6,7 @@ import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
 import { PlayCheckReport } from "@/lib/playcheck/types";
-import { AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
+import { AccountRow, AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
 import { revivePlayCheck } from "@/lib/playcheck/report";
 
 /** ai_jobs 表的一行 */
@@ -191,7 +191,10 @@ export class SqliteGameStore implements GameStore {
         -- 账户额度池：已授予的总额度与累计消耗。跟按日重置的 ai_usage 是两套东西——
         -- ai_usage 留着看趋势，额度池才是闸门（用完要管理员手动批）。
         token_grant INTEGER NOT NULL DEFAULT 0,
-        tokens_used INTEGER NOT NULL DEFAULT 0
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        -- 旗舰位：管理员手动指定的深度创作者。它只改「池子有多大」，
+        -- 不改算法——额度照旧是总量池、照旧记账、照旧用完要人批。
+        flagship INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS sessions (
         token_hash TEXT PRIMARY KEY,
@@ -207,6 +210,8 @@ export class SqliteGameStore implements GameStore {
     for (const ddl of [
       "ALTER TABLE users ADD COLUMN token_grant INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE users ADD COLUMN tokens_used INTEGER NOT NULL DEFAULT 0",
+      // 旗舰位标记。见 flagshipGrant() 那段注释：这是身份标签，不是第四套算法。
+      "ALTER TABLE users ADD COLUMN flagship INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
@@ -789,18 +794,19 @@ export class SqliteGameStore implements GameStore {
     this.db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
   }
 
-  userQuota(userId: string): { grant: number; used: number } {
-    const row = this.db.prepare("SELECT token_grant AS g, tokens_used AS u FROM users WHERE id = ?").get(userId) as
-      | { g: number; u: number }
-      | undefined;
-    if (!row) return { grant: 0, used: 0 };
+  userQuota(userId: string): { grant: number; used: number; flagship: boolean } {
+    const row = this.db
+      .prepare("SELECT token_grant AS g, tokens_used AS u, flagship AS f FROM users WHERE id = ?")
+      .get(userId) as { g: number; u: number; f: number } | undefined;
+    if (!row) return { grant: 0, used: 0, flagship: false };
+    const flagship = row.f === 1;
     // 老账号建库时没有这一列，补一份默认额度，别让既有用户凭空变成 0
     if (!row.g) {
       const g = defaultGrant();
       this.db.prepare("UPDATE users SET token_grant = ? WHERE id = ?").run(g, userId);
-      return { grant: g, used: row.u };
+      return { grant: g, used: row.u, flagship };
     }
-    return { grant: row.g, used: row.u };
+    return { grant: row.g, used: row.u, flagship };
   }
 
   userSpend(userId: string, tokens: number): void {
@@ -809,6 +815,56 @@ export class SqliteGameStore implements GameStore {
 
   userGrantAdd(userId: string, tokens: number): void {
     this.db.prepare("UPDATE users SET token_grant = token_grant + ? WHERE id = ?").run(Math.max(0, tokens), userId);
+  }
+
+  /**
+   * 升/降旗舰位。
+   *
+   * 升的时候顺手**把池子放到位**：`grant = max(grant, used + 旗舰额度)`。
+   * 取 max 而不是直接赋值，是因为已经批过好几笔的账号不该被这一下调小；
+   * 用 `used +` 而不是绝对值，是因为作者要的是「还能烧多少」，
+   * 一个烧了 190 万的人升旗舰位之后剩下的应该是整份旗舰额度，不是差额。
+   *
+   * 降的时候**只摘标签，不收回已经批出去的额度**——搭到一半被抽走额度，
+   * 作品就烂在半截了。要收回是另一件事，得单独做、单独说。
+   */
+  userSetFlagship(userId: string, on: boolean, grantTo: number): { grant: number; used: number } | null {
+    const q = this.userQuota(userId);
+    if (!this.userById(userId)) return null;
+    if (on) {
+      const target = Math.max(q.grant, q.used + Math.max(0, grantTo));
+      this.db.prepare("UPDATE users SET flagship = 1, token_grant = ? WHERE id = ?").run(target, userId);
+      return { grant: target, used: q.used };
+    }
+    this.db.prepare("UPDATE users SET flagship = 0 WHERE id = ?").run(userId);
+    return { grant: q.grant, used: q.used };
+  }
+
+  /** 后台的账号清单：管理员要能**主动**找到某个人放额，而不是干等他撞墙。 */
+  userAccounts(limit = 200): AccountRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, username, role, created_at, token_grant AS g, tokens_used AS u, flagship AS f
+         FROM users ORDER BY tokens_used DESC, created_at DESC LIMIT ?`
+      )
+      .all(Math.max(1, Math.min(500, limit))) as {
+      id: string;
+      username: string;
+      role: string;
+      created_at: string;
+      g: number;
+      u: number;
+      f: number;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      role: r.role === "admin" ? "admin" : "user",
+      createdAt: r.created_at,
+      grant: r.g || defaultGrant(),
+      used: r.u,
+      flagship: r.f === 1,
+    }));
   }
 
   quotaRequestOpen(userId: string, used: number, grant: number): void {

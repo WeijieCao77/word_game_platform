@@ -32,6 +32,17 @@ interface QuotaReq {
   handledAt: string | null;
 }
 
+/** 后台账号清单的一行（旗舰位主动放额用） */
+interface Account {
+  id: string;
+  username: string;
+  role: "user" | "admin";
+  createdAt: string;
+  grant: number;
+  used: number;
+  flagship: boolean;
+}
+
 
 /**
  * 估算花费。单价走 NEXT_PUBLIC_AI_PRICE_PER_M（元/百万 token），没配就不显示——
@@ -71,6 +82,10 @@ export default function AdminPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [quotaReqs, setQuotaReqs] = useState<QuotaReq[]>([]);
   const [defaultGrant, setDefaultGrant] = useState(2_000_000);
+  const [flagshipGrant, setFlagshipGrant] = useState(20_000_000);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [acctQuery, setAcctQuery] = useState("");
+  const [busyUser, setBusyUser] = useState("");
   const [busyReq, setBusyReq] = useState<number | null>(null);
 
   const loadQuota = useCallback(async (): Promise<void> => {
@@ -79,11 +94,36 @@ export default function AdminPage(): React.ReactElement {
       if (!res.ok) return;
       const body = await res.json();
       setQuotaReqs(body.requests ?? []);
+      setAccounts((body.accounts ?? []) as Account[]);
       if (body.defaultGrant) setDefaultGrant(body.defaultGrant);
+      if (body.flagshipGrant) setFlagshipGrant(body.flagshipGrant);
     } catch {
       // 后台是暗链工具页，额度这一块加载失败不该把整页拖垮
     }
   }, []);
+
+  /** 主动给某个账号放额 / 升降旗舰位。跟批申请单是同一个接口的另外两个 action。 */
+  const actOnUser = useCallback(
+    async (userId: string, payload: Record<string, unknown>): Promise<void> => {
+      setBusyUser(userId);
+      try {
+        const res = await fetch("/api/admin/quota", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId, ...payload }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? "放额没成功");
+          return;
+        }
+        await loadQuota();
+      } finally {
+        setBusyUser("");
+      }
+    },
+    [loadQuota]
+  );
 
   const resolveReq = useCallback(
     async (id: number, tokens: number): Promise<void> => {
@@ -302,6 +342,84 @@ export default function AdminPage(): React.ReactElement {
           </table>
         </div>
       )}
+
+      <h2 className="section-title">
+        账号额度
+        <span className="tag" style={{ marginLeft: 8 }}>
+          旗舰位 {fmtWan(flagshipGrant)}
+        </span>
+      </h2>
+      {/* 为什么这一块要存在：额度规矩是注册即 {defaultGrant}，而搭一部 VAL MANAGER
+          量级的作品实测要 733 万——深度创作者必然不够用。原来后台只有「等他撞墙、
+          系统自动开申请单」这一条被动通路，管理员想主动给谁放额是做不到的。 */}
+      <p style={{ color: "var(--muted)", fontSize: 13, margin: "0 0 10px" }}>
+        注册账号默认 {fmtWan(defaultGrant)}。做大体量作品（几十个界面那种）的创作者
+        用得完——给他升旗舰位，池子直接放到还剩 {fmtWan(flagshipGrant)}。
+        降回普通只摘标签，<b>已经批出去的额度不收回</b>（搭到一半被抽走，作品就烂在半截了）。
+      </p>
+      <input
+        className="input"
+        style={{ maxWidth: 260, marginBottom: 10 }}
+        placeholder="按账号名筛"
+        value={acctQuery}
+        onChange={(e) => setAcctQuery(e.target.value)}
+      />
+      <div className="roster-scroll">
+        <table className="admin-table">
+          <thead>
+            <tr><th>账号</th><th>已用 / 额度</th><th>还剩</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            {accounts
+              .filter((a) => !acctQuery.trim() || a.username.toLowerCase().includes(acctQuery.trim().toLowerCase()))
+              .map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    {a.username}
+                    {a.flagship && <span className="tag" style={{ marginLeft: 6 }}>旗舰位</span>}
+                    {a.role === "admin" && <span className="tag" style={{ marginLeft: 6 }}>管理员</span>}
+                  </td>
+                  <td>
+                    {fmtWan(a.used)} / {a.role === "admin" ? "不限量" : fmtWan(a.grant)}
+                    {fmtCost(a.used) ? ` · ${fmtCost(a.used)}` : ""}
+                  </td>
+                  <td>{a.role === "admin" ? "—" : fmtWan(Math.max(0, a.grant - a.used))}</td>
+                  <td>
+                    <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {a.flagship ? (
+                        <button
+                          className="linklike"
+                          disabled={busyUser === a.id}
+                          onClick={() => void actOnUser(a.id, { action: "flagship", on: false })}
+                        >
+                          降回普通
+                        </button>
+                      ) : (
+                        <button
+                          className="linklike"
+                          disabled={busyUser === a.id}
+                          onClick={() => void actOnUser(a.id, { action: "flagship", on: true })}
+                        >
+                          升为旗舰位
+                        </button>
+                      )}
+                      <button
+                        className="linklike"
+                        disabled={busyUser === a.id}
+                        onClick={() => void actOnUser(a.id, { action: "grant", tokens: defaultGrant })}
+                      >
+                        加 {fmtWan(defaultGrant)}
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            {accounts.length === 0 && (
+              <tr><td colSpan={4} style={{ color: "var(--muted)" }}>还没有注册账号。</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <h2 className="section-title">近 14 天游玩</h2>
       <div className="admin-daily">

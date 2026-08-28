@@ -1,0 +1,55 @@
+name: 逐个选项试一遍：玩家到底卡在哪
+
+# 起因是老板的一句「游戏库里的 val manager 根本就玩不了」，而平台自己的试玩体检
+# 连跑两次都报「走 13 步 · 到主界面 · 导航 11 项 · 路上无坏钮」。
+#
+# 两边不可能都对。差别在判据的强度：平台走查每一屏是「按顺序点，点到一个有反应的
+# 就往下走」，所以「路上无坏钮」的真实含义是**「我点过的那几个都好使」**。
+# 一屏 78 支战队，它点通第一支就走了，剩下 77 支一支都没碰——玩家偏偏可能点第 40 支。
+#
+# 这条流水线补的就是那 77 支。它**不修任何东西**，只把事实摆出来。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "要玩的作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+      per_screen:
+        description: "每一屏最多单独试几个选项"
+        required: false
+        default: "10"
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm i -D playwright@1.56.0 && npx playwright install --with-deps chromium
+
+      - name: 线上跑的是哪一版
+        run: curl -sS --max-time 15 "$BASE/api/health" | head -c 400; echo
+
+      - name: 匿名玩一遍
+        run: node scripts/play-through.mjs "$BASE" "${{ inputs.game_id }}" "${{ inputs.per_screen }}"
+
+      # 走查只看得见「点了变没变」。真要定位是哪一行没接上，还得看作品自己的代码——
+      # /play/:id/* 是公开的（沙箱 iframe 就是从这儿加载的），不需要任何凭据。
+      - name: 作品的文件清单与大小
+        if: always()
+        run: |
+          set +e
+          idx="$(curl -sS --max-time 20 "$BASE/play/${{ inputs.game_id }}/index.html")"
+          echo "index.html ${#idx} 字符"
+          echo "$idx" | grep -o 'src="[^"]*"' | sed 's/^/  引用：/'
+          for f in $(echo "$idx" | grep -o 'src="[^"]*"' | sed 's/src="//; s/"//'); do
+            case "$f" in http*|wgp.js|wgp.css|/wgp*) continue;; esac
+            body="$(curl -sS --max-time 20 "$BASE/play/${{ inputs.game_id }}/$f")"
+            echo "  $f ${#body} 字符"
+          done

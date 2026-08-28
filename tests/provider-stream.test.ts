@@ -223,3 +223,65 @@ describe("OpenAI 兼容流式", () => {
     expect(JSON.parse(call!.function.arguments).path).toBe("a.html");
   });
 });
+
+/**
+ * 空闲看门狗。
+ *
+ * 上面那段注释里早就写着「线上抓到的正是 undici 的 terminated」——那种是**抛出来**的，
+ * 本来就会走错误路径。这里补的是另一种：**连接还在、可对面不说话了**。
+ * 原来这种会一直挂到整轮预算用光（异步任务 12 分钟），作者只能干等，
+ * 等到的还是一句没头没尾的话。
+ *
+ * 量的是「空闲」不是「总时长」：写一整个游戏文件本来就要跑好几分钟，
+ * 按总时长掐会把正常的长生成掐死——那比这个毛病更糟。
+ */
+describe("流卡住不动的时候要自己断开", () => {
+  beforeEach(() => {
+    process.env.AI_PROVIDER = "deepseek";
+    process.env.DEEPSEEK_API_KEY = "test-key";
+    process.env.AI_MODEL = "test-model";
+    // 测试里不等三分钟
+    process.env.AI_STREAM_IDLE_MS = "60";
+  });
+
+  /** 一条开了头就再也不说话、也不关闭的流 */
+  function stalledResponse(): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // 先给一片，证明「连上了」，然后就什么都不给了
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"开"}}]}\n\n'));
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }
+
+  it("空闲超过上限就抛错，而且话要说得清", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => stalledResponse()));
+    const { callChat } = await import("@/lib/ai/provider");
+
+    const started = Date.now();
+    await expect(callChat([{ role: "user", content: "写个游戏" }])).rejects.toThrow(/没有再发来任何内容/);
+    // 真的是被看门狗掐的，不是等到别的什么超时
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it("这句错误能被翻译成作者看得懂的话", async () => {
+    const { explainAiFailure } = await import("@/lib/ai/failure");
+    const text = explainAiFailure("AI 服务连着 180 秒没有再发来任何内容，判定这条连接已经断了（stream idle timeout）");
+    expect(text).toContain("传到一半断了");
+    expect(text).toContain("重发");
+  });
+
+  it("正常流不受影响——一直有内容来就不该被掐", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"一"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"二"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ])
+    ));
+    const { callChat } = await import("@/lib/ai/provider");
+    const r = await callChat([{ role: "user", content: "hi" }]);
+    expect(r.message.content).toBe("一二");
+  });
+});

@@ -102,6 +102,36 @@ export function canEditGame(req: NextRequest, gameId: string): boolean {
   return store.checkEditKey(gameId, req.headers.get("x-edit-key") ?? "");
 }
 
+/**
+ * 能不能对这部作品**跑试玩体检**。
+ *
+ * 比 `canEditGame` 宽一格：**管理员对任何作品都能跑**。
+ *
+ * 起因是一次真事故。老板说「游戏库里的 val manager 根本就玩不了」，平台自己的
+ * 试玩体检对那部作品连跑两次都**「没跑出结果」**——不是报不通过，是一个报告
+ * 都产不出来。查下来是这里：那部作品是游客建的、**从没认领过**，于是
+ *
+ *     作品无主 → 编辑钥匙即身份
+ *
+ * 而管理员手上没有那把钥匙，`canEditGame` 就是 false，`/play` 那一层于是
+ * 不肯注入体检脚本。后果是**平台对一部无主作品做不了任何质量检查**——
+ * 连管理员都做不了。而无主作品恰恰是最需要被检查的那一类：
+ * 游客随手建的、没人认领的，出了问题也没有作者会来修。
+ *
+ * 为什么单开一个函数而不是把 `canEditGame` 放宽：**编辑权限一个字都不该动。**
+ * 放宽 `canEditGame` 等于让管理员能悄悄改写任何人的作品，那是另一回事，
+ * 而且是危险的一回事。这里只放开「跑一遍看看它玩不玩得动」。
+ *
+ * 玩家侧的安全没有任何变化：注入体检脚本还要显式带 `?wgpcheck=1`，
+ * 而普通玩家既不是管理员、也不会带那个参数——**玩家绝不能被塞进一个自动点击器**
+ * 这条铁律原样保留。
+ */
+export function canPlayCheck(req: NextRequest, gameId: string): boolean {
+  if (canEditGame(req, gameId)) return true;
+  const user = currentUser(req);
+  return !!user && user.role === "admin";
+}
+
 /** 这部作品是否已经绑定账号，以及当前访问者是不是归属人（给「我的创作」判断怎么显示） */
 export function ownershipOf(req: NextRequest, gameId: string): { owned: boolean; isOwner: boolean } {
   const owner = getStore().gameOwner(gameId);

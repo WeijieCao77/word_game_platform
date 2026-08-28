@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parsePlayCheck, summarizePlayCheck, describePlayCheck } from "@/lib/playcheck/report";
-import { playCheckHasIssue } from "@/lib/playcheck/types";
+import { PlayCheckReport, playCheckHasIssue } from "@/lib/playcheck/types";
 
 // 试玩体检的服务端这一半。真正去点的那段跑在浏览器里（sweep.ts），
 // 这里量的是「收得干不干净、说得清不清楚」——尤其是那句
@@ -14,6 +14,7 @@ const good = {
   walked: 1,
   arrived: true,
   stuck: null,
+  numbers: { nan: [], huge: [], noisy: [], earlyEnd: "" },
   nav: [
     { label: "阵容", changed: true, textLen: 900, clickable: 12 },
     { label: "赛程", changed: true, textLen: 600, clickable: 8 },
@@ -297,5 +298,66 @@ describe("试玩体检 · 「没测到」不许说成「通过」", () => {
 
   it("真扫到导航时照旧说「都能切」", () => {
     expect(summarizePlayCheck(parsePlayCheck(good))).toContain("都能切");
+  });
+});
+
+describe("数值这一层", () => {
+  // 快速模式有 600 局模拟兜底（全结局可达、开局即死率 0），自由模式一局都不跑——
+  // 数值全在 AI 写的 js 里，平台没有形式化模型可模拟。老板原话：
+  // 「这个游戏全是问题，不仅是功能，还有数值」。
+  // 所以先做通用的那一小步：不懂这个游戏也能判断的那几样。
+  const withNumbers = (n: Partial<PlayCheckReport["numbers"]>) =>
+    parsePlayCheck({ ...good, numbers: { nan: [], huge: [], noisy: [], earlyEnd: "", ...n } });
+
+  it("玩家眼前出现 NaN = 硬伤，没有辩解余地", () => {
+    const r = withNumbers({ nan: ["资金 NaN 万"] });
+    expect(playCheckHasIssue(r)).toBe(true);
+    expect(summarizePlayCheck(r)).toContain("NaN");
+    expect(describePlayCheck(r)).toContain("玩家眼前直接出现了 NaN");
+  });
+
+  it("大得不正常的数字只提醒，不算硬伤——有可能是作者故意的", () => {
+    const r = withNumbers({ huge: ["10000000000001"] });
+    expect(playCheckHasIssue(r)).toBe(false);
+    // 但话还是要说到
+    expect(describePlayCheck(r)).toContain("大得不正常");
+  });
+
+  it("浮点噪声只提醒", () => {
+    const r = withNumbers({ noisy: ["30.000000000000004"] });
+    expect(playCheckHasIssue(r)).toBe(false);
+    expect(describePlayCheck(r)).toContain("小数点后拖了一长串");
+  });
+
+  it("开局即死只提醒，而且留一句「真是设计如此就忽略」", () => {
+    const r = withNumbers({ earlyEnd: "第 2 步就出现了「游戏结束」" });
+    expect(playCheckHasIssue(r)).toBe(false);
+    const text = describePlayCheck(r);
+    expect(text).toContain("玩家还没玩上就结束了");
+    expect(text).toContain("忽略这条");
+  });
+
+  it("数值那一段也当外人的输入收：限条数、限长度", () => {
+    const r = parsePlayCheck({
+      ...good,
+      numbers: {
+        nan: new Array(50).fill("x".repeat(500)),
+        huge: "不是数组",
+        noisy: [1, 2, 3],
+        earlyEnd: "y".repeat(500),
+      },
+    });
+    expect(r.numbers.nan.length).toBeLessThanOrEqual(6);
+    expect(r.numbers.nan[0].length).toBeLessThanOrEqual(60);
+    expect(r.numbers.huge).toEqual([]);
+    expect(r.numbers.earlyEnd.length).toBeLessThanOrEqual(60);
+  });
+
+  it("老报告没有 numbers 这一段也不能炸", () => {
+    const legacy = { ...good };
+    delete (legacy as { numbers?: unknown }).numbers;
+    const r = parsePlayCheck(legacy);
+    expect(r.numbers.nan).toEqual([]);
+    expect(playCheckHasIssue(r)).toBe(false);
   });
 });

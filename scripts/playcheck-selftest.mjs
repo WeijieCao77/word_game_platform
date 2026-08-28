@@ -11,8 +11,14 @@
 //     线上真有一轮 AI 照着「Americas 点了没反应」把「点已选中的页签」改成强制重绘。
 //   - 坏作品报成好的（假阴性）→ 平台是瞎的，验收标准形同虚设。
 //
-// 所以这里跑两份假作品：一份**一个毛病都没有**，一份**有且只有一个坏导航项**。
-// 前者报出任何问题都算走查有毛病；后者必须**不多不少**正好逮到那一项。
+// 所以这里跑三份假作品：
+//
+//   ① **一个毛病都没有** —— 报出任何问题都算走查有毛病
+//   ② **有且只有一个坏导航项** —— 必须不多不少正好逮到那一项
+//   ③ **数值坏了**（NaN + 一万亿 + 浮点噪声）—— 三样都得逮到
+//
+// ③ 是「自由模式的数值护栏」那一小步：快速模式有 600 局模拟兜底，
+// 自由模式一局都不跑，所以先做通用的那几样——不懂这个游戏也能判断的。
 //
 // 假作品照着线上那部作品的形状搭，专门踩四个坑（都是线上真踩过的）：
 //
@@ -71,7 +77,7 @@ const NAV = ["总览", "俱乐部", "阵容", "赛程", "转会", "训练", "财
  *
  * `brokenNav` 给一个导航项的名字，那一项就**真的点不动**（onclick 什么都不做）。
  */
-function makePage(brokenNav) {
+function makePage(brokenNav, badNumbers) {
   return `<!doctype html><meta charset="utf-8"><body>
 <div id="app"></div>
 <script>
@@ -84,12 +90,21 @@ window.addEventListener("message", function(e){
 <script>
 var screen = 1, region = "Americas", picked = null, page = "总览";
 var BROKEN = ${JSON.stringify(brokenNav ?? null)};
+var BADNUM = ${JSON.stringify(!!badNumbers)};
 var REGIONS = ["Americas","EMEA","Pacific","China"];
 var TEAMS = {
   Americas:["Sentinels","100 Thieves","NRG"], EMEA:["Fnatic","Team Liquid","Karmine Corp"],
   Pacific:["DRX","Gen.G","T1"], China:["EDG","Bilibili Gaming","WBG Weibo Gaming"]
 };
 var NAV = ${JSON.stringify(NAV)};
+function stats(){
+  if (!BADNUM) return "　资金 1250 万　声望 43　胜率 61%";
+  // 三种真会出现的毛病，一次演全：
+  //   读了个不存在的字段 → NaN；乘法炸了 → 一万亿；浮点噪声没格式化
+  var missing = ({}).notThere;
+  return "　资金 " + (missing * 2) + " 万　声望 " + (1e13 + 1) +
+         "　胜率 " + (0.1 + 0.2) * 100 + "%";
+}
 function goPage(n){
   // 坏掉的那一项：点了什么都不做（这就是老板投诉的「这一排里面很多都点不了」）
   if (n === BROKEN) return;
@@ -119,7 +134,7 @@ function render(){
                  "' onclick='goPage(\\"" + n + "\\")'>" + n + "</button>";
         }).join("") + "</nav><div id=body>" + page +
         " 这一页的内容，写得足够长，免得被当成空壳页面，这里再多写一些字凑够篇幅。" +
-        "教练是 " + picked + "。</div>";
+        "教练是 " + picked + "。" + stats() + "</div>";
   }
   document.getElementById("app").innerHTML = h;
 }
@@ -130,11 +145,11 @@ render();
 const SWEEP = loadSweep();
 
 /** 把一份假作品交给走查跑一遍，拿回报告 */
-async function run(browser, brokenNav) {
+async function run(browser, brokenNav, badNumbers) {
   const page = await browser.newPage({ viewport: { width: 420, height: 820 } });
   page.on("pageerror", (e) => console.log("  [页面报错]", String(e).slice(0, 200)));
   try {
-    await page.setContent(makePage(brokenNav) + SWEEP, { waitUntil: "domcontentloaded" });
+    await page.setContent(makePage(brokenNav, badNumbers) + SWEEP, { waitUntil: "domcontentloaded" });
     await page.waitForFunction("window.__pc", null, { timeout: 40000 }).catch(() => {});
     return await page.evaluate("window.__pc").catch(() => null);
   } finally {
@@ -174,6 +189,12 @@ try {
     if (dn.length) problems.push(`好作品：这些导航项被冤枉成点不动：${dn.join("、")}`);
     const dp = deadOnPathOf(good);
     if (dp.length) problems.push(`好作品：这些按钮被冤枉成点了没反应：${dp.join("、")}`);
+    // 数值这一层也不许乱报：这份作品的数字是好好格式化过的
+    const n = good.numbers;
+    if (n.nan.length) problems.push(`好作品：数值层乱报 NaN：${n.nan.join("；")}`);
+    if (n.huge.length) problems.push(`好作品：数值层乱报「大得不正常」：${n.huge.join("、")}`);
+    if (n.noisy.length) problems.push(`好作品：数值层乱报「浮点噪声」：${n.noisy.join("、")}`);
+    if (n.earlyEnd) problems.push(`好作品：数值层乱报开局即死：${n.earlyEnd}`);
   }
 
   // ── 二、坏作品：必须不多不少逮到那一项 ────────────────────────
@@ -196,6 +217,24 @@ try {
     const extra = dn.filter((x) => x !== BROKEN);
     if (extra.length) problems.push(`坏作品：除了 ${BROKEN} 还多报了：${extra.join("、")}`);
   }
+
+  // ── 三、数值坏了的作品：三样都得逮到 ──────────────────────────
+  //
+  // 快速模式有 600 局模拟兜底，自由模式一局都不跑。这一层做的是通用的那一小步：
+  // 不懂这个游戏也能判断的几样。老板原话「不仅是功能，还有数值」。
+  console.log("\n③ 数值坏了的作品（NaN + 一万亿 + 浮点噪声，一次演全）");
+  const bad2 = await run(browser, null, true);
+  if (!bad2) {
+    problems.push("数值坏的作品：走查一份报告都没发回来");
+  } else {
+    const n = bad2.numbers;
+    console.log(`  NaN：${n.nan.join("；") || "（没报）"}`);
+    console.log(`  大得不正常：${n.huge.join("、") || "（没报）"}`);
+    console.log(`  浮点噪声：${n.noisy.join("、") || "（没报）"}`);
+    if (!n.nan.length) problems.push("数值坏的作品：玩家眼前明明有 NaN，走查没报出来");
+    if (!n.huge.length) problems.push("数值坏的作品：有个一万亿，走查没报出来");
+    if (!n.noisy.length) problems.push("数值坏的作品：有浮点噪声，走查没报出来");
+  }
 } finally {
   await browser.close().catch(() => {});
 }
@@ -206,4 +245,4 @@ if (problems.length) {
   console.log("\n这两份假作品的结论都是**已知的**。对不上就是走查坏了，不是作品坏了。");
   process.exit(1);
 }
-console.log("\n✓ 好作品一个毛病没报，坏作品不多不少逮到了那一项。");
+console.log("\n✓ 好作品一个毛病没报；坏导航逮到了那一项；坏数值三样都逮到了。");

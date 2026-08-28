@@ -12,6 +12,7 @@ import { trimHistory } from "@/lib/ai/history";
 import { describePlayCheck } from "@/lib/playcheck/report";
 import { comparePublished, describeDrift } from "@/lib/publish-drift";
 import { randomBytes } from "node:crypto";
+import { errorDetail, explainAiFailure } from "@/lib/ai/failure";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -277,7 +278,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     })
       .then((payload) => store.jobDone(jobId, payload))
       .catch((err: unknown) => {
-        const detail = err instanceof Error ? err.message : String(err);
+        // 摊平 cause 链：`TypeError: terminated` 的 message 只有一个词，
+        // 真正的原因（other side closed / ECONNRESET…）全在 cause 上。
+        const detail = errorDetail(err);
         console.error("[assistant] 异步任务失败:", detail);
         store.jobFail(jobId, explainAiFailure(detail));
       })
@@ -288,7 +291,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   try {
     return NextResponse.json(await runOneRound(history));
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorDetail(err);
     // 服务端日志留全文，方便按时间点回查（Railway 的 Logs 里能看到）
     console.error("[assistant] 失败:", detail);
     return NextResponse.json({ error: explainAiFailure(detail) }, { status: 502 });
@@ -307,25 +310,4 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
   if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
   return NextResponse.json({ abandoned: store.jobAbandon(id) });
-}
-
-/** 把上游返回的技术错误翻译成作者能行动的提示 */
-function explainAiFailure(detail: string): string {
-  const d = detail.toLowerCase();
-  if (d.includes("context") && (d.includes("length") || d.includes("exceed"))) {
-    return `这轮对话太长了，超出模型的上下文上限。建议：把要求拆小一点重发，或者新开一个作品从设计卡继续。（原始错误：${detail.slice(0, 160)}）`;
-  }
-  if (d.includes("max_tokens") || d.includes("too long") || d.includes("output limit")) {
-    return `这一轮要生成的内容超过了模型单次输出上限——十几个队伍、几十名选手一次性建出来必然超。让它先建骨架，再分批补名单（每批 15~25 条）。（原始错误：${detail.slice(0, 160)}）`;
-  }
-  if (d.includes("429") || d.includes("rate limit")) {
-    return `AI 服务限流了，等一两分钟再试。（原始错误：${detail.slice(0, 160)}）`;
-  }
-  if (d.includes("401") || d.includes("403") || d.includes("invalid api key")) {
-    return `AI 服务拒绝了这次调用，多半是密钥失效或余额不足，需要在部署环境变量里更新。（原始错误：${detail.slice(0, 160)}）`;
-  }
-  if (d.includes("timeout") || d.includes("etimedout") || d.includes("fetch failed") || d.includes("socket")) {
-    return `连接 AI 服务超时或中断。稍等片刻重试；如果这一轮改动很大，先把要求拆小。（原始错误：${detail.slice(0, 160)}）`;
-  }
-  return detail || "AI 请求失败";
 }

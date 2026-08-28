@@ -147,6 +147,30 @@ export default function PlayCheckTab({
               {empty.map((n) => `${n.label}（${n.textLen} 字 / 0 个可点元素）`).join("、")}
             </div>
           )}
+          {report.numbers.nan.length > 0 && (
+            <div className="issue error">
+              <div className="path">玩家眼前出现了 NaN / undefined</div>
+              {report.numbers.nan.join("；")}
+              <div style={{ marginTop: 6, opacity: 0.75 }}>
+                算错了或者读了个不存在的字段——玩家看到的就是这几个字母。
+              </div>
+            </div>
+          )}
+          {(report.numbers.huge.length > 0 ||
+            report.numbers.noisy.length > 0 ||
+            !!report.numbers.earlyEnd) && (
+            <div className="issue warn">
+              <div className="path">数值上值得看一眼的</div>
+              {report.numbers.huge.length > 0 && (
+                <div>大得不正常的数字：{report.numbers.huge.join("、")}</div>
+              )}
+              {report.numbers.noisy.length > 0 && (
+                <div>小数点后拖了一长串（浮点噪声没格式化）：{report.numbers.noisy.join("、")}</div>
+              )}
+              {report.numbers.earlyEnd && <div>{report.numbers.earlyEnd}</div>}
+              <div style={{ marginTop: 6, opacity: 0.75 }}>这几条不拦发布——真是故意的就忽略。</div>
+            </div>
+          )}
           {report.notes.map((n, i) => (
             <div key={i} className="issue warn">
               <div className="path">体检自己的情况</div>

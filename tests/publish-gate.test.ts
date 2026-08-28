@@ -29,6 +29,7 @@ const passing = (at = T1): PlayCheckReport => ({
   walked: 1,
   arrived: true,
   stuck: null,
+  numbers: { nan: [], huge: [], noisy: [], earlyEnd: "" },
   nav: [
     { label: "阵容", changed: true, already: false, textLen: 900, clickable: 12 },
     { label: "赛程", changed: true, already: false, textLen: 600, clickable: 8 },

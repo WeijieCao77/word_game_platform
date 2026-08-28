@@ -371,6 +371,39 @@
 
 ---
 
+### 17.15 `⚠ terminated` —— 一个词的报错，因为 cause 在第一步就被扔了
+
+- **现象**：作者在工作台发了一句「把采信簿从推理结论改成物理陈述」，等了一会儿，
+  对话里冒出来一行 **`⚠ terminated`**。就这一个词。没有原因、没有下一步，
+  也不知道那一轮是不是白花了（底下写着「管理员·不限量」，跟额度无关）。
+- **根因（三处叠在一起）**：
+  1. `terminated` 是 **Node 的 fetch（undici）** 抛的原话——上游把流从中间掐断时，
+     它抛 `TypeError: terminated`，`message` 字面上只有这一个词，
+     **真正的原因在 `err.cause` 里**（`other side closed` / `ECONNRESET`…）。
+  2. 调用方写的是 `err instanceof Error ? err.message : String(err)`——
+     **cause 整个丢了**。全仓库 grep `cause`，一处相关的都没有。
+  3. `explainAiFailure` 有一条专管网络的分支（timeout / etimedout / fetch failed /
+     socket），**`terminated` 一个都不匹配**，于是掉到最后一行 `return detail`，
+     把那个孤零零的词原样吐给作者。
+- **代价**：那一轮真丢了（服务端任务内部挂的，客户端那套「先别重发」的捞回机制
+  只管客户端断线），token 白烧，而作者拿着一个 `terminated` 什么也做不了。
+- **现在的防线**：
+  - `errorDetail()` **摊平 cause 链**（连 `code` 一起），
+    错误从「terminated」变成「terminated（起因：other side closed / UND_ERR_SOCKET）」。
+  - `explainAiFailure` 认得出这一类，并且**排在「超时」那条前面**——两类要说的话不一样：
+    断线要回答的是「半份文件丢没丢、要不要重发」，超时那条一个字都没答。
+  - 两个函数从路由里的私有函数挪成独立模块，**这才第一次测得到**。
+  - 顺手补了一个**空闲**看门狗（不是总时长——按总时长掐会掐死正常的长生成）：
+    连着 3 分钟一个字节都不来就判定断线，不再挂满 12 分钟的轮次预算。
+- **写看门狗时又踩一个**：`reader.cancel()` 会让挂着的 `read()` 以 `{done:true}` 结束，
+  `Promise.race` 谁先落谁赢——**先 cancel 再 reject，流就被判成「正常读完了」**，
+  半份回复当成功返回。必须先 reject 再 cancel。自测里就是这么抓到的。
+- **怎么自查**：**报错信息只取 `message` 是不够的。** 有一整类错误
+  （undici 的网络错、`AggregateError`、包过一层的库错）把真相放在 `cause` 上；
+  只取 message 等于把故障原因扔了，然后对着一个词猜半天。
+
+---
+
 ## 五、环境类：这个容器和这条部署链
 
 ### 18. 容器会「回退」

@@ -86,11 +86,52 @@ export function aiRuntimeInfo(): { provider: string; model: string | null } {
   return { provider, model: resolveProvider()?.model ?? null };
 }
 
+/**
+ * 流**空闲**多久算断了（毫秒）。
+ *
+ * 注意是「空闲」不是「总时长」：写一整个游戏文件本来就要跑好几分钟，
+ * 按总时长掐会把正常的长生成掐死——那比现在这个毛病更糟。
+ * 这里量的是「有多久一个字节都没来」，正常流式调用不会出现这种间隔。
+ *
+ * 放宽到 3 分钟是给推理模型留的：上下文很大的时候，首字之前它可能想很久。
+ */
+function streamIdleMs(): number {
+  return Number(process.env.AI_STREAM_IDLE_MS ?? 180000);
+}
+
 async function readSSE(res: Response, onEvent: (payload: string) => void): Promise<void> {
   const reader = res.body?.getReader();
   if (!reader) throw new Error("AI 服务没有返回可读的流");
   const decoder = new TextDecoder();
   let buf = "";
+  const idleMs = streamIdleMs();
+  let idle: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * 看门狗：**连接还在、但对面不说话了**，这种情况原来会一直挂到整轮预算用光
+   * （异步任务 12 分钟），作者只能干等。等到的还是一句没头没尾的错误。
+   *
+   * 上游把流掐断那种（`TypeError: terminated`）本来就会抛，不归这里管；
+   * 这里补的是「没抛，但也不来了」那一种。
+   */
+  const readOnce = (): Promise<ReadableStreamReadResult<Uint8Array>> =>
+    Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        idle = setTimeout(() => {
+          // **先 reject 再 cancel**，顺序反了看门狗就白设了：
+          // `reader.cancel()` 会让挂着的那个 `read()` 以 `{done:true}` 结束，
+          // Promise.race 谁先落谁赢——于是流被判成「正常读完了」，
+          // 拿到半份回复当成功返回。自测里就是这么错的。
+          reject(
+            new Error(
+              `AI 服务连着 ${Math.round(idleMs / 1000)} 秒没有再发来任何内容，判定这条连接已经断了（stream idle timeout）`
+            )
+          );
+          void reader.cancel().catch(() => {});
+        }, idleMs);
+      }),
+    ]).finally(() => clearTimeout(idle));
 
   const emit = (block: string): void => {
     for (const line of block.split(/\r?\n/)) {
@@ -101,7 +142,7 @@ async function readSSE(res: Response, onEvent: (payload: string) => void): Promi
   };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    const { done, value } = await readOnce();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
     // SSE 以空行分隔事件；\r\n 也要认（有的网关会改写换行）

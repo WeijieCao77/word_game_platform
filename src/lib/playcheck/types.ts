@@ -66,6 +66,31 @@ export interface PlayNavItem {
   clickable: number;
 }
 
+/**
+ * 数值这一层查到的东西。
+ *
+ * 快速模式有 600 局模拟兜底，自由模式一局都不跑——数值全在 AI 写的 js 里，
+ * 平台没有形式化模型可模拟。老板的原话是「这个游戏全是问题，不仅是功能，还有数值」。
+ *
+ * 所以这里只做通用的那一小步：**不懂这个游戏也能判断的那几样**。
+ * 判据全部选在「误报代价低、漏报才要命」那一侧，拿不准的一律不报。
+ *
+ * 有一样**故意没做**：「死水」（点了 20 步数值一点没动）。
+ * 那条在带导航栏的作品上分不出真假——切页本来就会换一批数字，
+ * 而「同一个数字有没有动」需要认出它是哪个数字，那已经不是通用判据了。
+ * 与其塞一条会乱报的，不如先空着：今天已经为假阳性赔过两轮。
+ */
+export interface PlayNumbers {
+  /** 玩家眼前直接出现 NaN / Infinity / undefined / [object Object]，带上下文 */
+  nan: string[];
+  /** 荒谬量级的数字（≥ 一万亿）——多半是乘法炸了 */
+  huge: string[];
+  /** 小数点后一长串：浮点噪声没格式化就端给玩家（0.1+0.2 那一类） */
+  noisy: string[];
+  /** 开局三步之内就弹「游戏结束」之类的——玩家还没玩就完了；没有就是空串 */
+  earlyEnd: string;
+}
+
 export interface PlayCheckReport {
   /** 体检跑完的时刻（服务端盖章，客户端说了不算） */
   at: string;
@@ -95,6 +120,8 @@ export interface PlayCheckReport {
   stuck: PlayStuck | null;
   /** 导航扫描的结果；没找到导航就是空数组 */
   nav: PlayNavItem[];
+  /** 数值这一层查到的东西 */
+  numbers: PlayNumbers;
   /** 体检自己遇到的情况（比如超时） */
   notes: string[];
   /** 体检耗时（毫秒） */
@@ -104,6 +131,10 @@ export interface PlayCheckReport {
 /** 这份报告有没有查出问题 */
 export function playCheckHasIssue(r: PlayCheckReport): boolean {
   if (r.bootText <= 0) return true;
+  // 玩家眼前出现 NaN / undefined，没有任何辩解余地。
+  // 另外三样（荒谬量级、浮点噪声、开局即死）只提醒不算「有问题」——
+  // 它们有可能是作者故意的，判成硬伤会把人逼着去改本来没错的东西。
+  if (r.numbers.nan.length > 0) return true;
   if (r.stuck) return true;
   // 没走到主界面 = 这一段没测到。平台在「把没测到说成没问题」上已经栽过五次，
   // 所以宁可误报：真是纯线性故事没有导航栏，AI 一句话就能打发掉；

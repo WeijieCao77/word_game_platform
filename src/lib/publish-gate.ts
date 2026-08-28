@@ -31,7 +31,7 @@ import { checkFileSyntax, describeProblem } from "@/lib/syntax-check";
 import { checkWiring } from "@/lib/wiring";
 import { checkMissingRefs } from "@/lib/js-refs";
 import { PlayCheckReport, playCheckHasIssue } from "@/lib/playcheck/types";
-import { summarizePlayCheck } from "@/lib/playcheck/report";
+import { describeNumbers, summarizePlayCheck } from "@/lib/playcheck/report";
 
 /** 门槛看到的一个文件 */
 export interface GateFile {
@@ -172,6 +172,18 @@ export function checkCodePublish(files: GateFile[], check: PlayCheckReport | nul
       what: `试玩体检没过：${summarizePlayCheck(check)}`,
       how: "去工作台的「体检」页签看详情，或者直接点「让 AI 去修」。修完重新体检，绿了就能发。",
     });
+  }
+
+  // ── 5. 数值那几样只提醒的 ───────────────────────────────────
+  //
+  // 「玩家眼前出现 NaN」已经在上面被 playCheckHasIssue 判成硬伤了。
+  // 剩下这三样**有可能是作者故意的**（一个亿的资金、序章就是个小结局），
+  // 判成硬伤会把人逼着去改本来没错的东西，所以只警告。
+  if (check) {
+    for (const line of describeNumbers(check.numbers)) {
+      if (line.includes("NaN / undefined")) continue; // 那一条已经拦住了，不重复说
+      issues.push({ level: "warn", what: line.replace(/^· /, ""), how: "真是故意的就忽略这条。" });
+    }
   }
 
   return issues;

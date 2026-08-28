@@ -80,6 +80,8 @@ export interface QuotaInfo {
   remaining: number;
   requests: number;
   maxRequests: number;
+  /** 旗舰位：管理员手动放过额的深度创作者。池子大得多，界面上要说出来 */
+  flagship?: boolean;
 }
 
 
@@ -101,7 +103,8 @@ function QuotaMeter({ quota, loginHref }: { quota: QuotaInfo | null; loginHref?:
         <span className="quota-bar-fill" style={{ width: `${pct}%` }} />
       </span>
       <span>
-        {quota.kind === "guest" ? "今日额度" : "AI 额度"} {fmtWan(quota.used)} / {fmtWan(quota.limit)}
+        {quota.kind === "guest" ? "今日额度" : quota.flagship ? "旗舰位额度" : "AI 额度"} {fmtWan(quota.used)} /{" "}
+        {fmtWan(quota.limit)}
         　剩 {fmtWan(quota.remaining)}
       </span>
       {/* 光说「注册后额度大得多」却不给入口，等于把人晾在那儿——

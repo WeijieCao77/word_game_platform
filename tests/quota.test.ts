@@ -91,7 +91,7 @@ describe("注册用户：总量额度池，用完不是等明天而是等审批"
     const req = store.quotaRequestList()[0];
     expect(store.quotaRequestResolve(req.id, 2000)).toEqual({ userId: user.id, granted: 2000 });
     expect(checkQuota(store, args).allowed).toBe(true);
-    expect(store.userQuota(user.id)).toEqual({ grant: 3000, used: 1000 });
+    expect(store.userQuota(user.id)).toEqual({ grant: 3000, used: 1000, flagship: false });
 
     // 处理过的单子不能再批第二次
     expect(store.quotaRequestResolve(req.id, 2000)).toBeNull();
@@ -167,5 +167,101 @@ describe("熔断：烧了不少却一张卡都没有", () => {
     const g = store.create({ config: EMPTY, ownerId: admin.id });
     recordSpend(store, { user: admin, quotaKey: `u:${admin.id}`, gameId: g.id, tokens: 5000 });
     expect(checkQuota(store, { user: admin, quotaKey: `u:${admin.id}`, gameId: g.id, cardsCount: 0 }).allowed).toBe(true);
+  });
+});
+
+describe("旗舰位：手动放额那条路", () => {
+  // 设计体检第五条：规矩（注册即 200 万）和验收标准（VAL MANAGER 量级实测 733 万）
+  // 互相打架，一个深度创作者按现在的规矩**不可能**做出验收标准要求的作品。
+  // 老板拍的板是「选旗舰位手动放额」——池子放大，但由人决定给谁。
+  beforeEach(() => {
+    process.env.AI_FLAGSHIP_GRANT = "50000";
+  });
+
+  it("升旗舰位之后，剩下的是**整份**旗舰额度，不是差额", () => {
+    const user = makeUser("深度创作者");
+    const g = store.create({ config: MINI, ownerId: user.id });
+    // 先把 1000 的普通额度烧掉 900
+    recordSpend(store, { user, quotaKey: `u:${user.id}`, gameId: g.id, tokens: 900 });
+
+    store.userSetFlagship(user.id, true, 50_000);
+
+    const q = store.userQuota(user.id);
+    expect(q.flagship).toBe(true);
+    // 关键：作者关心的是「还能烧多少」。烧过 900 的人升旗舰位，
+    // 剩下的该是 50000，不是 50000-900。
+    expect(q.grant - q.used).toBe(50_000);
+  });
+
+  it("升旗舰位不会把已经批过的更大的池子调小", () => {
+    const user = makeUser("批过好几笔");
+    store.userGrantAdd(user.id, 200_000); // 手上已经有 201000
+    store.userSetFlagship(user.id, true, 50_000);
+    expect(store.userQuota(user.id).grant).toBe(201_000);
+  });
+
+  it("降回普通只摘标签，**不收回**已经批出去的额度", () => {
+    // 搭到一半被抽走额度，作品就烂在半截了。要收回是另一件事。
+    const user = makeUser("被降级的");
+    store.userSetFlagship(user.id, true, 50_000);
+    const before = store.userQuota(user.id).grant;
+    store.userSetFlagship(user.id, false, 50_000);
+    const after = store.userQuota(user.id);
+    expect(after.flagship).toBe(false);
+    expect(after.grant).toBe(before);
+  });
+
+  it("旗舰位照样会用完，照样开申请单——它不是「不限量」", () => {
+    const user = makeUser("烧穿旗舰位");
+    const g = store.create({ config: MINI, ownerId: user.id });
+    store.userSetFlagship(user.id, true, 50_000);
+    const args = { user, quotaKey: `u:${user.id}`, gameId: g.id, cardsCount: 1 };
+    expect(checkQuota(store, args).allowed).toBe(true);
+
+    recordSpend(store, { user, quotaKey: args.quotaKey, gameId: g.id, tokens: 50_000 });
+    const v = checkQuota(store, args);
+    expect(v.allowed).toBe(false);
+    expect(v.code).toBe("user_exhausted");
+    expect(v.reason).toContain("旗舰位");
+    expect(store.quotaRequestList()).toHaveLength(1);
+  });
+
+  it("普通账号撞墙时要被告知**还有旗舰位这条路**", () => {
+    // 不说的话，一个正在搭大作品的人只会以为平台就到这儿了——
+    // 而 200 万连验收标准要求的体量的三成都走不到。
+    const user = makeUser("撞墙的");
+    const g = store.create({ config: MINI, ownerId: user.id });
+    const args = { user, quotaKey: `u:${user.id}`, gameId: g.id, cardsCount: 1 };
+    recordSpend(store, { user, quotaKey: args.quotaKey, gameId: g.id, tokens: 1000 });
+    const v = checkQuota(store, args);
+    expect(v.reason).toContain("旗舰位");
+  });
+
+  it("额度视图要认得出旗舰位（界面上得说出来）", () => {
+    const user = makeUser("看得见身份");
+    store.userSetFlagship(user.id, true, 50_000);
+    const v = quotaView(store, { user, quotaKey: `u:${user.id}` });
+    expect(v.flagship).toBe(true);
+    expect(v.limit).toBe(50_000);
+    expect(quotaView(store, { user: null, quotaKey: "guest" }).flagship).toBe(false);
+  });
+
+  it("后台账号清单能找到人：这是「主动放额」的前提", () => {
+    // 原来后台只有「等他撞墙、系统自动开申请单」这一条被动通路。
+    const a = makeUser("甲");
+    const b = makeUser("乙");
+    store.userSetFlagship(b.id, true, 50_000);
+    const rows = store.userAccounts();
+    const names = rows.map((r) => r.username);
+    expect(names).toContain("甲");
+    expect(names).toContain("乙");
+    expect(rows.find((r) => r.id === b.id)?.flagship).toBe(true);
+    expect(rows.find((r) => r.id === a.id)?.flagship).toBe(false);
+    // 老账号没有 token_grant 也要报出一个默认额度，别显示成 0
+    expect(rows.find((r) => r.id === a.id)?.grant).toBeGreaterThan(0);
+  });
+
+  it("给不存在的账号升旗舰位要回 null，不能静悄悄成功", () => {
+    expect(store.userSetFlagship("没这个人", true, 50_000)).toBeNull();
   });
 });

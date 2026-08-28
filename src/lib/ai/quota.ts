@@ -7,6 +7,9 @@ import { fmtWan } from "@/lib/format";
 // - 管理员：不限量。平台自己人做示例、压测、救火时不该被自己的额度挡住。
 // - 注册用户：**总量额度池**（默认 200 万 token）。用完不是等明天，而是自动开一条
 //   申请单，由管理员在开发者后台手动批。这就是「让人感觉不到限量、但确实有闸门」。
+// - 旗舰位：**管理员手动指定的注册用户**，池子放到 2000 万（AI_FLAGSHIP_GRANT）。
+//   它不是第四套算法——算法跟注册用户一模一样（总量池、照常记账、用完照样要人批），
+//   变的只有池子有多大和额度用完时说的那句话。见 flagshipGrant() 的注释。
 // - 游客（没注册）：按日额度（默认每天 40 万）。不能也给一份总量额度——清一下 cookie
 //   就能无限刷；日额度既够试用，又是注册的钩子。
 //
@@ -34,11 +37,30 @@ export interface QuotaView {
   /** 今日请求数，仅游客受它约束 */
   requests: number;
   maxRequests: number;
+  /** 旗舰位：额度算法跟普通注册用户一样，只是池子大得多。界面上要认得出来 */
+  flagship: boolean;
 }
 
 /** 注册账号的初始额度（总量）。默认值定义在存储层，这里只转发，避免两处各写一个数字。 */
 export function userGrantDefault(): number {
   return defaultGrant();
+}
+
+/**
+ * 旗舰位的额度。
+ *
+ * 这个数是被验收标准逼出来的，不是拍脑袋：平台自己搭 VAL MANAGER 量级的作品，
+ * 实测 12 轮烧掉 **733 万 token** 才到 17 万字符——而那还是个半成品
+ * （原作 13,132 行）。按 200 万的注册额度，深度创作者连三成都走不到就会撞墙。
+ *
+ * 所以默认给 2000 万：够把那种体量搭完，还留得下反复回炉修的余量。
+ *
+ * 为什么是「手动指定」而不是「谁都给」：额度是真金白银，2000 万发给每个注册用户
+ * 平台立刻烧穿。老板拍的板是**先给深度创作者开这道门，由人决定给谁**——
+ * 平台侧要保证的是「想做大作品的人做得成」，不是「人人都能无限烧」。
+ */
+export function flagshipGrant(): number {
+  return Number(process.env.AI_FLAGSHIP_GRANT ?? 20_000_000);
 }
 
 /** 游客每日额度。够把一个想法聊成方案、搭出雏形，再往下就该注册了。 */
@@ -84,16 +106,23 @@ export function checkQuota(
   }
 
   if (kind === "user" && args.user) {
-    const { grant, used } = store.userQuota(args.user.id);
+    const { grant, used, flagship } = store.userQuota(args.user.id);
     if (used >= grant) {
       // 自动开一条待批单，管理员在后台能看到
       store.quotaRequestOpen(args.user.id, used, grant);
       return {
         allowed: false,
         code: "user_exhausted",
-        reason:
-          `你的 AI 额度用完了（${fmtWan(grant)} token）。已经自动给管理员发了一条申请，` +
-          `批下来就能接着用——你的作品和聊天记录都在，不会丢。`,
+        reason: flagship
+          ? `旗舰位的 AI 额度也用完了（${fmtWan(grant)} token）。已经自动给管理员发了一条申请，` +
+            `批下来就能接着用——你的作品和聊天记录都在，不会丢。`
+          : // 普通账号这里要多说一句「还有旗舰位这条路」。不说的话，
+            // 一个正在搭大作品的人撞到 200 万的墙，只会以为平台就到这儿了——
+            // 而验收标准要求的那种体量，200 万本来就走不到三成。
+            `你的 AI 额度用完了（${fmtWan(grant)} token）。已经自动给管理员发了一条申请，` +
+            `批下来就能接着用——你的作品和聊天记录都在，不会丢。` +
+            `如果你在做一部大体量的作品（几十个界面那种），在申请里说一声，` +
+            `管理员可以给你开旗舰位（一次 ${fmtWan(flagshipGrant())} token）。`,
       };
     }
     return { allowed: true };
@@ -132,10 +161,19 @@ export function quotaView(
   const today = store.aiUsageToday(args.quotaKey);
   if (kind === "admin" && args.user) {
     const { used } = store.userQuota(args.user.id);
-    return { kind, unlimited: true, used, limit: 0, remaining: 0, requests: today.requests, maxRequests: 0 };
+    return {
+      kind,
+      unlimited: true,
+      used,
+      limit: 0,
+      remaining: 0,
+      requests: today.requests,
+      maxRequests: 0,
+      flagship: false,
+    };
   }
   if (kind === "user" && args.user) {
-    const { grant, used } = store.userQuota(args.user.id);
+    const { grant, used, flagship } = store.userQuota(args.user.id);
     return {
       kind,
       unlimited: false,
@@ -144,6 +182,7 @@ export function quotaView(
       remaining: Math.max(0, grant - used),
       requests: today.requests,
       maxRequests: 0,
+      flagship,
     };
   }
   const limit = guestDailyTokens();
@@ -155,5 +194,6 @@ export function quotaView(
     remaining: Math.max(0, limit - today.tokens),
     requests: today.requests,
     maxRequests: guestDailyRequests(),
+    flagship: false,
   };
 }

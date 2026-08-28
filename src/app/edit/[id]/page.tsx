@@ -53,7 +53,7 @@ function quotaText(q: QuotaInfo): string {
       `（零点重置；注册后一次拿一大笔，作品也不会因换设备而丢）`
     );
   }
-  return `AI 额度：已用 ${kilo(q.used)}/${kilo(q.limit)} tokens，还剩 ${kilo(q.remaining)}`;
+  return `${q.flagship ? "旗舰位额度" : "AI 额度"}：已用 ${kilo(q.used)}/${kilo(q.limit)} tokens，还剩 ${kilo(q.remaining)}`;
 }
 
 export default function EditPage({ params }: { params: Promise<{ id: string }> }): React.ReactElement {

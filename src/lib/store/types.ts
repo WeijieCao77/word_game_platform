@@ -21,6 +21,24 @@ export interface QuotaRequest {
   handledAt: string | null;
 }
 
+/**
+ * 后台账号清单里的一行。
+ *
+ * 存在的理由是「旗舰位」这条路：额度规矩是注册即 200 万总量，而搭一部
+ * VAL MANAGER 量级的作品实测要 733 万——深度创作者必然不够用。老板拍板的解法是
+ * **管理员手动放额**（旗舰位），那管理员就得先能在后台找到这个人。
+ * 原来后台只有「等他撞墙、系统自动开申请单」这一条被动通路。
+ */
+export interface AccountRow {
+  id: string;
+  username: string;
+  role: "user" | "admin";
+  createdAt: string;
+  grant: number;
+  used: number;
+  flagship: boolean;
+}
+
 /** 与 AI 策划的对话记录（服务端持久化，关页面不丢） */
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -153,9 +171,17 @@ export interface GameStore {
    * 账户额度池（注册用户专用，游客走上面的按日额度）。
    * grant 是累计授予的总量，used 是累计消耗——用完不是等明天，而是管理员手动批。
    */
-  userQuota(userId: string): { grant: number; used: number };
+  userQuota(userId: string): { grant: number; used: number; flagship: boolean };
   userSpend(userId: string, tokens: number): void;
   userGrantAdd(userId: string, tokens: number): void;
+  /**
+   * 升/降旗舰位。`grantTo` 是升的时候要放到位的**剩余**额度
+   * （实现里取 max(现有额度, 已用 + grantTo)，不会把已经批过的池子调小）。
+   * 降只摘标签，不收回已经批出去的额度。
+   */
+  userSetFlagship(userId: string, on: boolean, grantTo: number): { grant: number; used: number } | null;
+  /** 后台账号清单：管理员要能主动找人放额，而不是干等他撞墙 */
+  userAccounts(limit?: number): AccountRow[];
   /** 额度申请：耗尽时自动开一条；同一用户同时只留一条待批 */
   quotaRequestOpen(userId: string, used: number, grant: number): void;
   quotaRequestList(onlyPending?: boolean): QuotaRequest[];

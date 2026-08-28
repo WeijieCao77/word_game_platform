@@ -27,6 +27,8 @@ vi.mock("@/lib/ai/provider", () => ({
 
 const { runAssistant } = await import("@/lib/ai/agent");
 const { SqliteGameStore } = await import("@/lib/store/sqlite");
+const { playCheckHasIssue } = await import("@/lib/playcheck/types");
+const { summarizePlayCheck, describePlayCheck } = await import("@/lib/playcheck/report");
 
 const toolCall = (name: string): ChatResult => ({
   message: {
@@ -144,5 +146,70 @@ describe("守则里得写清什么时候用它", () => {
     const code = buildSystemPrompt(CONFIG as never, "code");
     expect(code).toContain("play_check");
     expect(code).toContain("别写完就交差等下一轮");
+  });
+});
+
+/**
+ * 线上真事故：作者发一句话，工作台回一行
+ * **`Cannot read properties of undefined (reading 'nan')`**。
+ *
+ * 根因是 `playCheckGet()` 写的是 `JSON.parse(row.report) as PlayCheckReport`——
+ * 一个裸的类型断言。库里躺着的是**上一个版本存下的报告**，没有 numbers 那一段，
+ * 于是 `r.numbers.nan` 当场炸，整轮对话断掉。
+ *
+ * 我本来写过一条「老报告没有 numbers 也不能炸」的测试，可它走的是
+ * `parsePlayCheck`——**而从库里读根本不走那条路**。测错了路径，给了假的信心。
+ * 所以这一组必须**把旧形状真的写进库里再读回来**。
+ */
+describe("库里躺着的旧报告", () => {
+  const newStore = (): InstanceType<typeof SqliteGameStore> =>
+    new SqliteGameStore(path.join(mkdtempSync(path.join(tmpdir(), "wgp-old-")), "test.db"));
+
+  /** 昨天之前存下的形状：没有 numbers / walked / arrived */
+  const OLD_SHAPE = {
+    at: "2026-08-01T00:00:00.000Z",
+    bootText: 800,
+    steps: [{ label: "开始", dead: [], filled: [] }],
+    stuck: null,
+    nav: [{ label: "阵容", changed: true, already: false, textLen: 900, clickable: 12 }],
+    notes: [],
+    ms: 3000,
+  };
+
+  it("读回来不许炸，缺的字段要有默认值", () => {
+    const store = newStore();
+    store.playCheckSet("g1", OLD_SHAPE as never);
+    const r = store.playCheckGet("g1")!;
+    expect(r.numbers).toBeTruthy();
+    expect(r.numbers.nan).toEqual([]);
+    expect(r.walked).toBe(1); // 退回 steps 的条数
+    expect(r.arrived).toBe(false); // 缺了就按「没走到」算，宁可误报
+  });
+
+  it("**拿它去判有没有问题也不许炸**——这一步就是线上炸的那一步", () => {
+    const store = newStore();
+    store.playCheckSet("g1", OLD_SHAPE as never);
+    const r = store.playCheckGet("g1")!;
+    expect(() => playCheckHasIssue(r)).not.toThrow();
+    expect(() => summarizePlayCheck(r)).not.toThrow();
+    expect(() => describePlayCheck(r)).not.toThrow();
+  });
+
+  it("**原来的时间戳要留住**——盖成当前时间，发布门槛的「体检比文件旧」就废了", () => {
+    const store = newStore();
+    store.playCheckSet("g1", OLD_SHAPE as never);
+    expect(store.playCheckGet("g1")!.at).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("形状漂得再远也只当没体检过，不许把整轮打断", () => {
+    // 写入那一侧要求有 at（NOT NULL），所以「完全没 at 的垃圾」进不了库；
+    // 真实会发生的是**字段对不上**——比如某一版把 nav 存成了对象而不是数组。
+    const store = newStore();
+    store.playCheckSet("g1", { at: "2026-08-01T00:00:00.000Z", nav: { 不是: "数组" } } as never);
+    const r = store.playCheckGet("g1")!;
+    expect(() => playCheckHasIssue(r)).not.toThrow();
+    expect(() => describePlayCheck(r)).not.toThrow();
+    expect(r.bootText).toBe(0);
+    expect(r.nav).toEqual([]);
   });
 });

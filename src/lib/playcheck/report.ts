@@ -14,8 +14,39 @@ const N = (v: unknown): number => {
 };
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
-/** 把 postMessage 过来的东西洗成一份能存的报告 */
+/**
+ * 把 postMessage 过来的东西洗成一份能存的报告。
+ *
+ * 时间戳**服务端盖章**：客户端说了不算。
+ */
 export function parsePlayCheck(raw: unknown): PlayCheckReport {
+  return shapeReport(raw, new Date().toISOString());
+}
+
+/**
+ * 从**库里**读回来的报告，也要过同一遍整形。
+ *
+ * 这个函数是线上一次真事故逼出来的：作者发一句话，工作台回一行
+ * `Cannot read properties of undefined (reading 'nan')`。
+ *
+ * 原因是 `playCheckGet()` 写的是 `JSON.parse(row.report) as PlayCheckReport`——
+ * **一个裸的类型断言，不做任何整形**。数据库里躺着的是**旧版本存下的报告**，
+ * 没有 `numbers` 这一段（也没有 `walked` / `arrived`），
+ * 于是 `r.numbers.nan` 当场炸，把整轮对话打断。
+ *
+ * 教训：**类型断言不是校验**。凡是从库里、从网络上回来的东西，
+ * 类型系统给的那点保证全是假的——写它的可能是三个版本之前的自己。
+ *
+ * 跟 `parsePlayCheck` 只差一件事：**保留原来的时间戳**。
+ * 读一次就盖一次章的话，发布门槛那条「体检比文件旧就拦住」永远不会触发——
+ * 任何旧报告都会看起来像刚跑完的。
+ */
+export function revivePlayCheck(raw: unknown): PlayCheckReport {
+  const at = (raw as { at?: unknown } | null)?.at;
+  return shapeReport(raw, typeof at === "string" && at ? at : new Date(0).toISOString());
+}
+
+function shapeReport(raw: unknown, at: string): PlayCheckReport {
   const o = (raw ?? {}) as Record<string, unknown>;
   const stuckRaw = o.stuck as Record<string, unknown> | null | undefined;
   const stuck: PlayStuck | null = stuckRaw
@@ -28,7 +59,7 @@ export function parsePlayCheck(raw: unknown): PlayCheckReport {
       }
     : null;
   return {
-    at: new Date().toISOString(),
+    at,
     bootText: N(o.bootText),
     steps: arr(o.steps)
       .slice(0, 12)

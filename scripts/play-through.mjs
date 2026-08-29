@@ -34,10 +34,44 @@ const CLICKABLE =
   "button:visible, [role=button]:visible, a[href]:visible, .btn:visible, " +
   "[data-screen]:visible, [data-action]:visible, li[data-id]:visible, " +
   "input[type=submit]:visible, input[type=button]:visible";
-/** 走到第几步就认为「进主界面了」：一屏上有这么多导航项 */
+/**
+ * 「这一屏的主动作」。
+ *
+ * 第一版没有这个，于是在天赋加点那一屏上，走查按 DOM 顺序点到第一个 `−`
+ * 就算「页面变了」，在 ± 上来回打转，**根本没走到真正的主界面**——
+ * 却因为那一屏可点的有 17 个，把它当成主界面报了一堆假的「坏页签」。
+ * 这跟 PITFALLS 17.8 是同一族错（把中途某一屏当成主导航），我自己又犯了一次。
+ *
+ * 玩家不会在 ± 上打转，他会去找那个「确定/开始/下一步」。所以候选排序时
+ * 把这类词排到最前面。
+ */
+const PRIMARY = /(确定|确认|开始|下一步|继续|进入|执教|出发|完成|接受|签下|就他|选好)/;
+/** 一屏上可点的到了这个数，就值得把每一个都单独试一遍（导航条长这样） */
 const NAV_HINT = 6;
 const MAX_STEPS = 14;
 const SETTLE = 1200;
+/**
+ * 逐项试是要开新浏览器重放的，很贵。给个总预算，免得一部大作品跑到天荒地老。
+ * 自测那一版没有这条：走进主界面之后每点一个页签都被当成「又进了一屏」，
+ * 于是排出十几屏、每屏十几项，两百多次重放，跑了十分钟一个字都没吐出来。
+ */
+const PROBE_BUDGET = 60;
+
+/**
+ * 两屏「可点的东西」像不像。
+ *
+ * 用来分辨**「进了下一屏」**和**「还在这一屏，只是换了个页签」**——
+ * 主界面点「阵容」，正文变了，可那一条导航还是原来那 15 项。
+ * 不认这一条，走查会在主界面里一路点到步数用光，
+ * 而且把每一次换页签都排成「新的一屏」，逐项试的开销当场爆掉。
+ */
+function alike(a, b) {
+  if (!a.length || !b.length) return 0;
+  const A = new Set(a), B = new Set(b);
+  let hit = 0;
+  for (const x of A) if (B.has(x)) hit++;
+  return hit / Math.max(A.size, B.size);
+}
 
 const browser = await chromium.launch(
   CHROME ? { executablePath: CHROME, args: ["--no-sandbox"] } : { args: ["--no-sandbox"] }
@@ -68,7 +102,9 @@ async function screen(frame) {
   for (let i = 0; i < Math.min(n, 60); i++) {
     labels.push(clean(await els.nth(i).innerText().catch(() => "")).slice(0, 34) || `（第${i + 1}个没有文字）`);
   }
-  return { text, count: n, labels };
+  // 主动作排前面（理由见 PRIMARY 的注释）；其余保持 DOM 顺序
+  const ordered = [...labels.filter((l) => PRIMARY.test(l)), ...labels.filter((l) => !PRIMARY.test(l))];
+  return { text, count: n, labels: ordered, domOrder: labels };
 }
 
 /** 输入框照填——玩家也会填。不填的话第一屏就永远过不去，量不到后面 */
@@ -117,43 +153,62 @@ async function replay(frame, path) {
 
 console.log(`匿名玩一遍：${base}/p/${gameId}\n`);
 
-// ── 第一趟：往前走，把每一屏原样打出来 ─────────────────────────
+// ── 第一趟：一直往前走，把每一屏原样打出来 ─────────────────────
+//
+// 关键的一条：**不要走到「可点的多」那一屏就停下来当主界面**。
+// 第一版就是那么干的，结果在天赋加点那一屏（17 个 ± 按钮）停住，
+// 报了一堆假的「坏页签」，真正的主界面一眼都没看到。
+// 停下来的唯一条件是：这一屏所有东西都点过了，没有一个能把页面推进。
 const first = await open();
 const path = [];
-let arrived = false;
-let lastScreen = null;
+const seen = new Set();
+let prevLabels = null;
 
 for (let step = 1; step <= MAX_STEPS; step++) {
   const filled = await fillAll(first.frame);
   const s = await screen(first.frame);
-  lastScreen = s;
-  console.log(`第 ${step} 屏　正文 ${s.text.length} 字　可点 ${s.count} 处${filled.length ? `　填了：${filled.join("、")}` : ""}`);
-  console.log(`  ${s.text.slice(0, 220)}`);
-  if (s.count >= NAV_HINT && step > 1) {
-    console.log(`  →→ 这一屏有 ${s.count} 个可点的，当作主界面\n`);
-    arrived = true;
+  const sig = `${s.text.length}|${s.text.slice(0, 120)}`;
+  // 一整条导航还是原来那些项 = 还在这一屏，只是换了个页签。到此为止。
+  if (prevLabels && alike(s.labels, prevLabels) >= 0.8) {
+    // **不要把最后那一步从 path 里弹掉。**
+    //
+    // 自测逮到的：确认页（导航条摆在那儿但一项都不响应）和真主界面（导航活了）
+    // 上面的**文字一模一样**，alike 只看文字，分不出来——它们的差别在行为上。
+    // 弹掉最后一步，逐项试就只试到确认页，**真主界面一项都没测**，
+    // 而那恰恰是最该测的一屏。宁可多试一屏，也不能把它漏掉。
+    console.log(`第 ${step} 屏　可点的跟上一屏基本一样——多半是同一屏在换页签，不再往前走。\n`);
     break;
   }
+  prevLabels = s.labels;
+  console.log(
+    `第 ${step} 屏　正文 ${s.text.length} 字　可点 ${s.count} 处${filled.length ? `　填了：${filled.join("、")}` : ""}`
+  );
+  console.log(`  ${s.text.slice(0, 220)}`);
   if (s.count === 0) {
     console.log(`  ✗ 一个能点的都没有——走不下去了\n`);
     break;
   }
-  console.log(`  可点：${s.labels.slice(0, 12).join(" ｜ ")}`);
+  console.log(`  可点：${s.labels.slice(0, 14).join(" ｜ ")}`);
 
-  // 像玩家一样：挨个试，直到有一个真的把页面推进了
   let moved = false;
   for (const label of s.labels) {
     const r = await clickLabel(first.frame, label);
-    if (r.changed) {
-      console.log(`  点「${label}」→ 进下一屏\n`);
-      path.push(label);
-      moved = true;
-      break;
+    if (!r.changed) continue;
+    // 变了但变回一个见过的样子，不算前进（± 那种来回切最容易骗过走查）
+    const now = await screen(first.frame);
+    const nowSig = `${now.text.length}|${now.text.slice(0, 120)}`;
+    if (seen.has(nowSig)) {
+      console.log(`  点「${label}」→ 页面变了，但回到了走过的样子，不算前进`);
+      continue;
     }
-    console.log(`  点「${label}」→ ✗ 页面没变`);
+    seen.add(sig);
+    console.log(`  点「${label}」→ 进下一屏\n`);
+    path.push(label);
+    moved = true;
+    break;
   }
   if (!moved) {
-    console.log(`  ✗ 这一屏所有 ${s.labels.length} 个都点了，一个都没反应——玩家在这儿卡死\n`);
+    console.log(`  ✗ 这一屏 ${s.labels.length} 个全点过了，没有一个能往前走——玩家在这儿卡死\n`);
     break;
   }
 }
@@ -163,79 +218,72 @@ if (first.errs.length) {
   for (const e of [...new Set(first.errs)].slice(0, 6)) console.log(`  ${e}`);
   console.log("");
 }
+await first.ctx.close();
 
-// ── 第二趟：把「走到主界面之前」每一屏的选项一个个单独试 ─────────
-// 这是平台走查漏掉的那一层：它一屏点通一个就走，剩下的从没碰过。
+// ── 第二趟：路上每一屏的选项，一个个单独试 ──────────────────────
+//
+// 这就是平台走查漏掉的那一层。它每一屏点通一个就走，
+// 所以「路上无坏钮」的真实含义是「我点过的那几个都好使」。
 console.log("──────────────────────────────────────────────");
 console.log("逐个选项试（平台走查漏掉的那一层）");
 console.log("──────────────────────────────────────────────\n");
 
-for (let depth = 0; depth < path.length; depth++) {
+let spent = 0;
+for (let depth = 0; depth <= path.length; depth++) {
+  if (spent >= PROBE_BUDGET) {
+    console.log(`（逐项试的预算 ${PROBE_BUDGET} 次用完了，后面的屏没试。分母就是这么多，别当成全通。）`);
+    break;
+  }
   const prefix = path.slice(0, depth);
   const probe = await open();
-  const ok = await replay(probe.frame, prefix);
-  if (!ok) {
-    console.log(`第 ${depth + 1} 屏：重放前面的步骤没成功，跳过`);
+  if (!(await replay(probe.frame, prefix))) {
+    console.log(`第 ${depth + 1} 屏：重放前面的步骤没成功，跳过（多半是随机渲染的选项）\n`);
     await probe.ctx.close();
     continue;
   }
   const s = await screen(probe.frame);
   await probe.ctx.close();
-  const sample = s.labels.slice(0, MAX_TRY_PER_SCREEN);
+  if (!s.count) continue;
+
+  // 导航条那种一屏十几项的，全试；普通选择屏按参数抽样
+  const budget = s.count >= NAV_HINT ? Math.max(MAX_TRY_PER_SCREEN, 20) : MAX_TRY_PER_SCREEN;
+  const sample = s.domOrder.slice(0, Math.min(budget, PROBE_BUDGET - spent));
+  spent += sample.length;
   console.log(`第 ${depth + 1} 屏（走到这儿要点：${prefix.join(" → ") || "（开局）"}）`);
-  console.log(`  这一屏 ${s.count} 个选项，试前 ${sample.length} 个：`);
+  console.log(`  这一屏 ${s.count} 个可点的，试 ${sample.length} 个：`);
 
   const dead = [];
+  const alive = [];
   for (const label of sample) {
     const t = await open();
-    const replayed = await replay(t.frame, prefix);
-    if (!replayed) {
+    if (!(await replay(t.frame, prefix))) {
       await t.ctx.close();
       continue;
     }
     const r = await clickLabel(t.frame, label);
     await t.ctx.close();
-    if (!r.found) console.log(`    「${label}」　找不到了（可能是随机渲染的）`);
-    else if (r.changed) console.log(`    「${label}」　✓`);
-    else {
+    if (!r.found) console.log(`    「${label}」　找不到了（多半是随机渲染的）`);
+    else if (r.changed) {
+      console.log(`    「${label}」　✓`);
+      alive.push(label);
+    } else {
       console.log(`    「${label}」　✗ 点了没反应`);
       dead.push(label);
     }
   }
-  if (dead.length) {
-    console.log(`  ⚠ 这一屏有 ${dead.length}/${sample.length} 个点了没反应：${dead.join("、")}`);
+  // 分母写出来。「N 项里 N 项通过」和「点过的那几项通过」是两句话（PITFALLS 17.17）
+  console.log(`  小结：试了 ${dead.length + alive.length} 个，${alive.length} 个有反应，${dead.length} 个没反应`);
+  if (dead.length) console.log(`  ⚠ 点了没反应：${dead.join("、")}`);
+  if (dead.length >= 5 && alive.length <= 2) {
+    console.log(
+      `  ⚠⚠ 这一屏摆着 ${s.count} 个看着能点的，实际只有 ${alive.length} 个有用——` +
+        `玩家点哪个都没反应，会直接判定「这游戏坏了」，哪怕代码是「按设计工作」的。`
+    );
   }
   console.log("");
 }
 
-// ── 第三趟：主界面的每个页签都点一遍 ────────────────────────────
-if (arrived && lastScreen) {
-  console.log("──────────────────────────────────────────────");
-  console.log("主界面每个页签都点一遍");
-  console.log("──────────────────────────────────────────────\n");
-  const navProbe = await open();
-  await replay(navProbe.frame, path);
-  const nav = await screen(navProbe.frame);
-  const bad = [];
-  for (const label of nav.labels.slice(0, 20)) {
-    const before = clean(await navProbe.frame.locator("body").innerText().catch(() => ""));
-    const r = await clickLabel(navProbe.frame, label);
-    const after = clean(await navProbe.frame.locator("body").innerText().catch(() => ""));
-    if (!r.found) continue;
-    const mark = r.changed ? "✓" : after === before ? "✗ 点了没反应" : "✓";
-    console.log(`  「${label}」　${mark}　正文 ${after.length} 字`);
-    if (!r.changed && after === before) bad.push(label);
-    if (after.length < 60) console.log(`      ⚠ 这一页几乎是空的：${after.slice(0, 80)}`);
-  }
-  if (bad.length) console.log(`\n  ⚠ 点了没反应的页签：${bad.join("、")}`);
-  if (navProbe.errs.length) {
-    console.log("\n  这一段的控制台报错：");
-    for (const e of [...new Set(navProbe.errs)].slice(0, 6)) console.log(`    ${e}`);
-  }
-  await navProbe.ctx.close();
-}
-
-await first.ctx.close();
 await browser.close();
-console.log("\n完。判据说明：这个脚本只报事实（点了变没变、正文多少字），不下「能玩/不能玩」的总结论——");
-console.log("那一句要人看着上面的记录自己下，免得又多一把互相打架的尺子。");
+console.log("判据说明：这个脚本只报事实（点了变没变、正文多少字、分母是多少），");
+console.log("不下「能玩/不能玩」的总结论——那一句要人看着上面的记录自己下，");
+console.log("免得平台又多一把互相打架的尺子。");

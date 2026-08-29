@@ -419,9 +419,11 @@ jobs:
           COOKIE: ${{ steps.login.outputs.cookie }}
         run: |
           set -e
+          # 发一版并开链接，**但不挂公开库**：复刻实测的作品是半成品，
+          # 老口径 {"published":true} 是三件事一起开，会把它挂进公开游戏库。
           curl -sS -X POST "$BASE/api/games/$GID/publish" \
             -H "x-edit-key: $GKEY" -H "cookie: $COOKIE" -H 'content-type: application/json' \
-            -d '{"published":true}' -o /dev/null
+            -d '{"publishVersion":true,"linkOpen":true,"listed":false}' -o /dev/null
           npm i -D playwright@1.56.0 >/dev/null 2>&1 || npm i -D playwright >/dev/null
           npx playwright install --with-deps chromium >/dev/null
           CHROME="$(node -e "const {chromium}=require('playwright');console.log(chromium.executablePath())")"
@@ -520,7 +522,8 @@ jobs:
               try:
                   rq = urllib.request.Request(
                       f"{BASE}/api/games/{GID}/publish", method="POST",
-                      data=json.dumps({"published": True}).encode(),
+                      # 同上：发版本 + 开链接，不挂公开库
+                      data=json.dumps({"publishVersion": True, "linkOpen": True, "listed": False}).encode(),
                       headers={"content-type": "application/json", "x-edit-key": GKEY,
                                "cookie": os.environ.get("COOKIE", "")})
                   urllib.request.urlopen(rq, timeout=60).read()
@@ -553,8 +556,8 @@ jobs:
         run: |
           curl -sS -X POST "$BASE/api/games/$GID/publish" \
             -H "x-edit-key: $GKEY" -H "cookie: $COOKIE" -H 'content-type: application/json' \
-            -d '{"published":false}' -o /dev/null || true
-          echo "已从公开游戏库撤下（作者带钥匙仍可访问）"
+            -d '{"linkOpen":false,"listed":false}' -o /dev/null || true
+          echo "链接已关（作者带钥匙仍可访问）"
 
       # 一条明面上的门槛：达不到就判红，别再出现「19k 字符一屏也算 success」。
       - name: 够不够格（硬门槛）

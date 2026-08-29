@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
-import { canEditGame } from "@/lib/session";
+import { canEditGame, canPlayCheck } from "@/lib/session";
 import { runtimeAsset } from "@/lib/runtime";
 import { datasetSourcesFor, wrapDataset } from "@/lib/dataset";
 import { injectPlayDiagnostics } from "@/lib/play-diagnostics";
@@ -110,7 +110,11 @@ export async function GET(
   // 两道闸门都是故意的——**玩家绝不能被塞进一个自动点击器**：
   //   1. 要显式带 ?wgpcheck=1（工作台的隐藏 iframe 和实测脚本才会这么开）
   //   2. 要有编辑权限（作者本人或带钥匙的调用方）
-  const wantCheck = new URL(req.url).searchParams.get("wgpcheck") === "1" && isAuthor;
+  // 这里用 canPlayCheck 而不是 isAuthor：**管理员对任何作品都要能跑一遍看看**。
+  // 原来卡在 isAuthor 上，于是一部无主作品（游客建的、没认领）平台连体检都做不了——
+  // 线上那部 VAL MANAGER 就是这么变成瞎区的，理由写在 canPlayCheck 的注释里。
+  // 另一道闸门（必须显式 ?wgpcheck=1）一个字没动，玩家照旧不会被塞进自动点击器。
+  const wantCheck = new URL(req.url).searchParams.get("wgpcheck") === "1" && canPlayCheck(req, id);
   const body = isHtml
     ? wantCheck
       ? injectPlayCheck(injectPlayDiagnostics(content))

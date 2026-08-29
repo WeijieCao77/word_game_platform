@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
-import { canEditGame } from "@/lib/session";
+import { canPlayCheck } from "@/lib/session";
 import { parsePlayCheck, summarizePlayCheck, describePlayCheck } from "@/lib/playcheck/report";
 import { playCheckHasIssue } from "@/lib/playcheck/types";
 
@@ -20,7 +20,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   const { id } = await params;
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+  // 跟 /play 那一层用同一把尺子：跑得了体检，就存得进报告。
+  // 两边不一致的话，管理员能跑出结果却存不进去——白跑一趟，而且没人看得出为什么。
+  if (!canPlayCheck(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
 
   let raw: unknown;
   try {
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   const { id } = await params;
   const store = getStore();
   if (!store.get(id)) return NextResponse.json({ error: "游戏不存在" }, { status: 404 });
-  if (!canEditGame(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
+  if (!canPlayCheck(req, id)) return NextResponse.json({ error: "没有编辑权限" }, { status: 403 });
   const report = store.playCheckGet(id);
   if (!report) return NextResponse.json({ report: null, summary: "还没体检过" });
   return NextResponse.json({

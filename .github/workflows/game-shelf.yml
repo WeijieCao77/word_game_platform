@@ -4,9 +4,20 @@ name: 游戏库上下架：把一部作品撤下或放回
 # 而我这边（容器出口够不到 railway.app）又没法直接操作——这条流水线补上这一段。
 #
 # 只动「在不在公开库里」这一个开关：
-#   撤下 = 不出现在公开游戏库，作者带钥匙照样能看能改能重新发布
+#   撤下 = 不出现在公开游戏库，**链接照样能开**，作者带钥匙照样能看能改能重新发布
 #   放回 = 重新挂上公开库
 # **不删任何东西**。删除是不可恢复的，只在后台由管理员二次确认后进行。
+#
+# ⚠ 这条流水线曾经名不副实，2026-08-29 修的：
+#
+# 它是「发布拆成三件事」之前写的，撤下时传的是 `{"published": false}`。
+# 而拆分之后，`published` 只管**链接可达**，`listed` 才管**公开库列不列**，
+# 后台路由那边「显式传 published」正是**彻底关掉链接**那条路（留给内容违规用的）。
+# 于是「撤下挂牌」实际上把链接一起弄死了——而拆分本来就是为了避免这件事
+# （原话：把半成品撤下公开库 ＝ 把作者和测试者的链接一起弄死）。
+#
+# 这类毛病 TypeScript 一个都拦不住：调用方是一份 YAML，不在类型系统里。
+# 拆字段的时候，**仓库里所有调用方都得跟着改，包括流水线和脚本**。
 
 on:
   workflow_dispatch:
@@ -22,6 +33,11 @@ on:
           - 撤下
           - 放回
         default: 撤下
+      keep_link:
+        description: "撤下之后链接还能不能开（默认能——撤的是挂牌，不是链接）"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   shelf:
@@ -62,15 +78,22 @@ jobs:
           COOKIE: ${{ steps.login.outputs.cookie }}
           GID: ${{ inputs.game_id }}
           ACT: ${{ inputs.action }}
+          KEEP: ${{ inputs.keep_link }}
         run: |
           set -e
           python3 - <<'PY'
           import json, os, urllib.error, urllib.request
           BASE, GID, ACT = os.environ["BASE"], os.environ["GID"], os.environ["ACT"]
+          keep = os.environ.get("KEEP", "true") != "false"
           want = ACT == "放回"
-          # 管理员那条路只动公开开关，不碰版本快照——正是这里要的
+
+          # listed 管「公开库列不列」，published 管「链接可达」——两件事，别再混着传。
+          #   放回：挂上库，链接当然也得开（挂在库里却打不开是坏的库条目）
+          #   撤下：只摘挂牌；keep_link 为真就**显式把链接留着**，
+          #        为假才是「连链接一起关」（内容违规那种情况）
+          payload = {"id": GID, "listed": want, "published": True if want else (True if keep else False)}
           req = urllib.request.Request(f"{BASE}/api/admin/games", method="POST",
-                                       data=json.dumps({"id": GID, "published": want}).encode(),
+                                       data=json.dumps(payload).encode(),
                                        headers={"content-type": "application/json",
                                                 "cookie": os.environ["COOKIE"]})
           try:
@@ -83,4 +106,10 @@ jobs:
           games = pub.get("games") or []
           still = [g for g in games if g.get("id") == GID]
           print(f"公开库现在 {len(games)} 部；这部作品{'仍在库里' if still else '已不在库里'}")
+          # 链接到底还能不能开，别只看回执上的字段，真去请求一次
+          try:
+              code = urllib.request.urlopen(f"{BASE}/p/{GID}", timeout=30).getcode()
+              print(f"玩家链接 /p/{GID}：HTTP {code}（打得开）")
+          except urllib.error.HTTPError as e:
+              print(f"玩家链接 /p/{GID}：HTTP {e.code}（打不开）")
           PY

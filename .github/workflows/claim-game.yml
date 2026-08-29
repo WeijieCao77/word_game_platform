@@ -1,0 +1,83 @@
+name: 把无主作品划归账号
+
+# 无主作品（游客建的、从没认领过）没人能编辑——编辑钥匙只存在于当初那次
+# 浏览器会话里，早就没了。后果不只是「作者改不了」：**平台的 AI 也改不了**，
+# 因为 /assistant 和写文件都要 canEditGame。
+#
+# 于是「让平台的 AI 去修这部坏掉的作品」这条路对无主作品是死的，直接跑会 403。
+# 划归账号是那条路的前置步骤。
+#
+# 边界（服务端把着，不在这里）：**只划无主的**。有归属的作品是创作者的财产，
+# 管理员也不能拿走。
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "作品 id（地址栏 /p/xxxx 里那一串）"
+        required: true
+      username:
+        description: "划给哪个账号（留空 = 划给跑这条流水线的账号自己）"
+        required: false
+        default: ""
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://word-game-platform-production.up.railway.app
+    steps:
+      - name: 登录并划归
+        env:
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          GID: ${{ inputs.game_id }}
+          WANT: ${{ inputs.username }}
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          BASE, GID = os.environ["BASE"], os.environ["GID"]
+
+          body = json.dumps({"username": os.environ["E2E_USERNAME"],
+                             "password": os.environ["E2E_PASSWORD"]}).encode()
+          req = urllib.request.Request(f"{BASE}/api/auth/login", method="POST", data=body,
+                                       headers={"content-type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  reply = json.loads(r.read().decode())
+                  cookie = (r.headers.get("set-cookie") or "").split(";")[0]
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"::error::登录失败 HTTP {e.code}：{e.read().decode()[:200]}")
+          if not cookie:
+              raise SystemExit("::error::登录响应里没有会话 cookie")
+          print(f"::add-mask::{cookie.split('=', 1)[-1]}")
+          me = (reply.get("user") or {}).get("username") or ""
+          who = os.environ.get("WANT", "").strip() or me
+          print(f"已登录：{me}（角色 {(reply.get('user') or {}).get('role')}）")
+          print(f"要把 {GID} 划归：{who}")
+
+          rq = urllib.request.Request(f"{BASE}/api/admin/games", method="PATCH",
+                                      data=json.dumps({"id": GID, "username": who}).encode(),
+                                      headers={"content-type": "application/json", "cookie": cookie})
+          try:
+              with urllib.request.urlopen(rq, timeout=60) as r:
+                  print(f"划归成功：{r.read().decode()[:200]}")
+          except urllib.error.HTTPError as e:
+              detail = e.read().decode()[:300]
+              if e.code == 409:
+                  raise SystemExit(f"::error::这部作品已有归属，不能划走（{detail}）")
+              raise SystemExit(f"::error::划归失败 HTTP {e.code}：{detail}")
+
+          # 别只信回执：真去后台读一遍，确认它现在确实有主了。
+          # （这条是今天刚踩过的坑——上下架那次回执说的和实际做的不一样。）
+          rq2 = urllib.request.Request(f"{BASE}/api/admin/games", headers={"cookie": cookie})
+          rows = (json.loads(urllib.request.urlopen(rq2, timeout=60).read().decode()) or {}).get("games") or []
+          row = next((g for g in rows if g.get("id") == GID), None)
+          if row is None:
+              raise SystemExit("::error::后台清单里找不到这部作品")
+          print(f"核对：owned={row.get('owned')}　作者={row.get('author') or '（空）'}")
+          if not row.get("owned"):
+              raise SystemExit("::error::划归之后它仍然显示无主——没真的生效")
+          print("✓ 现在它有主了，平台的 AI 可以改它了。")
+          PY

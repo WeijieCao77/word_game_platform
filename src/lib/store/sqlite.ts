@@ -6,7 +6,7 @@ import path from "node:path";
 import { GameConfig, CardDef, validateGameConfig } from "@/lib/schema";
 import { LibraryEntry, extractRequiredVars, shareBlockReason } from "@/lib/library";
 import { PlayCheckReport } from "@/lib/playcheck/types";
-import { AccountRow, AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
+import { AccountRow, AdminGameSummary, AiJobRecord, ChatTurn, GameRecord, GameStore, GameSummary, QuotaRequest, UserRecord } from "./types";
 import { revivePlayCheck } from "@/lib/playcheck/report";
 
 /** ai_jobs 表的一行 */
@@ -697,6 +697,27 @@ export class SqliteGameStore implements GameStore {
     return rows.map((r) => this.toSummary(r));
   }
 
+  /**
+   * 后台用的**全量**清单：挂牌的、撤下的、从没发布过的，一个不落。
+   *
+   * 起因是一个把管理员关在门外的死角：后台原来直接用 `listPublished`，
+   * 而那是按**挂牌**过滤的。于是管理员一撤下某部作品，它就从后台清单里消失了——
+   * **再也看不见，也就没法把它放回去**。撤下成了单向门。
+   *
+   * 这条路只给管理员（路由那边把着鉴权），所以不过滤任何东西。
+   */
+  listAllForAdmin(limit = 200): AdminGameSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${SqliteGameStore.SUMMARY_COLS}, listed FROM games ORDER BY updated_at DESC LIMIT ?`
+      )
+      .all(Math.max(1, Math.min(500, limit))) as (GameRow & { listed: number })[];
+    return rows.map((r) => ({
+      ...this.toSummary(r),
+      listed: r.listed === 1,
+      published: r.published === 1,
+    }));
+  }
 
   listByAuthor(author: string): GameSummary[] {
     const rows = this.db

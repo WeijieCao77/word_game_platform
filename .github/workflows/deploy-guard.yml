@@ -13,6 +13,19 @@ name: 线上版本自愈守卫
 # 做法很笨但很可靠：每 20 分钟问一次线上跑的是哪个 commit，跟分支最新的对一遍。
 # 对不上就重新部署一次，把线上顶回最新版本。
 #
+# ⚠ 2026-08-29 补的一条，之前它误诊过两次：
+#
+# 「线上还不是最新的」有**两个**原因，而它原来只认一个——
+#
+#     ① 真的没人部署（这才是它该管的）
+#     ② **正有一次部署在跑，只是还没跑完**（合并后一两分钟内必然如此）
+#
+# 混为一谈的后果有两层：白白多跑一次构建、多重启一次容器；更坏的是它给出
+# **「推送钩子没生效」这个错误诊断**，而我照着这个诊断跟老板汇报过两次
+# ——两次都是冤枉了 Railway，真相是我在 push 后十几秒就去查，构建还没完。
+#
+# 所以先看有没有「同一个 commit 的部署正在跑」，有就这一轮跳过。
+#
 # **故意回滚的时候怎么办**：建一条名为 rollback/HOLD 的分支，这个守卫就完全不动手
 # （见 docs/ROLLBACK.md）。不然你刚踩下刹车，它二十分钟后就把你顶回去了。
 
@@ -50,8 +63,30 @@ jobs:
             echo "hold=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 线上是不是最新的
+      # 「线上还不是最新的」有两个原因，这一步先排掉第二个：**正有一次部署在跑**。
+      # 不排掉的话，合并后一两分钟内每次都会误判成「没人部署」，白多跑一次构建，
+      # 还会给出「推送钩子没生效」这个错误诊断（真冤枉过 Railway 两次）。
+      - name: 有部署正在跑吗
         if: steps.hold.outputs.hold != 'true'
+        id: inflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TIP="$(git rev-parse HEAD)"
+          # 只认**这个 commit** 的在途部署。别的 commit 的在途部署不算——
+          # 那种情况线上确实该被顶回来（它正要把旧版本推上去，正是守卫要拦的事）。
+          N="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow railway.yml                  --commit "$TIP" --limit 20                  --json status --jq '[.[] | select(.status=="queued" or .status=="in_progress")] | length'                || echo 0)"
+          echo "这个 commit（${TIP:0:7}）在途的部署：$N 条"
+          if [ "${N:-0}" -gt 0 ]; then
+            echo "已经有部署在跑了，这一轮不用管——等它跑完再说。"
+            echo "busy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "busy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 线上是不是最新的
+        if: steps.hold.outputs.hold != 'true' && steps.inflight.outputs.busy != 'true'
         id: check
         run: |
           set -e

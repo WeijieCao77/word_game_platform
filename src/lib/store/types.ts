@@ -88,6 +88,18 @@ export interface GameSummary {
   plays: number;
 }
 
+/**
+ * 后台清单的一行：在 GameSummary 之上多带两个**状态位**。
+ *
+ * 清单改成全量之后这两个是必需的——不然后台分不清三种情形：
+ * 挂在公开库里 / 撤下了但链接还开着 / 从没发布过。
+ * 不放进 GameSummary 是因为公开接口不需要它们，那边每一条天然都是挂牌的。
+ */
+export interface AdminGameSummary extends GameSummary {
+  listed: boolean;
+  published: boolean;
+}
+
 /** 平台账号。游客不需要账号也能创作与游玩，账号解决的是「换设备找回作品」 */
 export interface UserRecord {
   id: string;
@@ -163,6 +175,12 @@ export interface GameStore {
   sessionDelete(tokenHash: string): void;
   /** 已发布游戏；sort: new=最近更新（默认）/ hot=按游玩 / liked=按点赞 */
   listPublished(limit?: number, sort?: "new" | "hot" | "liked"): GameSummary[];
+  /**
+   * 后台用的**全量**清单：挂牌的、撤下的、从没发布过的，一个不落。
+   * 后台原来用 listPublished，而那是按挂牌过滤的——一撤下就从后台也消失了，
+   * 于是「撤下」成了单向门（看不见就放不回去）。
+   */
+  listAllForAdmin(limit?: number): AdminGameSummary[];
   listByAuthor(author: string): GameSummary[];
   /** AI 配额：记一次请求与 token 消耗，返回今日累计；由调用方判断是否超限 */
   aiConsume(key: string, tokens: number): { requests: number; tokens: number };

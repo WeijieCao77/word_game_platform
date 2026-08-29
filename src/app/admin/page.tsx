@@ -72,6 +72,10 @@ interface LibraryGame {
   codeBytes: number;
   /** 是否已归属某个账号；无主（游客建的）才允许「划归账号」 */
   owned: boolean;
+  /** 挂不挂在公开库里 */
+  listed: boolean;
+  /** 链接可不可达 */
+  published: boolean;
 }
 
 export default function AdminPage(): React.ReactElement {
@@ -165,7 +169,11 @@ export default function AdminPage(): React.ReactElement {
           headers: { "content-type": "application/json" },
           // 撤下动的是**挂牌**，不是链接。原来这里传的是 published，
           // 于是「把半成品撤下公开库」＝「把作者和测试者的链接一起弄死」。
-          body: JSON.stringify({ id, listed }),
+          //
+          // 放回的时候要连链接一起开：挂在公开库里却打不开，是个坏的库条目
+          // （玩家从首页点进去吃一个 403）。撤下则一个字不提 published，
+          // 让链接保持原样。
+          body: JSON.stringify(listed ? { id, listed: true, published: true } : { id, listed: false }),
         });
         await loadLibrary();
       } finally {
@@ -454,22 +462,40 @@ export default function AdminPage(): React.ReactElement {
           </tbody>
         </table>
       </div>
-      <h2 className="section-title">公开游戏库（{library.length}）</h2>
+      <h2 className="section-title">
+        作品清单（{library.length}）
+        {library.filter((g) => !g.listed).length > 0 && (
+          <span className="tag" style={{ marginLeft: 8 }}>
+            {library.filter((g) => !g.listed).length} 部已撤下
+          </span>
+        )}
+      </h2>
       <p className="pane-note" style={{ marginBottom: 10 }}>
-        这里列的是玩家在首页能看到的全部作品。撤下**只动挂牌**：撤下之后它不再出现在
-        公开列表里，但**链接照旧能玩**——作者、测试者、已经分享出去的人都不受影响。
-        （以前这两件事是同一个开关，撤下会把链接一起弄死。）
+        这里列的是<b>全部</b>作品，撤下的也在——原来这份清单按「挂牌」过滤，
+        于是一撤下就从后台也消失了，<b>再也看不见，也就没法放回去</b>，撤下成了单向门。
+        撤下<b>只动挂牌</b>：它不再出现在公开列表里，但<b>链接照旧能玩</b>，
+        作者、测试者、已经分享出去的人都不受影响。
         删除是彻底清掉（实测遗留的半成品用这个），不可恢复，正常创作者的作品别碰。
       </p>
       <div className="roster-scroll">
         <table className="admin-table">
           <thead>
-            <tr><th>作品</th><th>作者</th><th>形态</th><th>体量</th><th>游玩</th><th>点赞</th><th></th></tr>
+            <tr><th>作品</th><th>状态</th><th>作者</th><th>形态</th><th>体量</th><th>游玩</th><th>点赞</th><th></th></tr>
           </thead>
           <tbody>
             {library.map((g) => (
               <tr key={g.id}>
                 <td><Link href={g.mode === "code" ? `/p/${g.id}` : `/g/${g.id}`}>{g.title}</Link></td>
+                {/* 三种情形要分得开：挂在库里 / 撤下了但链接还开着 / 从没发布过 */}
+                <td>
+                  {g.listed ? (
+                    "在公开库"
+                  ) : g.published ? (
+                    <span style={{ color: "var(--muted)" }}>已撤下（链接还开着）</span>
+                  ) : (
+                    <span style={{ color: "var(--muted)" }}>没发过</span>
+                  )}
+                </td>
                 <td>{g.author || "—"}</td>
                 <td>{g.mode === "code" ? "自由模式" : "快速模式"}</td>
                 <td>
@@ -480,8 +506,8 @@ export default function AdminPage(): React.ReactElement {
                 <td>{g.plays}</td>
                 <td>{g.likes}</td>
                 <td>
-                  <button className="linklike" disabled={busyGame === g.id} onClick={() => void takeDown(g.id, false)}>
-                    {busyGame === g.id ? "处理中…" : "撤下"}
+                  <button className="linklike" disabled={busyGame === g.id} onClick={() => void takeDown(g.id, !g.listed)}>
+                    {busyGame === g.id ? "处理中…" : g.listed ? "撤下" : "放回公开库"}
                   </button>
                   {!g.owned && (
                     <>

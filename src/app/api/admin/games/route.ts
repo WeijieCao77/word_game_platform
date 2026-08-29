@@ -27,12 +27,19 @@ function guard(req: NextRequest): NextResponse | null {
   return null;
 }
 
-/** 公开库里现在挂着什么 */
+/**
+ * 后台看到的作品清单——**全量**，不是「公开库里挂着什么」。
+ *
+ * 原来这里用的是 `listPublished`，而那是按**挂牌**过滤的。后果是一个
+ * 把管理员关在门外的死角：**一撤下某部作品，它就从这份清单里消失了**，
+ * 管理员再也看不见它，也就没法把它放回去——「撤下」成了单向门。
+ * 撤下之后最需要盯着的恰恰就是那几部（等修好了要放回来的）。
+ */
 export function GET(req: NextRequest): NextResponse {
   const bad = guard(req);
   if (bad) return bad;
   const store = getStore();
-  const games = store.listPublished(200, "new").map((g) => {
+  const games = store.listAllForAdmin(200).map((g) => {
     // 自由模式的作品光看标题分不出好坏——两次实测都叫 VAL MANAGER，
     // 一个 17 万字符、一个 1.9 万。把代码量摆出来，一眼就知道哪个是半成品。
     const files = g.mode === "code" ? store.fileList(g.id) : [];
@@ -51,6 +58,10 @@ export function GET(req: NextRequest): NextResponse {
       codeBytes,
       // 无主 = 游客建的、只有钥匙认人。实测遗留全是这种，「划归账号」只对它们开放
       owned: store.gameOwner(g.id) !== null,
+      // 清单现在是全量的，所以这两个状态必须报出来，否则后台分不清
+      // 「挂在公开库里」「撤下了但链接还开着」「从没发布过」这三种
+      listed: g.listed,
+      published: g.published,
     };
   });
   return NextResponse.json({ games });
